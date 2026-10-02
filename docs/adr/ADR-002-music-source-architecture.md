@@ -1,6 +1,7 @@
 # ADR-002 — Music source architecture
 
-**Status:** Accepted · **Date:** 2026-10-02
+**Status:** Accepted, **superseded in part by ADR-013** (interface shape; YouTube rule refined into capability-matrix positions) · **Date:** 2026-10-02
+> The Library (synced) vs Catalog (live) distinction, source-qualified identity, and lazy per-play resolution below remain in force. The `MusicSource` interface sketch and the "no YouTube adapter" sentence are replaced by `architecture/MUSIC_SOURCE_ARCHITECTURE.md` and `architecture/SOURCE_CAPABILITY_MATRIX.md` §3.
 
 ## Context
 The brief requires a provider-agnostic `MusicSource` abstraction and asks for YouTube Music research, while forbidding circumvention of access controls, DRM, subscription restrictions, or authentication barriers. Research (`research/2026-10-02-music-sources.md`) shows that every working YouTube Music client relies on client impersonation, cipher deobfuscation (held to be TPM circumvention by OLG Hamburg, 2024), and BotGuard/PoToken generation (anti-bot evasion), and offers Premium-only features for free.

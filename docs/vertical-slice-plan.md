@@ -2,6 +2,8 @@
 
 **Date:** 2026-10-02 · Phases 3 + 4 · Purpose: establish the visual and interaction benchmark that every later screen must match (brief §56), on real architecture with real playback.
 
+> **Amended 2026-10-02 (source-architecture checkpoint):** S1 (contracts), S2 (Local source) and S3 (Media3 direct-stream engine) now precede this slice (`implementation-plan.md`). The slice therefore consumes the **Local source through `StreamResolver`** on a device; the Fixture source remains for JVM/screenshot tests and emulator runs. Steps V0 and V6 below shrink accordingly (skeleton and playback service already exist).
+
 ```
 HOME ──► MUSIC ──► SONGS ──► NOW PLAYING ──► UP NEXT
   ▲          (wheel, focus lens, strip transitions, title bar, mini player, glass tiers, light/dark)
@@ -83,18 +85,18 @@ Total debug-asset budget ≤ 8 MB.
 | Benchmark (record only) | Cold start, Songs fast-spin jank, push/pop frames |
 
 ## 10. Step-by-step (each step = one or more commits)
-1. **S0 Skeleton** — wrapper, build-logic, catalog, empty modules, Spotless/ktlint, lint config, `.editorconfig`, dependency verification. *Commit:* `build: establish Gradle skeleton and conventions`.
-2. **S1 Tokens & type** — theme, colors (+HC), type with Instrument Sans/Inter per-string fallback, symbols subset task, spacing/shapes, motion, previews, Roborazzi setup. *Commit:* `feat(ui): add Podium design tokens and typography`.
-3. **S2 Glass** — `Modifier.glass`, materials, tiers, capabilities, scroll-edge, lint detector. *Commit:* `feat(ui): establish liquid glass material system`.
-4. **S3 Wheel & focus** — PodWheel visuals, gesture detector, haptics, InputRouter, FocusList, FocusLens, Wheel Lab. *Commit:* `feat(interaction): add wheel input and focus system`.
-5. **S4 Navigation shell** — Nav3, keys, Navigator, TitleBar, strip transitions, predictive back, Home/Music static. *Commit:* `feat(navigation): add iPod-style stack navigation`.
-6. **S5 Fixture & Songs** — fixture generator + source, Songs list, artwork, states. *Commit:* `feat(library): add fixture source and songs list`.
-7. **S6 Playback** — PlaybackService, controller, QueueManager, reducer, session basics (explicit `onConnectAsync`), notification. *Commit:* `feat(player): add playback service and controller`.
-8. **S7 Now Playing, Mini player, Up Next** — volume/scrub, progress, quality label, container transform, queue UI & ops. *Commits:* `feat(nowplaying): …`, `feat(queue): …`.
-9. **S8 Atmosphere & appearance** — artwork palette, background extension, theme/HC/transparency debug panel. *Commit:* `feat(ui): add artwork atmosphere`.
-10. **S9 Review loop** — run on device, screenshot every screen/state, review against §11, fix, record benchmarks, write `docs/reviews/slice-1.md`. *Commit:* `docs: record benchmark review`.
+1. **V0 Skeleton** — wrapper, build-logic, catalog, empty modules, Spotless/ktlint, lint config, `.editorconfig`, dependency verification. *Commit:* `build: establish Gradle skeleton and conventions`.
+2. **V1 Tokens & type** — theme, colors (+HC), type with Instrument Sans/Inter per-string fallback, symbols subset task, spacing/shapes, motion, previews, Roborazzi setup. *Commit:* `feat(ui): add Podium design tokens and typography`.
+3. **V2 Glass** — `Modifier.glass`, materials, tiers, capabilities, scroll-edge, lint detector. *Commit:* `feat(ui): establish liquid glass material system`.
+4. **V3 Wheel & focus** — PodWheel visuals, gesture detector, haptics, InputRouter, FocusList, FocusLens, Wheel Lab. *Commit:* `feat(interaction): add wheel input and focus system`.
+5. **V4 Navigation shell** — Nav3, keys, Navigator, TitleBar, strip transitions, predictive back, Home/Music static. *Commit:* `feat(navigation): add iPod-style stack navigation`.
+6. **V5 Fixture & Songs** — fixture generator + source, Songs list, artwork, states. *Commit:* `feat(library): add fixture source and songs list`.
+7. **V6 Playback** — PlaybackService, controller, QueueManager, reducer, session basics (explicit `onConnectAsync`), notification. *Commit:* `feat(player): add playback service and controller`.
+8. **V7 Now Playing, Mini player, Up Next** — volume/scrub, progress, quality label, container transform, queue UI & ops. *Commits:* `feat(nowplaying): …`, `feat(queue): …`.
+9. **V8 Atmosphere & appearance** — artwork palette, background extension, theme/HC/transparency debug panel. *Commit:* `feat(ui): add artwork atmosphere`.
+10. **V9 Review loop** — run on device, screenshot every screen/state, review against §11, fix, record benchmarks, write `docs/reviews/slice-1.md`. *Commit:* `docs: record benchmark review`.
 
-## 11. Design review checklist (run after S5, S7, S9)
+## 11. Design review checklist (run after V5, V7, V9)
 1. Does it read as an iPod in five seconds? (one list, one focus, the wheel)
 2. Is the wheel the only bold thing? Count glass surfaces (≤ 4 persistent).
 3. Spacing on the 4dp grid; gutters 16/20; row heights per spec.

@@ -58,7 +58,7 @@ Custom session commands: `podium.queue.*` (play next, add, move, remove, skip-to
 ## 5. Quality: what Podium knows and shows
 
 ### 5.1 Two sources of truth, reconciled
-1. **Reported** — `ResolvedStream.format` from the source (Subsonic song fields, file metadata).
+1. **Reported** — `PlayableMedia.advertised` from the source (see `architecture/PLAYBACK_TARGETS.md` §4 for the four quality facts) (Subsonic song fields, file metadata).
 2. **Measured** — ExoPlayer `Format` of the selected audio track (`sampleMimeType`, `codecs`, `averageBitrate`/`peakBitrate`, `sampleRate`, `channelCount`, `pcmEncoding` → bit depth for FLAC/PCM) plus `AnalyticsListener.onAudioTrackInitialized(AudioTrackConfig)` (encoding, sample rate, offload, tunneling).
 
 Measured wins when present. If reported and measured disagree (e.g., server says FLAC but the stream is MP3 because a transcoding rule kicked in), Podium shows **measured** and notes "Converted by server" in the Signal Path sheet. **The word "Lossless" appears only when the measured codec is lossless** (FLAC, ALAC, WAV/PCM). "Hi-Res" appears only when measured bit depth ≥ 24 **and** sample rate ≥ 48 kHz.

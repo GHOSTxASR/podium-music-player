@@ -6,6 +6,8 @@
 
 > An iPod redesigned as a modern music operating system.
 
+> **Podium is a modern universal music player with an iPod-inspired interaction model and a highly polished Liquid Glass interface.** Music providers are interchangeable infrastructure behind a capability model (ADR-013); Podium's identity is the Wheel, the navigation, the glass, Now Playing, Up Next, Album Flow, the library, lyrics, offline, system integration, haptics, motion, and accessibility.
+
 - **The iPod is the interaction model** — one hierarchy, one focus, one wheel; Menu goes back; center selects.
 - **Liquid Glass is the material** — a restrained functional layer floating above content. Content stays dominant.
 - **A modern music app is the functionality** — sources, search, queue, autoplay, likes, playlists, lyrics, downloads, background playback, system media integration.
@@ -40,7 +42,8 @@ Podium is **not** trying to replace a major streaming subscription's catalog (se
 | **OpenSubsonic servers** (Navidrome, Gonic, Airsonic-Advanced, Ampache, LMS…) | Library | Streaming + sanctioned downloads + stars + playlists + synced lyrics + similar songs, from your own server | 5 / 9 |
 | **Audius** | Catalog | Public, free, legal streaming of independent artists; downloads only where the artist allows | 9 |
 | **Fixture** (debug builds only) | Library | Generated test tones and artwork for screenshots/tests; never shipped | 4 |
-| YouTube Music | — | **Not implemented by Podium.** See `music-source-analysis.md` and the open decision in §10. | — |
+| YouTube Music | Catalog (unofficial) | Options Y1 (catalogue + matched playback via your sources) / Y2 (official embed) — **pending user decision**; direct YouTube audio (Y3) is not built. See `architecture/SOURCE_CAPABILITY_MATRIX.md` §3 | S8 (optional) |
+| Spotify | Catalog / Remote | Options S-a (playlist & library import) / S-b (remote session controlling the Spotify app) — **pending user decision** (policy III.5/III.11, 5-user dev mode) | S8 (optional) |
 
 *Library* sources are synchronised into Podium's database (metadata only), so browsing is instant and works offline — exactly like syncing an iPod. *Catalog* sources are searched live and cached.
 
@@ -113,7 +116,7 @@ All of: coherent architecture per `architecture.md`; every P0 row above implemen
 ## 10. Decisions that need the user (summary — details in the checkpoint report)
 
 1. Confirm Android-native.
-2. Accept the music-source strategy (Local + OpenSubsonic + Audius; no YouTube Music implementation by Podium).
+2. Choose the optional providers: YouTube Music Y0/Y1/Y2 and Spotify none/S-a/S-b (`architecture/SOURCE_CAPABILITY_MATRIX.md` §3).
 3. Test device availability.
 4. Podium's license and distribution channel.
 5. Name clearance (provisional "Podium").

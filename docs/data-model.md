@@ -36,6 +36,9 @@ Types: `TEXT`, `INTEGER`, `REAL`, `BLOB`. Timestamps are epoch millis `INTEGER`.
 | capabilities_json | TEXT NN | last probed `SourceCapabilities` |
 | allow_cleartext | INTEGER NN | 0/1, only legal for LAN hosts (D-09) |
 | enabled | INTEGER NN | |
+| basis | TEXT NN | `LOCAL_DEVICE`, `USER_SERVER`, `OFFICIAL_API`, `UNOFFICIAL_API` (ADR-013) |
+| priority | INTEGER NN | user order for resolution/fallback (lower first) |
+| account_id | TEXT | provider account/username; null for local |
 | sync_cursor | TEXT | adapter-opaque |
 | last_sync_at, created_at | INTEGER | |
 
@@ -54,10 +57,14 @@ Types: `TEXT`, `INTEGER`, `REAL`, `BLOB`. Timestamps are epoch millis `INTEGER`.
 | track_no, disc_no, year | INTEGER | |
 | genre | TEXT | primary genre |
 | duration_ms | INTEGER | |
-| isrc, mbid | TEXT | matching hints only |
-| explicit | INTEGER NN DEFAULT 0 | |
+| isrc, mbid | TEXT | identity evidence for `TrackMatcher` (indexed); never a primary key |
+| explicitness | TEXT NN DEFAULT 'UNKNOWN' | `EXPLICIT`, `CLEAN`, `NOT_EXPLICIT`, `UNKNOWN` |
+| version_json | TEXT | normalized `VersionInfo` (identity-changing tags, variant notes) from `TrackNormalizer` |
+| identity_key | TEXT | normalized title identity key (indexed) for candidate lookup |
+| provider_uri, provider_data | TEXT | opaque to everything except the adapter (`SourceRef`) |
+| availability | TEXT NN DEFAULT 'UNKNOWN' | last known `Availability` |
 | artwork_key | TEXT | → artwork_cache |
-| reported_format_json | TEXT | `AudioFormatInfo` as reported by source (may be null) |
+| reported_format_json | TEXT | `AudioQuality` as reported by source (may be null) |
 | last_played_format_json | TEXT | measured at last play (honest Now Playing for offline/history) |
 | in_library | INTEGER NN | 1 if from a Library source sync |
 | pin_count | INTEGER NN DEFAULT 0 | maintained by triggers on liked/playlist/download/queue/history refs |
@@ -65,6 +72,18 @@ Types: `TEXT`, `INTEGER`, `REAL`, `BLOB`. Timestamps are epoch millis `INTEGER`.
 | updated_at | INTEGER NN | |
 
 Indices: `(source_id, source_track_id)` UNIQUE; `(album_id, disc_no, track_no)`; `(title_sort)`; `(in_library, title_sort)`; `(genre)`.
+
+### track_equivalence — cross-source identity decisions (ADR-013)
+| Column | Notes |
+|---|---|
+| track_a, track_b PK | ordered pair of `TrackId`s (a < b) |
+| tier NN | `EXACT`, `STRONG`, `PROBABLE`, `AMBIGUOUS`, `REJECTED` |
+| confidence REAL | ordering within tier |
+| evidence_json | matcher evidence list (explainability) |
+| decided_by NN | `AUTO` or `USER` (user decisions always win) |
+| decided_at NN | |
+| recording_key | `isrc:…` / `mbid:…` / `cluster:<uuid>` grouping key (indexed) |
+Indices: `(recording_key)`, `(track_b)`.
 
 ### album / artist / track_artist
 - `album(id PK, source_id, source_album_id, title, title_sort, artist_display, artist_id, year, genre, track_count, duration_ms, artwork_key, in_library, updated_at)`; index `(in_library, title_sort)`, `(artist_id, year)`.

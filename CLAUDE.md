@@ -3,8 +3,10 @@
 Read `docs/README.md` first. The docs are the source of truth; update them in the same commit as behaviour changes. Record significant decisions in `docs/decision-log.md` (ADR in `docs/adr/` if major).
 
 ## Non-negotiables
-- **No circumvention.** Never implement signature/cipher deobfuscation, PoToken/BotGuard or other bot-detection evasion, client impersonation, DRM removal, paywall/subscription bypass, or downloads a source doesn't permit. No YouTube Music adapter (see `docs/music-source-analysis.md`).
-- **No GPL code copied** into this repo (all YouTube Music clients are GPL-3.0); Podium's license is undecided.
+- **No circumvention (stream-unlock boundary, ADR-013).** Never implement player-cipher/throttle solving, PoToken/BotGuard or other bot-detection evasion, client-identity rotation to obtain streams, age-gate bypass, DRM removal, paywall/subscription bypass, or downloads a source doesn't permit — and don't add libraries for those purposes (e.g., NewPipeExtractor, InnerTubeX). YouTube Music only as options Y1/Y2 and only once the user approves (D-20); Spotify only as S-a/S-b once approved (D-21). See `docs/architecture/SOURCE_CAPABILITY_MATRIX.md` §3.
+- **Providers never leak.** Features depend on capabilities, availability, route and owner — never on provider identity (no `if (spotify)`), never on provider id formats. Provider code lives only in `sources:<provider>`. Spec: `docs/architecture/MUSIC_SOURCE_ARCHITECTURE.md`.
+- **Identity is sacred.** Cross-source fallback only at matcher tier EXACT (STRONG with the user setting), always surfaced, never across version/explicitness boundaries, never mid-track (D-17, D-18).
+- **No GPL code or GPL dependencies** while Podium's license is open (D-13). BitChord is an architectural reference only: don't open its source while implementing; follow ADR-014.
 - **No secrets** in code or git. No analytics/crash SDKs.
 - **Glass only via `:core:designsystem`** (`Modifier.glass` / `GlassSurface`). Never `Modifier.blur`, `RenderEffect`, `RuntimeShader`, or Backdrop imports elsewhere. Glass only on functional elements (wheel, mini player, title-bar controls, menus, sheets, HUDs, focus lens) — never rows, cards, artwork, or text containers.
 - **No Material3 components.** Compose foundation/ui + Podium tokens only.

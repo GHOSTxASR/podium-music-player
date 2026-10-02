@@ -32,6 +32,8 @@
 | DB migrations | Every version step + 1 → latest; pre-migration backup and safe mode |
 | Source adapters | Contract tests + capability probing per server type |
 | Error handling | PodiumError → copy mapping exhaustive; no raw exception text in UI (lint + test) |
+| Source architecture | Registration, capability detection, normalization, matching corpus, duplicate detection, resolution/expiry, health & fallback, remote targets, quality honesty — full list in `architecture/MUSIC_SOURCE_ARCHITECTURE.md` §14 and `architecture/PLAYBACK_TARGETS.md` §9 |
+| Provider independence | dependency-guard (features ↛ `sources:<provider>`); lint forbidding provider-identity branching outside `sources:*` |
 
 ## 3. Edge cases (brief §52) → explicit tests
 | Case | Test type |

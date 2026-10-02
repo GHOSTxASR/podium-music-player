@@ -14,7 +14,9 @@ data class PlaybackSnapshot(
     val connectivity: Connectivity,      // orthogonal (from ConnectivityMonitor)
     val itemDownload: DownloadBadge?,    // orthogonal (from DownloadManager for current track)
     val modes: Modes,                    // repeat, shuffle, autoplay
-    val format: AudioFormatInfo?,        // see audio-architecture.md
+    val format: AudioQuality?,           // measured; see audio-architecture.md
+    val owner: PlaybackOwner,            // Podium | Remote | Embedded (architecture/PLAYBACK_TARGETS.md §8)
+    val controls: ControlSet,            // what the active engine supports
 )
 
 sealed interface PlaybackStatus {

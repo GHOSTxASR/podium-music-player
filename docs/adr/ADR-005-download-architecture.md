@@ -18,7 +18,7 @@ Downloads are user-owned library items: they must survive cache cleanup, be veri
 - Verification: size check (Content-Length / source-reported size), optional source checksum, then a **decode probe** (Media3 `MetadataRetriever` reads format; first frames decode) before marking `COMPLETED`. Failure → `CORRUPT` → auto-retry once.
 - Execution: `DownloadExecutor` interface — **UIDT JobService** on API 34+ (notification via `setNotification`), **WorkManager long-running worker** (foreground `dataSync`) on API 29–33.
 - Location: `filesDir/downloads/<sourceKind>/<sha1(trackId)>.<ext>` (internal, private, no permissions). Optional app-specific external volume (SD card) in Settings. Filenames are hashes — no metadata in paths, no traversal risk.
-- Only tracks whose source returns `canDownload(track) == true` are offered (Subsonic `download`/transcoded `stream`; Audius only when `is_downloadable`; Local = already offline).
+- Only tracks whose `TrackCapabilities.canDownload` is `Allowed` (from the source's `DownloadFacet`) are offered (Subsonic `download`/transcoded `stream`; Audius only when `is_downloadable`; Local = already offline).
 - Media3 `SimpleCache` is used **only** for the evictable streaming cache (separate directory, LRU, user-clearable). Clearing caches never touches downloads.
 
 ## Why

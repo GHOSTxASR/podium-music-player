@@ -7,7 +7,7 @@ Every significant decision, newest at the bottom. Major ones have an ADR in `adr
 | ID | Decision | Status |
 |---|---|---|
 | [ADR-001](adr/ADR-001-platform-and-ui-framework.md) | Native Android, Kotlin, Jetpack Compose, Media3 | Accepted — **pending user confirmation** |
-| [ADR-002](adr/ADR-002-music-source-architecture.md) | Capability-based `MusicSource`; Library (synced) vs Catalog (live) sources; no YouTube adapter | Accepted — **source strategy pending user** |
+| [ADR-002](adr/ADR-002-music-source-architecture.md) | Library (synced) vs Catalog (live) sources; source-qualified identity | Accepted — **superseded in part by ADR-013** |
 | [ADR-003](adr/ADR-003-audio-engine.md) | Media3 `MediaLibraryService` + `PlaybackController` facade, explicit `onConnectAsync` | Accepted |
 | [ADR-004](adr/ADR-004-database.md) | Room 3 + bundled SQLite (FTS5) + Proto DataStore; pre-migration backups | Accepted |
 | [ADR-005](adr/ADR-005-download-architecture.md) | Own DownloadManager, verified files, UIDT (34+) / WorkManager (29–33) | Accepted |
@@ -18,6 +18,8 @@ Every significant decision, newest at the bottom. Major ones have an ADR in `adr
 | [ADR-010](adr/ADR-010-typography-and-iconography.md) | Instrument Sans + per-string Inter fallback; Material Symbols Rounded subset | Accepted |
 | [ADR-011](adr/ADR-011-navigation-and-input-routing.md) | Navigation 3 app-owned stack; `InputRouter` → `InputTarget` with `WheelContext` | Accepted |
 | [ADR-012](adr/ADR-012-modules-and-networking.md) | Module map, pure-JVM domain modules, OkHttp-only networking | Accepted |
+| [ADR-013](adr/ADR-013-provider-source-architecture.md) | Capability-faceted sources; `PlaybackTarget` = DirectStream / RemoteProvider / Embedded; identity-preserving fallback; `Basis`; stream-unlock boundary | Accepted — **optional providers pending user** |
+| [ADR-014](adr/ADR-014-bitchord-inspired-independent-implementation.md) | Learn from BitChord (GPL-3.0) as reference; reimplement from Podium specs; no GPL deps while D-13 open | Accepted |
 
 ## Inline decisions
 
@@ -72,3 +74,28 @@ Every significant decision, newest at the bottom. Major ones have an ADR in `adr
 
 ### D-16 · Volume on the wheel controls system media volume
 - **Decision:** Now Playing rotation adjusts `STREAM_MUSIC` index via `AudioManager.adjustStreamVolume(..., flags = 0)` (Podium shows its own volume bar; system panel suppressed). Detents per step adapt to the device's step count so a full volume sweep ≈ 1.25 rotations. If `isVolumeFixed` (some devices, bit-perfect USB), the wheel shows "Volume is controlled by the connected device" and does nothing. **Why:** iPod adjusted hardware volume; software gain would reduce resolution and diverge from system volume.
+
+### D-17 · Automatic cross-source fallback only at matcher tier EXACT
+- **Decision:** automatic fallback to another source requires `EXACT` equivalence; `STRONG` only with the "Allow close matches" setting (default off); never `PROBABLE`/`AMBIGUOUS`. Always surfaced in Now Playing/Signal Path. **Context:** directive: never silently substitute a different recording. **Options:** score threshold / rule-based tiers / no fallback. **Chosen:** rule-based tiers. **Why:** explainable, testable, conservative. **Tradeoffs:** some legitimate equivalents skipped. **Future:** user "Not the same song" overrides persist in `track_equivalence`.
+
+### D-18 · No mid-track source switching
+- **Decision:** a queue item's resolved target is pinned for that play; better copies found later apply to the next play. **Context:** BitChord swaps streams mid-track on a duration-only check. **Why:** identity and listening continuity; avoids decoder/cache discontinuities. **Tradeoffs:** a slow source's better copy waits one play.
+
+### D-19 · `Basis` drives build policy
+- **Decision:** every source declares `LOCAL_DEVICE` / `USER_SERVER` / `OFFICIAL_API` / `UNOFFICIAL_API`; Play-distributed builds link no `UNOFFICIAL_API` factory; UI labels unofficial sources ("Unofficial — may stop working"). **Why:** honest provenance; keeps Play distribution possible.
+
+### D-20 · YouTube Music positions
+- **Status: Pending user.** Y1 (unofficial catalogue + matched playback via authorized sources) and Y2 (official embed) are buildable; Y3 (direct YouTube audio via stream unlock) is not built (ADR-013 boundary; brief §65). Y0 (none) is valid.
+
+### D-21 · Spotify positions
+- **Status: Pending user.** S-a (read-only playlist/library import, matched to the user's sources) and S-b (App Remote remote session: provider-owned queue, no mixing, hard cuts, attribution) are buildable for personal use with a bring-your-own client id (dev mode: 5 users, Premium owner). Direct Spotify audio: unavailable. Policy tension (III.5, III.11) documented in the matrix.
+
+### D-22 · First real remote target = OpenSubsonic jukebox
+- **Decision:** validate `RemoteProvider` with `jukeboxControl` (official API of the user's own server) before any third-party remote SDK. **Why:** proves the abstraction (queue ownership, state mirroring, session ownership) without policy risk. **Tradeoffs:** server support varies; a fake controller covers tests regardless.
+
+### D-23 · Matcher lexicon basis
+- **Decision:** version/variant/packaging lexicon derived from MusicBrainz style guidelines (recording disambiguation, release secondary types) and Podium's own corpus; adds identifiers (ISRC/MBID), explicitness, re-recordings, sped-up/slowed, music-video audio. **Why:** independent of BitChord (ADR-014) and grounded in an open, documented taxonomy.
+
+### D-24 · Quality is four facts, label uses measured only
+- **Decision:** catalogue-advertised, resolved-advertised, measured, output are kept separate (`PLAYBACK_TARGETS.md` §4); Now Playing label uses measured values only; remote targets show no label unless the provider's official API states quality.
+

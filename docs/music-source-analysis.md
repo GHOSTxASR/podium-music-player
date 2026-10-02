@@ -2,6 +2,8 @@
 
 **Date:** 2026-10-02 · Evidence: `research/2026-10-02-music-sources.md` · Decision: ADR-002.
 
+> **Update (2026-10-02, later the same day):** the product direction changed to a *universal player* with interchangeable providers (Local, YouTube Music, OpenSubsonic, Audius, Spotify). The source model is now ADR-013 / `architecture/MUSIC_SOURCE_ARCHITECTURE.md`; per-provider capabilities and Podium's positions are in `architecture/SOURCE_CAPABILITY_MATRIX.md`; BitChord findings in `research/BITCHORD_ARCHITECTURE_REVIEW.md`. The YouTube analysis below still stands; its conclusion (§2.4) is refined into options Y0–Y3.
+
 This document separates three questions for every candidate source:
 1. **Technically possible?** (can it be built and kept working)
 2. **Authorised?** (do the provider's terms and applicable law permit it)
@@ -40,9 +42,16 @@ This document separates three questions for every candidate source:
 - Every mature client is GPL-3.0; reusing their code forces Podium's license.
 
 ### 2.4 Conclusion
-**Technically possible, not authorised, not distributable.** The brief's §65 explicitly forbids implementing functionality designed to circumvent access controls, DRM, subscription restrictions, or authentication barriers. Podium therefore **does not implement** a YouTube Music adapter, signature/n-parameter deobfuscation, PoToken/BotGuard generation, client impersonation, or YouTube downloading.
+**Technically possible, not authorised, not distributable.** The brief's §65 explicitly forbids implementing functionality designed to circumvent access controls, DRM, subscription restrictions, or authentication barriers. Podium therefore **does not implement** the stream-unlock layer: signature/n-parameter solving, PoToken/BotGuard generation, client-identity rotation to obtain streams, age-gate bypass, or YouTube downloading.
 
-The architecture does not prevent a *separately developed* adapter from implementing `MusicSource`; that would be the responsibility of whoever builds and distributes it, and it is outside this project's scope. Nothing in Podium's core assumes YouTube.
+**Refined options (see `architecture/SOURCE_CAPABILITY_MATRIX.md` §3):**
+| Option | What it is | Podium builds it? |
+|---|---|---|
+| Y0 | No YouTube source | — |
+| Y1 | Catalogue/metadata adapter (unofficial, opt-in, excluded from Play builds); tracks play only via an EXACT/STRONG-matched copy on the user's authorized sources | Yes, if the user accepts the documented policy risk |
+| Y2 | Official embedded player target (visible, foreground, video) | Yes, if wanted |
+| Y3 | Direct YouTube audio (BitChord-style stream unlock) | **No** (conflicts with the brief's §65 and ADR-013's hard boundary) |
+Nothing in Podium's core assumes YouTube; the matcher-based design keeps provider identity out of the UI either way.
 
 ## 3. Launch source designs
 
@@ -87,6 +96,6 @@ The Audio Quality screen shows tiers, but each tier lists **what it means per en
 
 If a server cannot transcode, the lower tiers say "Original file (this server can't convert)". The Now Playing label always shows the **actual** stream (§ `audio-architecture.md` 5).
 
-## 5. Open decision for the user
+## 5. Open decision for the user (superseded — see the checkpoint report of 2026-10-02 and `SOURCE_CAPABILITY_MATRIX.md` §3)
 
 Podium as specified is a *player for music you own or that is legitimately free*, not a front-end for a commercial catalog. If a mainstream catalog is essential to the product vision, the legitimate paths are partner programs (TIDAL, Apple MusicKit) that require paid accounts and agreements. Please confirm the launch source strategy, and whether you have a Subsonic-compatible server (or local files) to develop against.

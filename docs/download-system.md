@@ -47,7 +47,7 @@ DownloadManager (API used by UI/repos)
 - Notification: one ongoing notification — title "Downloading Kind of Blue", text "3 of 14 songs" — with Pause/Cancel actions; completion notification summarises; requires `POST_NOTIFICATIONS` (requested at first download with rationale).
 
 ## 6. Transfer & verification
-1. Resolve download URL via `source.resolveStream(id, request = Download(tier))` (Subsonic `download` for Original; `stream?format=` for transcoded tiers).
+1. Resolve download URL via `StreamResolver.resolve(ResolveRequest(track, DOWNLOAD, tier))` using the source's `DownloadFacet` (Subsonic `download` for Original; `stream?format=` for transcoded tiers).
 2. GET with `Range: bytes=<done>-` if `.part` exists and server supports ranges (`Accept-Ranges`/206), else restart.
 3. Write to `<volume>/downloads/<kind>/<sha1(trackId)>.<ext>.part`; periodic progress to Room (≤ 2 Hz).
 4. Verify: (a) bytes == Content-Length or source-reported size; (b) source checksum if provided; (c) decode probe — Media3 `MetadataRetriever` returns a track `Format` with the expected codec and duration within 2% of metadata; (d) compute sha256 → store.

@@ -76,48 +76,13 @@ These are normative sketches; names may be refined, semantics may not.
 Identity is always source-qualified. Cross-source "same song" matching (ISRC/MBID) is a *hint* for dedupe UI, never a primary key.
 
 ### 4.2 Music sources (`sources:api`)
-```kotlin
-interface MusicSource {
-    val id: SourceId
-    val kind: SourceKind                       // LIBRARY | CATALOG
-    val capabilities: StateFlow<SourceCapabilities>
-    val health: StateFlow<SourceHealth>         // Ok, Degraded(reason), Unreachable, AuthRequired, RateLimited(until)
-
-    suspend fun search(query: SearchQuery): Outcome<SearchPage>
-    suspend fun track(id: TrackId): Outcome<Track>
-    suspend fun album(id: AlbumId): Outcome<AlbumDetail>
-    suspend fun artist(id: ArtistId): Outcome<ArtistDetail>
-    suspend fun playlist(ref: RemotePlaylistRef): Outcome<PlaylistDetail>
-    suspend fun resolveStream(id: TrackId, request: QualityRequest): Outcome<ResolvedStream>
-    suspend fun lyrics(id: TrackId): Outcome<Lyrics?>                 // null = source has none
-    suspend fun related(seed: List<TrackId>, limit: Int): Outcome<List<Track>>
-    fun canDownload(track: Track): DownloadPermission                  // Allowed(quality options) | NotPermitted(reason) | NotApplicable
-}
-
-interface LibrarySource : MusicSource {        // kind == LIBRARY
-    fun sync(since: SyncCursor?): Flow<SyncEvent>                       // Upserts, Deletes, Progress, Done(cursor)
-}
-
-sealed interface ResolvedStream {
-    val format: AudioFormatInfo                 // what will actually play
-    data class Url(val uri: String, val headers: Map<String, String>, val expiresAt: Instant?, override val format: AudioFormatInfo) : ResolvedStream
-    data class LocalFile(val uri: String, override val format: AudioFormatInfo) : ResolvedStream
-    // Reserved for partner SDKs that play themselves (ADR-002 future):
-    data class Delegate(val handle: String, override val format: AudioFormatInfo) : ResolvedStream
-}
-
-data class AudioFormatInfo(
-    val codec: Codec,                           // FLAC, ALAC, AAC, OPUS, MP3, VORBIS, PCM, UNKNOWN
-    val container: String?,
-    val bitrateKbps: Int?,                      // average; null if unknown
-    val sampleRateHz: Int?,
-    val bitDepth: Int?,                         // only for lossless/PCM; null if unknown
-    val channels: Int?,
-    val isLossless: Boolean,                    // derived from codec, never asserted by UI
-    val provenance: Provenance                  // REPORTED_BY_SOURCE | MEASURED_BY_DECODER
-)
-```
-`SourceCapabilities` flags: `search`, `browseAlbums`, `browseArtists`, `remotePlaylists`, `remoteLikes`, `lyrics`, `related`, `downloads`, `transcoding(qualities)`, `scrobble`, `playQueueSync`. UI asks capabilities, never source types.
+**Normative spec: [`architecture/MUSIC_SOURCE_ARCHITECTURE.md`](architecture/MUSIC_SOURCE_ARCHITECTURE.md)** (ADR-013, which replaced the original sketch here). Summary:
+- `MusicSource` = `SourceDescriptor` (incl. `Basis`) + observable effective `SourceCapabilities` + optional facets (`catalog`, `library`, `playback`, `artwork`, `lyrics`, `recommendations`, `downloads`, `auth`, `queueSync`).
+- Canonical provider-neutral `Track` (identifiers, version info, explicitness, advertised qualities, availability) with an opaque `SourceRef`.
+- `StreamResolver` → `ResolveOutcome` → **`PlaybackTarget`** = `DirectStream(PlayableMedia)` | `RemoteProvider(...)` | `Embedded(...)` — see [`architecture/PLAYBACK_TARGETS.md`](architecture/PLAYBACK_TARGETS.md).
+- `TrackMatcher` (identity-preserving fallback & dedupe), `SourceHealth` (circuit breaker), `ConnectedSource` (auth/connection state).
+- Library sources are still synchronised into Room (ADR-002/ADR-008); provider availability per [`architecture/SOURCE_CAPABILITY_MATRIX.md`](architecture/SOURCE_CAPABILITY_MATRIX.md).
+UI asks capabilities, availability, route, and owner — never provider identity.
 
 ### 4.3 Playback (`player:api`)
 ```kotlin
@@ -137,7 +102,7 @@ interface PlaybackController {
     val output: StateFlow<OutputInfo>           // device type, mixer rate, bit-perfect, volume fixed
 }
 ```
-Commands travel as Media3 session commands (standard ones where they exist, `SessionCommand` customs for queue operations), so every mutation is executed inside the service by `QueueManager`.
+Commands travel as Media3 session commands (standard ones where they exist, `SessionCommand` customs for queue operations), so every mutation is executed inside the service by `QueueManager`. `PlaybackSnapshot` also carries `owner` (Podium / Remote / Embedded) and `controls` (what the active engine supports); the service's `PlaybackRouter` chooses the engine per resolved target (`architecture/PLAYBACK_TARGETS.md` §5).
 
 ### 4.4 Input (`core:interaction`)
 ```kotlin
@@ -159,8 +124,8 @@ interface InputTarget { val context: WheelContext; fun onInput(input: PodiumInpu
 ### 5.1 Play a song from an album
 1. Album screen: Center on track 4 → `AlbumViewModel.play(4)` → `PlaybackController.playContext(PlayContext.Album(albumId), startAt = 4)`.
 2. Controller sends custom command → service `QueueManager.replaceContext(...)` builds `QueueItem`s (origin `CONTEXT`), maps to `MediaItem(podium://track/<id>)`, `player.setMediaItems(items, 4, 0)`, `prepare()`, `play()`; persists.
-3. ExoPlayer opens item → `ResolvingDataSource` → `StreamResolver`: downloaded? → `file://`; local? → content URI; else `source.resolveStream(id, qualityFor(network))` (cached until `expiresAt − 60 s`).
-4. `QualityInspector` combines `ResolvedStream.format` (reported) with decoder `Format` (measured) → `PlaybackSnapshot.format`.
+3. ExoPlayer opens item → `ResolvingDataSource` → `StreamResolver`: downloaded? → `file://`; local? → content URI; else `StreamResolver.resolve(ResolveRequest(track, PLAYBACK, qualityFor(network)))` → `PlaybackTarget.DirectStream(PlayableMedia)` (cached until `expiresAt − 60 s`; full pipeline in `architecture/MUSIC_SOURCE_ARCHITECTURE.md` §8).
+4. `QualityInspector` combines `PlayableMedia.advertised` (reported) with decoder `Format` (measured) → `PlaybackSnapshot.format`.
 5. Navigator auto-pushes Now Playing (D-05). Wheel context becomes `Volume`.
 
 ### 5.2 Like a track
@@ -254,3 +219,7 @@ sealed interface PodiumError {
 | R-09 | Lyrics copyright | Medium | Low–Med | Consent, local cache only, no redistribution, source-provided lyrics first |
 | R-10 | Name/trademark ("Podium") | Medium | Medium | Clearance before public release; name isolated to resources |
 | R-11 | Large-screen requirements (target 36 ignores orientation locks) | High | Medium | Adaptive layouts planned (P1), landscape phone layout in P0 |
+| R-12 | Cross-source fallback plays the wrong recording | Medium | High | Rule-based matcher tiers, EXACT-only automatic fallback, version/explicitness vetoes, surfaced source, user "not the same song" override, test corpus |
+| R-13 | Provider policy changes (Spotify Nov 2024 / May 2025 / Feb 2026; YouTube policies Sep 2026) | High | Medium–High | Capability states with `DISABLED_BY_POLICY`; providers isolated in modules; re-verify matrix before each provider phase |
+| R-14 | Accidental GPL derivative work from studying BitChord | Low | High | ADR-014 hygiene rules; no GPL deps while D-13 open; prose-only review |
+| R-15 | Remote/embedded engines complicate the router and session ownership | Medium | Medium | Hard-cut handoffs only; session release/restore rules; fakes + tests (PLAYBACK_TARGETS.md §9) |
