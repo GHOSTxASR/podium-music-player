@@ -33,11 +33,11 @@ Hardware volume keys and Bluetooth media buttons go to the system / media sessio
 Parameters are tokens (tunable on device; values are starting points):
 | Token | Value |
 |---|---|
-| `wheel.detentDeg` | 15° (24 detents/rev) |
+| `wheel.detentDeg` | 18° (20 detents/rev; 15° felt twitchy on device) |
 | `wheel.rotationSlopDeg` | 8° angular travel, or `touchSlop` along the tangent |
 | `wheel.ringTouchBand` | from `d/2 − 4dp` to `D/2 + 12dp` |
-| `wheel.reverseHysteresisDeg` | 7.5° (half detent) |
-| `wheel.accel` | ×1 < 8 det/s · ×2 < 16 · ×4 < 30 · ×8 ≥ 30 (ListFocus with > 50 items only) |
+| `wheel.reverseHysteresisDeg` | 9° (half detent) |
+| `wheel.accel` | ×1 < 22 det/s · ×2 < 36 · ×4 ≥ 36 (ListFocus with ≥ 50 items only; shorter lists always move one item per detent) |
 | `wheel.maxHapticRate` | 60/s |
 
 Algorithm:
@@ -46,7 +46,7 @@ Algorithm:
 3. `up` without rotation → `Press(zone)` (fires on release so a rotation can start anywhere, including on legends). If held ≥ long-press timeout without rotation → `LongPress(zone)` (fires at the timeout, haptic `longPress`), then `Release` on up.
 4. `down` inside the center circle → only press/long-press (rotation never starts from center).
 5. Multi-touch: second pointer ignored.
-6. Velocity: detents/s over a 120 ms window → acceleration multiplier (only where enabled by the context).
+6. Velocity: detents/s over the span of the detents in the last 120 ms (a lone detent has no rate). The tracker emits raw detents + velocity; the list applies `WheelAcceleration`, since only it knows its length.
 
 Latency budget: detent emission → focus state change in the same frame; lens begins moving next frame (≤ 16 ms at 60 Hz, ≤ 8 ms at 120 Hz).
 
@@ -80,7 +80,7 @@ Global (when not consumed by the target): `Press(PLAY_PAUSE)` → toggle · `Pre
 | Event | Token |
 |---|---|
 | Wheel button down | `press` |
-| Focus moved by rotation | `detent` (coalesced to ≤ 60/s; during acceleration ×4/×8 one haptic per emitted step, not per item) |
+| Focus moved by rotation | `detent` (coalesced to ≤ 60/s; during acceleration ×2/×4 one haptic per emitted step, not per item) |
 | List boundary / volume 0 or max / scrub at 0 or end | `boundary` |
 | Volume step, scrub step, picker step | `step` |
 | Long-press recognised | `longPress` |

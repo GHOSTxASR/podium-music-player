@@ -116,5 +116,6 @@ Every significant decision, newest at the bottom. Major ones have an ADR in `adr
 - The engine rejects non-`DirectStream` targets with a typed error until S5 (remote/embedded).
 - Navigation: Navigation 3 `NavDisplay` with the back stack owned as a saveable `SnapshotStateList` (no `rememberNavBackStack`/`NavKey`; `lifecycle-viewmodel-navigation3` avoided while alpha).
 - Wheel velocity is measured over the span of recent detents (a lone detent has no rate). Found on device, where every slow click was being doubled.
+- Wheel made calmer after on-device feedback (fast spins skipped the highlight past songs): 18° detents (was 15°), acceleration only in lists of ≥ 50 items as the spec intended, and only above ≈ 1 rev/s (×2 at 22 det/s, ×4 at 36; ×8 removed). Volume keeps ≈ 1.25 turns for a full sweep.
 - The session player reports the queue's shuffle state to controllers itself (ExoPlayer's own shuffle never changes, so the session never re-read it). Found on device.
 

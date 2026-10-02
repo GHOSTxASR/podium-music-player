@@ -7,11 +7,10 @@ import kotlin.math.hypot
 
 /** Tunable feel parameters (interaction-model.md §3). Values are starting points for device tuning. */
 data class WheelTuning(
-    val detentDegrees: Float = 15f,
+    /** 20 detents per revolution: tuned on device, where 15° felt twitchy. */
+    val detentDegrees: Float = 18f,
     val rotationSlopDegrees: Float = 8f,
-    val reverseHysteresisDegrees: Float = 7.5f,
-    /** Acceleration tiers: (minimum detents/s, multiplier). Applied only when the context allows. */
-    val accelerationTiers: List<Pair<Float, Int>> = listOf(30f to 8, 16f to 4, 8f to 2),
+    val reverseHysteresisDegrees: Float = 9f,
     val velocityWindowMillis: Long = 120,
 )
 
@@ -61,8 +60,12 @@ class WheelGestureTracker(private val tuning: WheelTuning = WheelTuning()) {
         return startZone
     }
 
-    /** Pointer moved. Returns any rotation input produced (at most one coalesced Rotate). */
-    fun onMove(x: Float, y: Float, cx: Float, cy: Float, timeMillis: Long, accelerate: Boolean): PodiumInput.Rotate? {
+    /**
+     * Pointer moved. Returns any rotation input produced (at most one coalesced Rotate), in raw
+     * detents with the current velocity; whoever consumes it decides on acceleration
+     * ([WheelAcceleration]), because only it knows how long its list is.
+     */
+    fun onMove(x: Float, y: Float, cx: Float, cy: Float, timeMillis: Long): PodiumInput.Rotate? {
         if (region != Region.RING || longPressed) return null
         val angle = angleOf(x, y, cx, cy)
         var delta = angle - lastAngle
@@ -91,9 +94,7 @@ class WheelGestureTracker(private val tuning: WheelTuning = WheelTuning()) {
         lastDirection = if (detents > 0) 1 else -1
         repeat(abs(detents)) { detentTimes.addLast(timeMillis) }
         while (detentTimes.isNotEmpty() && timeMillis - detentTimes.first() > tuning.velocityWindowMillis) detentTimes.removeFirst()
-        val velocity = detentVelocity()
-        val multiplier = if (accelerate) tuning.accelerationTiers.firstOrNull { velocity >= it.first }?.second ?: 1 else 1
-        return PodiumInput.Rotate(detents * multiplier, velocity)
+        return PodiumInput.Rotate(detents, detentVelocity())
     }
 
     /** Pointer lifted. Returns the press for a tap, or the release that ends a long press. */

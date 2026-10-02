@@ -113,8 +113,9 @@ fun NowPlayingScreen(controller: PlaybackController, volume: VolumeController, o
                 if (mode == WheelMode.Volume) {
                     if (volumeState.isFixed) return@InputTargetEffect true
                     showVolume = true
-                    // A full sweep of the volume range is about 1.25 rotations on any device (D-16).
-                    val detentsPerStep = ceil(30.0 / volumeState.max.coerceAtLeast(1)).toInt().coerceAtLeast(1)
+                    // A full sweep of the volume range is about 1.25 rotations on any device (D-16):
+                    // 25 detents of 18°.
+                    val detentsPerStep = ceil(25.0 / volumeState.max.coerceAtLeast(1)).toInt().coerceAtLeast(1)
                     detentRemainder += input.detents
                     val steps = detentRemainder / detentsPerStep
                     detentRemainder -= steps * detentsPerStep

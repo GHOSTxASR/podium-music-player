@@ -64,7 +64,6 @@ fun wheelDiameter(windowWidth: Dp): Dp = (windowWidth * 0.66f).coerceIn(232.dp, 
  * The Wheel: Podium's one bold element. Glass ring + glass center, static when idle, alive when
  * touched. Emits semantic [PodiumInput]s only; screens never see raw gestures.
  *
- * @param accelerate whether fast spins should skip several items (long lists only).
  * @param isPlaying for the play/pause button's accessibility state.
  */
 @Composable
@@ -72,7 +71,6 @@ fun PodWheel(
     onInput: (PodiumInput) -> Unit,
     modifier: Modifier = Modifier,
     diameter: Dp = 280.dp,
-    accelerate: Boolean = true,
     isPlaying: Boolean = false,
     /** A solid finish (D-26); null or a Glass palette draws the Liquid Glass wheel. */
     palette: ShellPalette? = null,
@@ -84,7 +82,6 @@ fun PodWheel(
     val longPressTimeout = remember { ViewConfiguration.getLongPressTimeout().toLong() }
     val tracker = remember { WheelGestureTracker() }
     val currentOnInput by rememberUpdatedState(onInput)
-    val currentAccelerate by rememberUpdatedState(accelerate)
 
     var pressed by remember { mutableStateOf<WheelButton?>(null) }
     var finger by remember { mutableStateOf<Offset?>(null) }
@@ -147,7 +144,7 @@ fun PodWheel(
                             break
                         }
                         finger = change.position
-                        tracker.onMove(change.position.x, change.position.y, cx, cy, change.uptimeMillis, currentAccelerate)
+                        tracker.onMove(change.position.x, change.position.y, cx, cy, change.uptimeMillis)
                             ?.let {
                                 waitLongPress = false
                                 emit(it)

@@ -81,7 +81,6 @@ import app.podium.core.interaction.LocalInputRouter
 import app.podium.core.interaction.PodiumHaptics
 import app.podium.core.interaction.PodiumInput
 import app.podium.core.interaction.WheelButton
-import app.podium.core.interaction.WheelContext
 import app.podium.core.interaction.rememberPodiumHaptics
 import app.podium.feature.library.HomeScreen
 import app.podium.feature.library.LibraryState
@@ -193,7 +192,6 @@ fun PodiumApp(graph: AppGraph, onSourceAction: (CapabilityAction) -> Unit) {
                                 PodWheel(
                                     onInput = { router.dispatch(it) },
                                     diameter = diameter,
-                                    accelerate = router.activeContext == WheelContext.LIST_FOCUS,
                                     isPlaying = snapshot.intent == PlayIntent.PLAY,
                                     palette = palette,
                                     modifier = Modifier.align(Alignment.Center),

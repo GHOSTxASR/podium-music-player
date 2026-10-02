@@ -25,7 +25,7 @@ class WheelGestureTrackerTest {
     private fun WheelGestureTracker.down(deg: Double) = at(deg).let { (x, y) -> onDown(x, y, cx, cy, inner, outer) }
 
     /** Sweep from [from] to [to] degrees in 1° steps, [msPerDegree] apart. Returns total detents. */
-    private fun WheelGestureTracker.sweep(from: Double, to: Double, msPerDegree: Long = 10, accelerate: Boolean = false): Int {
+    private fun WheelGestureTracker.sweep(from: Double, to: Double, msPerDegree: Long = 10): Int {
         var total = 0
         var t = 0L
         val step = if (to > from) 1.0 else -1.0
@@ -34,7 +34,7 @@ class WheelGestureTrackerTest {
             d += step
             t += msPerDegree
             val (x, y) = at(d)
-            onMove(x, y, cx, cy, t, accelerate)?.let { total += it.detents }
+            onMove(x, y, cx, cy, t)?.let { total += it.detents }
         }
         return total
     }
@@ -66,11 +66,11 @@ class WheelGestureTrackerTest {
     }
 
     @Test
-    fun `rotation emits one detent per 15 degrees and cancels the press`() {
+    fun `rotation emits one detent per 18 degrees and cancels the press`() {
         val tracker = WheelGestureTracker()
         tracker.down(0.0)
         val detents = tracker.sweep(0.0, 91.0) // just past the boundary: real fingers never land exactly on it
-        assertEquals(6, detents)
+        assertEquals(5, detents)
         assertTrue(tracker.isRotating)
         assertNull(tracker.onUp(), "a rotation must never fire the button it started on")
     }
@@ -79,23 +79,35 @@ class WheelGestureTrackerTest {
     fun `counter-clockwise rotation is negative and crosses 12 o'clock cleanly`() {
         val tracker = WheelGestureTracker()
         tracker.down(30.0)
-        assertEquals(-6, tracker.sweep(30.0, -61.0))
+        assertEquals(-5, tracker.sweep(30.0, -61.0))
     }
 
     @Test
-    fun `fast spins accelerate only when allowed`() {
-        val slow = WheelGestureTracker().apply { down(0.0) }.sweep(0.0, 361.0, msPerDegree = 1, accelerate = false)
-        val fast = WheelGestureTracker().apply { down(0.0) }.sweep(0.0, 361.0, msPerDegree = 1, accelerate = true)
-        assertEquals(24, slow)
-        assertTrue(fast > 24, "accelerated spin should move further, got $fast")
+    fun `the tracker reports raw detents however fast the spin`() {
+        // Acceleration belongs to the list (WheelAcceleration), which knows its length.
+        assertEquals(20, WheelGestureTracker().apply { down(0.0) }.sweep(0.0, 361.0, msPerDegree = 1))
     }
 
     @Test
-    fun `deliberate turns are never accelerated even where acceleration is allowed`() {
-        // ~6.7 detents/s: a normal scroll through a list. Found on device: a lone detent used to
-        // read as 8.3/s and was doubled.
-        assertEquals(6, WheelGestureTracker().apply { down(0.0) }.sweep(0.0, 91.0, msPerDegree = 10, accelerate = true))
-        assertEquals(1, WheelGestureTracker().apply { down(0.0) }.sweep(0.0, 16.0, msPerDegree = 1, accelerate = true))
+    fun `fast spins report a high velocity, slow clicks none`() {
+        var fast = 0f
+        WheelGestureTracker().apply {
+            down(0.0)
+            var t = 0L
+            for (d in 1..180) {
+                t += 1
+                val (x, y) = at(d.toDouble())
+                onMove(x, y, cx, cy, t)?.let { fast = it.velocity }
+            }
+        }
+        assertTrue(fast > 36f, "a 1000°/s spin should read as fast, got $fast")
+        var slow = -1f
+        WheelGestureTracker().apply {
+            down(0.0)
+            val (x, y) = at(19.0)
+            onMove(x, y, cx, cy, 100)?.let { slow = it.velocity }
+        }
+        assertEquals(0f, slow)
     }
 
     @Test
@@ -129,7 +141,7 @@ class WheelGestureTrackerTest {
     fun `the center never rotates`() {
         val tracker = WheelGestureTracker()
         tracker.onDown(cx, cy, cx, cy, inner, outer)
-        assertNull(tracker.onMove(cx + 50, cy, cx, cy, 10, false))
+        assertNull(tracker.onMove(cx + 50, cy, cx, cy, 10))
         assertEquals(PodiumInput.Press(WheelButton.CENTER), tracker.onUp())
     }
 }

@@ -4,6 +4,7 @@ import androidx.compose.runtime.Composable
 import app.podium.core.interaction.FocusListState
 import app.podium.core.interaction.InputTargetEffect
 import app.podium.core.interaction.PodiumInput
+import app.podium.core.interaction.WheelAcceleration
 import app.podium.core.interaction.WheelButton
 import app.podium.core.interaction.WheelContext
 import app.podium.core.interaction.rememberPodiumHaptics
@@ -23,7 +24,8 @@ fun ListInputEffect(
     InputTargetEffect(WheelContext.LIST_FOCUS) { input ->
         when (input) {
             is PodiumInput.Rotate -> {
-                if (!focus.moveBy(input.detents)) haptics.boundary()
+                val steps = input.detents * WheelAcceleration.multiplier(input.velocity, focus.itemCount)
+                if (!focus.moveBy(steps)) haptics.boundary()
                 true
             }
             is PodiumInput.Press -> if (input.button == WheelButton.CENTER) {
