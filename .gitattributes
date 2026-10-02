@@ -1,0 +1,12 @@
+* text=auto eol=lf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.jar binary
+*.png binary
+*.webp binary
+*.ttf binary
+*.otf binary
+*.flac binary
+*.mp3 binary
+*.ogg binary
+*.opus binary
