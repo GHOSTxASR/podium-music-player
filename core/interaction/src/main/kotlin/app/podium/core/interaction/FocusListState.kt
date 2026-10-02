@@ -1,6 +1,9 @@
 package app.podium.core.interaction
 
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Stable
@@ -10,6 +13,7 @@ import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import kotlin.math.abs
 import kotlin.math.max
 
 /**
@@ -61,15 +65,27 @@ class FocusListState(initialIndex: Int = 0, val listState: LazyListState = LazyL
         return if (visible.isEmpty()) IntRange.EMPTY else visible.first().index..visible.last().index
     }
 
-    /** Scroll so the focused item sits at least one row inside the readable region. */
+    /**
+     * Scroll so the focused item sits at least one row inside the readable region. A one-row step
+     * glides; anything further — a fast spin that outran the last glide — jumps, so the list is
+     * never behind the focus. Call with the latest focus only (cancel the previous call).
+     */
     suspend fun keepFocusedInView() {
         val info = listState.layoutInfo
+        val end = info.viewportEndOffset - info.afterContentPadding
         val item = info.visibleItemsInfo.firstOrNull { it.index == focusedIndex }
         if (item == null) {
-            listState.animateScrollToItem(max(0, focusedIndex - 1))
+            // The focused row isn't even laid out: place it one row inside the edge it went past.
+            val visible = info.visibleItemsInfo
+            val rowSize = visible.firstOrNull()?.size ?: 0
+            if (visible.isNotEmpty() && focusedIndex > visible.last().index && rowSize > 0) {
+                val rowsAbove = ((end - 2 * rowSize) / rowSize).coerceAtLeast(0)
+                listState.scrollToItem(max(0, focusedIndex - rowsAbove))
+            } else {
+                listState.scrollToItem(max(0, focusedIndex - 1))
+            }
             return
         }
-        val end = info.viewportEndOffset - info.afterContentPadding
         val margin = item.size
         val top = item.offset
         val bottom = item.offset + item.size
@@ -78,10 +94,16 @@ class FocusListState(initialIndex: Int = 0, val listState: LazyListState = LazyL
             bottom > end - margin && focusedIndex < itemCount - 1 -> (bottom - (end - margin)).toFloat()
             else -> 0f
         }
-        if (delta != 0f) listState.animateScrollBy(delta)
+        when {
+            delta == 0f -> Unit
+            abs(delta) <= item.size * 1.05f -> listState.animateScrollBy(delta, tween(GLIDE_MILLIS, easing = FastOutSlowInEasing))
+            else -> listState.scrollBy(delta)
+        }
     }
 
     companion object {
+        private const val GLIDE_MILLIS = 120
+
         val Saver: Saver<FocusListState, *> = listSaver(
             save = { listOf(it.focusedIndex, it.listState.firstVisibleItemIndex, it.listState.firstVisibleItemScrollOffset) },
             restore = { FocusListState(it[0], LazyListState(it[1], it[2])) },

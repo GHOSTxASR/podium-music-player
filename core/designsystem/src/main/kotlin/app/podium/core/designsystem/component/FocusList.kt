@@ -33,6 +33,7 @@ import app.podium.core.designsystem.glass.GlassTier
 import app.podium.core.designsystem.glass.LocalGlassTier
 import app.podium.core.designsystem.theme.PodiumTheme
 import app.podium.core.interaction.FocusListState
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
 /** Whether the focus lens is the solid classic bar (Solid tier): rows then draw white text. */
@@ -67,7 +68,8 @@ fun <T> FocusList(
         state.clamp()
     }
 
-    // The lens follows the focused row: animated when focus moves, glued to it while scrolling.
+    // The lens follows the focused row — animated when focus moves, glued to it while scrolling —
+    // and never leaves the readable region: at an edge it holds still and the list moves under it.
     val lensTop = remember { Animatable(0f) }
     val lensHeight = remember { Animatable(0f) }
     var lensVisible by remember { mutableStateOf(false) }
@@ -75,11 +77,16 @@ fun <T> FocusList(
         var lastMoves = state.focusMoves
         snapshotFlow {
             val info = listState.layoutInfo
+            val end = info.viewportEndOffset - info.afterContentPadding
             val item = info.visibleItemsInfo.firstOrNull { it.index == state.focusedIndex }
-            Triple(state.focusMoves, item?.let { (it.offset + info.beforeContentPadding).toFloat() }, item?.size?.toFloat())
+            val top = item?.let { it.offset.coerceIn(0, (end - it.size).coerceAtLeast(0)) + info.beforeContentPadding }
+            Triple(state.focusMoves, top?.toFloat(), item?.size?.toFloat())
         }.collect { (moves, top, height) ->
             if (top == null || height == null) {
-                lensVisible = false
+                // A spin briefly outran the layout: hold the lens where it is until the list catches
+                // up (a frame or two). Only a touch scroll that moved the row away hides it.
+                if (moves == lastMoves) lensVisible = false
+                lastMoves = moves
                 return@collect
             }
             val animate = lensVisible && moves != lastMoves && !motion.reduced
@@ -94,9 +101,9 @@ fun <T> FocusList(
             }
         }
     }
-    // Keep the focused row inside the readable region after the focus moves.
+    // Keep the focused row inside the readable region; a newer move cancels an unfinished scroll.
     LaunchedEffect(state) {
-        snapshotFlow { state.focusMoves }.collect { state.keepFocusedInView() }
+        snapshotFlow { state.focusMoves }.collectLatest { state.keepFocusedInView() }
     }
 
     Box(modifier) {
