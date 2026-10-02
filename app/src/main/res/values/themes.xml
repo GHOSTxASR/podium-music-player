@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Edge-to-edge; Compose draws everything. No Material/AppCompat theme (D-02). -->
+    <style name="Theme.Podium" parent="android:Theme.DeviceDefault.NoActionBar">
+        <item name="android:windowBackground">@color/podium_canvas</item>
+    </style>
+</resources>

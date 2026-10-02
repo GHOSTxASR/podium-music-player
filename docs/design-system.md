@@ -20,29 +20,30 @@ Evidence: `research/2026-10-02-liquid-glass-and-hig.md`, `research/2026-10-02-ty
 
 ## 1. Composition
 
-### 1.1 Compact portrait (phones) — the canonical layout
+### 1.1 Compact portrait (phones) — the canonical layout (the device, D-26)
 ```
-┌──────────────────────────────┐  status bar (system, transparent)
-│ (‹)        Albums         (⌕)│  TitleBar: floating glass controls over scroll-edge effect (52dp)
-│──────────────────────────────│
-│  Abbey Road                 ›│  Content plane — list rows (52/60/64dp)
-│ ╭────────────────────────────╮│
-│ │Kind of Blue               ›││  ← focus lens (glass, tinted) on the focused row
-│ ╰────────────────────────────╯│
-│  Rumours                    ›│
-│  …   (rows continue beneath the functional layer, progressively blurred)
-│ ╭───────────────────────────╮ │
-│ │▣ So What / Miles Davis  ⏸ │ │  MiniPlayer capsule (56dp, title over artist) — wheel accessory
-│ ╰───────────────────────────╯ │
-│           ╭───────╮            │
+┌──────────────────────────────┐  status bar (system, transparent; icon colour follows the finish)
+│ ╭──────────────────────────╮ │  Body: the window, in the chosen finish (§5.8)
+│ │(‹)       Songs         ▶ │ │  ScreenHeader inside the screen (44dp): back, title, play state
+│ │▣ Broken Tape        0:10 │ │  Virtual screen: black bezel (3dp), own canvas + atmosphere,
+│ │╭────────────────────────╮│ │    cover-glass reflection and recess shadow over the content
+│ ││▣ Coda              0:12 ││ │  ← focus lens on the focused row
+│ │╰────────────────────────╯│ │
+│ │▣ High Resolution…   0:12 │ │
+│ │╭────────────────────────╮│ │  MiniPlayer capsule inside the screen (Home/Music/Songs only)
+│ ││▣ So What / Miles D.  ⏸ ││ │
+│ │╰────────────────────────╯│ │
+│ ╰──────────────────────────╯ │
+│           ╭───────╮       (⏻) │  Power button beside the Wheel (36dp in a 48dp target)
 │        ╭──┤ MENU  ├──╮         │
-│        │⏮  ( ◯ )  ⏭│         │  The Wheel (glass), diameter D
+│        │⏮  ( ◯ )  ⏭│         │  The Wheel, D = clamp(0.62 × width, 216, 300), ≤ 0.34 × height
 │        ╰──┤  ⏯   ├──╯         │
 │           ╰───────╯            │
 └──────────────────────────────┘  gesture nav inset
 ```
-- **Readable region** = window − status bar − TitleBar − (MiniPlayer + gap + Wheel + bottom inset). Focus is always kept inside it (§6.2).
-- Lists get `contentPadding.bottom = functionalStackHeight + 8dp` so the last row can scroll into the readable region.
+- The screen takes all height the Wheel doesn't: window − system bars − 8dp − 2 × 18dp − D.
+- **Readable region** = screen − ScreenHeader − (MiniPlayer + 16dp when shown). Lists pad by `LocalScreenInsets`; content fades under the header and mini player (§5.5), inside the screen only.
+- Power: off = black screen and paused playback; on = boot (§5.8); any Wheel press also wakes it.
 
 ### 1.2 Compact landscape (phones)
 `[ Screen (flexible) | Wheel column (D = clamp(0.78 × height, 220, 300)) ]`. Wheel on the right (left if left-handed). In Music/Albums contexts the screen shows **Album Flow**. MiniPlayer moves to the top of the wheel column as a narrower capsule.
@@ -194,6 +195,21 @@ Top (under TitleBar, 96dp) and bottom (above the functional stack, 120dp): progr
 
 ### 5.6 Background extension (Now Playing)
 Below the artwork: the artwork mirrored vertically, blurred 48dp, opacity 30% (dark) / 18% (light), masked by a vertical fade to transparent over 280dp. Gives the Wheel real content to refract (Apple's background extension effect). Not drawn in Solid tier.
+
+### 5.8 Device finishes (D-26)
+| Finish | Base (sRGB) | Wheel |
+|---|---|---|
+| Glass | — (atmosphere + blurred artwork behind glass) | Liquid Glass ring and center |
+| Steel gray | `#5A5F66` | deeper ring, light legends |
+| Burgundy | `#5C1D2B` | deeper ring, light legends |
+| Glacier blue | `#B4CFDF` | paler ring (white-wheel look), dark legends |
+| Silver | `#D6D8DB` | paler ring, dark legends |
+| Custom color | any `#RRGGBB` | derived the same way |
+
+- Solid palettes are derived in OKLCH from the base: body top +0.035 L / bottom −0.055 L, one diagonal sheen, ring ±L by lightness (L > 0.62 = light body), center = base. Grain (0–100 %, default 25 %) is a fixed, seeded, zero-mean noise tile overlaid on body, ring, center and power button.
+- Choosing a finish previews it live on the device as the focus moves; Center keeps it, Menu restores the old one. Custom color: type a hex code or walk the hue with the Wheel (lightness and chroma held, so a full turn returns to the start).
+- The screen is a text container, never glass; the power button is a control and is glass on the Glass finish.
+- Boot: black screen, the mark's ring sweeps closed (640 ms, emphasized decelerate), the center lands (spring), the wordmark fades in; ~1.7 s, 0.9 s static with reduced motion. The chime (`res/raw/podium_boot.ogg`, original, generated) plays as a UI sound: system-sounds volume, silent on silent/vibrate, skipped when music is playing, toggle in Settings ▸ Startup sound.
 
 ### 5.7 Enforcement
 Lint rule (custom detector in `build-logic`): `Modifier.blur`, `RenderEffect`, `RuntimeShader`, and `com.kyant.backdrop.*` are errors outside `:core:designsystem`. A debug overlay counts simultaneous glass surfaces; > 5 persistent surfaces logs a warning.

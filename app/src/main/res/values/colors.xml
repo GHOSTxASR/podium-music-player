@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="podium_canvas">#F5F7F9</color>
+    <color name="podium_icon_background">#0C0E13</color>
+</resources>
