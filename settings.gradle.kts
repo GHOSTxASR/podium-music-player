@@ -1,0 +1,24 @@
+pluginManagement {
+    includeBuild("build-logic")
+    repositories {
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+rootProject.name = "podium"
+
+// Pure Kotlin domain modules (ADR-012): no Android imports.
+include(":core:model")
+include(":core:common")
+include(":sources:api")
+include(":player:api")
