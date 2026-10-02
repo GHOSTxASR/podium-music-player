@@ -51,6 +51,8 @@ data class CapabilityState(
     val status: CapabilityStatus,
     /** User-facing explanation when not AVAILABLE, in sentence case. */
     val note: String? = null,
+    /** What the user can do about it. Rendered generically; the UI never knows the provider. */
+    val action: CapabilityAction? = null,
 ) {
     companion object {
         val Available = CapabilityState(CapabilityStatus.AVAILABLE)
@@ -94,6 +96,14 @@ data class SourceCapabilities(val states: Map<Capability, CapabilityState>) {
         fun available(vararg capabilities: Capability) =
             SourceCapabilities(capabilities.associateWith { CapabilityState.Available })
     }
+}
+
+/** A user action that can make a capability usable. */
+sealed interface CapabilityAction {
+    /** An Android runtime permission (e.g. music access). */
+    data class RequestPermission(val permission: String, val label: String) : CapabilityAction
+    data class SignIn(val label: String) : CapabilityAction
+    data class InstallApp(val packageName: String, val label: String) : CapabilityAction
 }
 
 /** Per-track download permission (a source may allow downloads but not for this track). */

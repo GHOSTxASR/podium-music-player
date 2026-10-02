@@ -22,3 +22,7 @@ include(":core:model")
 include(":core:common")
 include(":sources:api")
 include(":player:api")
+
+// Android modules
+include(":player:service")
+include(":sources:test")
