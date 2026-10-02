@@ -100,10 +100,14 @@ class TestMusicSource(
         cheapResolve = true,
     )
 
+    // The mirror is catalog-only: it exists to be found by fallback, not to fill the library.
     override val capabilities: StateFlow<SourceCapabilities> = MutableStateFlow(
-        SourceCapabilities.available(
-            Capability.SEARCH, Capability.BROWSE, Capability.LIBRARY, Capability.DIRECT_STREAM, Capability.ARTWORK,
-        ),
+        when (variant) {
+            Variant.PRIMARY -> SourceCapabilities.available(
+                Capability.SEARCH, Capability.BROWSE, Capability.LIBRARY, Capability.DIRECT_STREAM, Capability.ARTWORK,
+            )
+            Variant.MIRROR -> SourceCapabilities.available(Capability.SEARCH, Capability.DIRECT_STREAM, Capability.ARTWORK)
+        },
     )
 
     private data class Spec(
@@ -177,7 +181,7 @@ class TestMusicSource(
         ArtistSummary(id, ts.first().artistDisplay, trackCount = ts.size)
     }
 
-    override val library: LibraryFacet = object : LibraryFacet {
+    override val library: LibraryFacet? = if (variant == Variant.MIRROR) null else object : LibraryFacet {
         override fun tracks(): Flow<List<Track>> = flowOf(tracks)
         override fun albums(): Flow<List<AlbumSummary>> = flowOf(this@TestMusicSource.albums())
         override fun artists(): Flow<List<ArtistSummary>> = flowOf(this@TestMusicSource.artists())
@@ -241,7 +245,12 @@ class TestMusicSource(
         override suspend fun load(ref: ArtworkRef, sizePx: Int): ArtworkPayload? = withContext(Dispatchers.IO) {
             val albumKey = ref.key.removePrefix("album/")
             val file = File(artDir, "$albumKey-$sizePx.png")
-            if (!file.exists()) renderArtwork(albumKey, sizePx, file)
+            if (!file.exists()) {
+                // Rows load the same cover concurrently: render privately, then publish atomically.
+                val tmp = File.createTempFile("$albumKey-$sizePx", ".part", artDir.apply { mkdirs() })
+                renderArtwork(albumKey, sizePx, tmp)
+                if (!tmp.renameTo(file)) tmp.delete()
+            }
             ArtworkPayload.LocalFile(file.absolutePath)
         }
     }

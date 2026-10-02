@@ -29,6 +29,7 @@ class AndroidLibraryConventionPlugin : Plugin<Project> {
             add("implementation", libs.lib("kotlinx-coroutines-android"))
             add("testImplementation", libs.lib("junit"))
             add("testImplementation", libs.lib("kotlin-test"))
+            add("testImplementation", libs.lib("kotlin-test-junit"))
             add("testImplementation", libs.lib("kotlinx-coroutines-test"))
             add("testImplementation", libs.lib("robolectric"))
             add("testImplementation", libs.lib("androidx-test-core"))

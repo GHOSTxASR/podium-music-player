@@ -26,3 +26,4 @@ include(":player:api")
 // Android modules
 include(":player:service")
 include(":sources:test")
+include(":sources:local")

@@ -5,6 +5,7 @@ package app.podium.player.service
 import android.content.Intent
 import android.os.Bundle
 import androidx.annotation.OptIn
+import androidx.media3.common.FlagSet
 import androidx.media3.common.ForwardingPlayer
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
@@ -22,7 +23,12 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.guava.future
+import kotlinx.coroutines.launch
+import java.util.concurrent.CopyOnWriteArraySet
 
 /**
  * Background playback (ADR-003): a MediaLibraryService hosting the engine's player. System UI,
@@ -38,7 +44,7 @@ class PlaybackService : MediaLibraryService() {
         super.onCreate()
         val deps = (application as PlaybackDependencies.Provider).playbackDependencies
         engine = PodiumPlaybackEngine(this, deps)
-        val sessionPlayer = QueueRoutingPlayer(engine)
+        val sessionPlayer = QueueRoutingPlayer(engine, scope)
         val builder = MediaLibrarySession.Builder(this, sessionPlayer, SessionCallback())
             .setBitmapLoader(CacheBitmapLoader(PodiumBitmapLoader(this, deps.artwork)))
         deps.sessionActivity(this)?.let(builder::setSessionActivity)
@@ -132,7 +138,37 @@ class PlaybackService : MediaLibraryService() {
  * queue rather than ExoPlayer's hidden shuffle order (ADR-006).
  */
 @UnstableApi
-internal class QueueRoutingPlayer(private val engine: PodiumPlaybackEngine) : ForwardingPlayer(engine.player) {
+internal class QueueRoutingPlayer(
+    private val engine: PodiumPlaybackEngine,
+    scope: CoroutineScope,
+) : ForwardingPlayer(engine.player) {
+
+    private val listeners = CopyOnWriteArraySet<Player.Listener>()
+
+    init {
+        // ExoPlayer's own shuffle stays off, so it never reports a change: report the queue's.
+        // Without this, the session (and every controller) keeps the shuffle state it saw at connect.
+        scope.launch {
+            engine.queue.state.map { it.shuffleEnabled }.distinctUntilChanged().drop(1).collect { enabled ->
+                val events = Player.Events(FlagSet.Builder().add(Player.EVENT_SHUFFLE_MODE_ENABLED_CHANGED).build())
+                listeners.forEach {
+                    it.onShuffleModeEnabledChanged(enabled)
+                    it.onEvents(this@QueueRoutingPlayer, events)
+                }
+            }
+        }
+    }
+
+    override fun addListener(listener: Player.Listener) {
+        super.addListener(listener)
+        listeners += listener
+    }
+
+    override fun removeListener(listener: Player.Listener) {
+        super.removeListener(listener)
+        listeners -= listener
+    }
+
     override fun setShuffleModeEnabled(shuffleModeEnabled: Boolean) = engine.setShuffle(shuffleModeEnabled)
 
     override fun getShuffleModeEnabled(): Boolean = engine.queue.state.value.shuffleEnabled

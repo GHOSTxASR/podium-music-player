@@ -21,6 +21,10 @@ import app.podium.sources.api.matching.MatchTier
 import app.podium.sources.api.matching.TrackMatcher
 import app.podium.sources.api.resolve.StreamResolver
 import app.podium.sources.test.TestMusicSource
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Test
@@ -157,5 +161,33 @@ class PlaybackPipelineTest {
         engine.clearUpcoming()
         engine.assertMirrorsPlayer()
         assertTrue(engine.queue.state.value.upNext.isEmpty())
+    }
+
+    @Test
+    fun `the session player reports the queue's shuffle state to controllers`() {
+        // Found on device: Up Next showed shuffle off after "Shuffle songs", because ExoPlayer's
+        // own shuffle never changes and so the session never re-read it.
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+        try {
+            val sessionPlayer = QueueRoutingPlayer(engine, scope)
+            val seen = mutableListOf<Boolean>()
+            sessionPlayer.addListener(object : Player.Listener {
+                override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
+                    seen += shuffleModeEnabled
+                }
+            })
+            shadowOf(Looper.getMainLooper()).idle()
+            runBlocking {
+                engine.playContext(listOf("Tuning Fork", "Major Triad", "Minor Turn").map { t(it).id }, 0, "Test", shuffle = true)
+            }
+            shadowOf(Looper.getMainLooper()).idle()
+            assertTrue(sessionPlayer.shuffleModeEnabled)
+            sessionPlayer.shuffleModeEnabled = false
+            shadowOf(Looper.getMainLooper()).idle()
+            assertEquals(listOf(true, false), seen)
+            engine.assertMirrorsPlayer()
+        } finally {
+            scope.cancel()
+        }
     }
 }
