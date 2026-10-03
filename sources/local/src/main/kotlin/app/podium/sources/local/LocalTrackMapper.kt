@@ -35,6 +35,8 @@ data class MediaStoreRow(
     val mimeType: String?,
     val bitrate: Int?,
     val sizeBytes: Long?,
+    /** Folder relative to the storage root, slash-terminated ("Music/Albums/"); null if unknown. */
+    val relativePath: String? = null,
 )
 
 /** MediaStore row → provider-neutral Track. Everything MediaStore reports is treated as a *claim*. */

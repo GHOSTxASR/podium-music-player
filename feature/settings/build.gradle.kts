@@ -10,5 +10,6 @@ android {
 dependencies {
     implementation(project(":core:designsystem"))
     implementation(project(":core:interaction"))
+    implementation(project(":sources:api"))
     implementation(libs.androidx.lifecycle.runtime.compose)
 }

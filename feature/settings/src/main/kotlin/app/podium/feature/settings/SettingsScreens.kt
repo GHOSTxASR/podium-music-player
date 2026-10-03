@@ -72,19 +72,25 @@ import app.podium.core.interaction.rememberFocusListState
 import app.podium.core.interaction.rememberPodiumHaptics
 import kotlin.math.roundToInt
 
-private enum class SettingsRow { Theme, Finish, CustomColor, Grain, StartupSound }
+private enum class SettingsRow { Theme, Finish, CustomColor, Grain, MusicFolders, Haptics, Clicks, StartupSound }
 
-/** Settings (D-26): the device's finish and startup sound. */
+/** Settings (D-26, D-32): the device's look, which folders hold its music, and how it answers touch. */
 @Composable
 fun SettingsScreen(
     repository: DeviceSettingsRepository,
+    folders: MusicFolderSettings,
     onTheme: () -> Unit,
     onFinish: () -> Unit,
     onCustomColor: () -> Unit,
     onGrain: () -> Unit,
+    onMusicFolders: () -> Unit,
 ) {
     val appearance by repository.appearance.collectAsStateWithLifecycle()
     val startupSound by repository.startupSound.collectAsStateWithLifecycle()
+    val hapticsOn by repository.haptics.collectAsStateWithLifecycle()
+    val clicksOn by repository.clicks.collectAsStateWithLifecycle()
+    val folderList by folders.folders.collectAsStateWithLifecycle()
+    val selection by folders.selection.collectAsStateWithLifecycle()
     val haptics = rememberPodiumHaptics()
     val rows = SettingsRow.entries
     val focus = rememberFocusListState("settings")
@@ -95,6 +101,15 @@ fun SettingsScreen(
             SettingsRow.Finish -> if (industrial) haptics.reject() else onFinish()
             SettingsRow.CustomColor -> if (industrial) haptics.reject() else onCustomColor()
             SettingsRow.Grain -> if (appearance.isGlass) haptics.reject() else onGrain()
+            SettingsRow.MusicFolders -> onMusicFolders()
+            SettingsRow.Haptics -> {
+                repository.setHaptics(!hapticsOn)
+                haptics.confirm()
+            }
+            SettingsRow.Clicks -> {
+                haptics.confirm()
+                repository.setClicks(!clicksOn)
+            }
             SettingsRow.StartupSound -> {
                 haptics.confirm()
                 repository.setStartupSound(!startupSound)
@@ -142,6 +157,17 @@ fun SettingsScreen(
                 enabled = !appearance.isGlass,
                 showChevron = !appearance.isGlass,
             )
+            SettingsRow.MusicFolders -> MenuRow(
+                "Music folders",
+                focused,
+                value = when {
+                    folderList == null -> null
+                    selection == app.podium.sources.api.FolderSelection.Everything -> "All"
+                    else -> "${songsIncluded(folderList.orEmpty(), selection)} songs"
+                },
+            )
+            SettingsRow.Haptics -> MenuRow("Haptics", focused, value = if (hapticsOn) "On" else "Off", showChevron = false)
+            SettingsRow.Clicks -> MenuRow("Click sound", focused, value = if (clicksOn) "On" else "Off", showChevron = false)
             SettingsRow.StartupSound -> MenuRow("Startup sound", focused, value = if (startupSound) "On" else "Off", showChevron = false)
         }
     }

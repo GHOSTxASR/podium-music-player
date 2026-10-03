@@ -24,7 +24,12 @@ import app.podium.sources.local.LocalMusicSource
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import app.podium.core.designsystem.shell.BootCheck
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 
 /**
  * The composition root (ADR-009): every long-lived object is built here, once. Nothing below this
@@ -59,7 +64,16 @@ class AppGraph(private val context: Context) {
     val artworkLoader = ResolvingArtworkLoader(artwork)
     val deviceSettings = SharedPrefsDeviceSettings(context)
     val favorites = DatabaseFavorites(database, appScope).also { LegacyFavorites.moveInto(context, it, appScope) }
-    private val chime = BootChime(context)
+    /** The startup chord and the Wheel's clicks (D-32). */
+    val sounds = DeviceSounds(context)
+
+    /** Music folders, for whichever library source reads from storage (D-32). */
+    val musicFolders = RegistryMusicFolders(registry, appScope)
+
+    /** The boot self-test's lines, with real values; the library count arrives when known. */
+    val bootChecks: StateFlow<List<BootCheck>> = libraryStore.songCount()
+        .map { count -> BootReport.checks(context, count) }
+        .stateIn(appScope, SharingStarted.Eagerly, BootReport.checks(context, null))
 
     /** The virtual device's power (D-26). A fresh process starts by booting; the activity coming
      *  and going doesn't reboot it. */
@@ -81,9 +95,10 @@ class AppGraph(private val context: Context) {
         if (power.value == Power.OFF) power.value = Power.BOOTING
     }
 
-    fun onBootStarted() {
+    /** The mark appears: the startup chord, unless it's off or music is already playing. */
+    fun onBootChime() {
         val playing = playbackController.snapshot.value.intent == PlayIntent.PLAY
-        if (deviceSettings.startupSound.value && !playing) chime.play()
+        if (deviceSettings.startupSound.value && !playing) sounds.playChord()
     }
 
     fun onBootFinished() {

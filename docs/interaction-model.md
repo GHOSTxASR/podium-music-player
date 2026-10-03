@@ -93,6 +93,8 @@ Global (when not consumed by the target): `Press(PLAY_PAUSE)` → toggle · `Pre
 | Disallowed action (e.g., Download on a non-permitted track) | `reject` |
 Touch taps on rows: no haptic (system default only). Haptics off → no other behaviour changes.
 
+Settings (D-32): **Haptics** (on by default; on top of the system touch-feedback setting) and **Click sound** (off by default, D-08). The click pairs with the haptics: `detent` and `step` play a short tick (`res/raw/podium_click.ogg`, rate-limited to one per 24 ms so a fast spin purrs), `press` a firmer click (`podium_press.ogg`). Both sounds are original and synthesized; they play as UI sounds and stay quiet on silent/vibrate. Code: `Feedback`/`LocalFeedback` and `Clicker` in `:core:interaction`; `DeviceSounds` in the app.
+
 ## 7. Debounce & robustness
 - `Press(CENTER)` on the same target within 400 ms after an activation is ignored (prevents double-play / double-push).
 - Navigation pushes ignore input to the outgoing screen once the transition starts; the incoming screen receives input immediately (you can rotate during the slide).

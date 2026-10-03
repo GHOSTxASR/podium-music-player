@@ -112,6 +112,9 @@ class LibraryStore(
 
     suspend fun track(id: TrackId): Track? = dao.track(id.value)?.let(::decode)
 
+    /** How many songs the library holds, across sources. */
+    fun songCount(): Flow<Int> = dao.librarySongCount()
+
     suspend fun tracks(ids: Collection<TrackId>): Map<TrackId, Track> =
         ids.map { it.value }.distinct().chunked(CHUNK).flatMap { dao.tracks(it) }.associate { TrackId(it.id) to decode(it) }
 

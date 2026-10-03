@@ -38,8 +38,11 @@ import app.podium.sources.api.CapabilityState
 import app.podium.sources.api.CapabilityStatus
 import app.podium.sources.api.CatalogFacet
 import app.podium.sources.api.FacetResolution
+import app.podium.sources.api.FolderFacet
+import app.podium.sources.api.FolderSelection
 import app.podium.sources.api.LibraryFacet
 import app.podium.sources.api.MissReason
+import app.podium.sources.api.MusicFolder
 import app.podium.sources.api.MusicSource
 import app.podium.sources.api.PlayableMedia
 import app.podium.sources.api.PlaybackFacet
@@ -51,6 +54,8 @@ import app.podium.sources.api.SearchResults
 import app.podium.sources.api.SourceCapabilities
 import app.podium.sources.api.SourceDescriptor
 import app.podium.sources.api.matching.TrackNormalizer
+import java.io.File
+import java.io.FileOutputStream
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -64,8 +69,6 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.File
-import java.io.FileOutputStream
 
 /**
  * Music files on this device, through Android's media library (MediaStore).
@@ -92,6 +95,11 @@ class LocalMusicSource(context: Context, private val scope: CoroutineScope) : Mu
 
     private val _capabilities = MutableStateFlow(computeCapabilities())
     override val capabilities: StateFlow<SourceCapabilities> = _capabilities.asStateFlow()
+
+    /** Which folders are read (D-32), kept with the source's own settings. */
+    private val prefs = appContext.getSharedPreferences("local_source", Context.MODE_PRIVATE)
+    private val _selection = MutableStateFlow(loadSelection())
+    private val _folders = MutableStateFlow<List<MusicFolder>?>(null)
 
     /** Null until the first scan completes. */
     private val _tracks = MutableStateFlow<List<Track>?>(null)
@@ -146,6 +154,7 @@ class LocalMusicSource(context: Context, private val scope: CoroutineScope) : Mu
                     MediaStore.Audio.Media.ALBUM, MediaStore.Audio.Media.ALBUM_ID, MediaStore.Audio.Media.ARTIST_ID,
                     MediaStore.Audio.Media.DURATION, MediaStore.Audio.Media.TRACK, MediaStore.Audio.Media.YEAR,
                     MediaStore.Audio.Media.MIME_TYPE, MediaStore.Audio.Media.SIZE,
+                    MediaStore.MediaColumns.RELATIVE_PATH,
                 ),
             )
             if (api30) {
@@ -183,6 +192,7 @@ class LocalMusicSource(context: Context, private val scope: CoroutineScope) : Mu
                         mimeType = c.string(MediaStore.Audio.Media.MIME_TYPE),
                         bitrate = if (api30) c.int(MediaStore.Audio.Media.BITRATE) else null,
                         sizeBytes = c.long(MediaStore.Audio.Media.SIZE),
+                        relativePath = c.string(MediaStore.MediaColumns.RELATIVE_PATH),
                     )
                 }
             }
@@ -190,7 +200,36 @@ class LocalMusicSource(context: Context, private val scope: CoroutineScope) : Mu
             Log.w(TAG, "No permission to read the media library", e)
             return emptyList()
         }
-        return rows.map(LocalTrackMapper::toTrack)
+        // Every folder with music is listed (chosen or not); only chosen folders reach the library.
+        _folders.value = rows.groupingBy { FolderSelection.normalize(it.relativePath.orEmpty()) }.eachCount()
+            .map { (path, count) -> MusicFolder(path, count) }
+            .sortedBy { it.path.lowercase() }
+        val selection = _selection.value
+        return rows.filter { selection.includes(it.relativePath.orEmpty()) }.map(LocalTrackMapper::toTrack)
+    }
+
+    private fun loadSelection(): FolderSelection {
+        if (!prefs.contains(KEY_INCLUDED) && !prefs.contains(KEY_EXCLUDED)) return FolderSelection.Default
+        return FolderSelection(
+            included = prefs.getStringSet(KEY_INCLUDED, emptySet()).orEmpty().toSet(),
+            excluded = prefs.getStringSet(KEY_EXCLUDED, emptySet()).orEmpty().toSet(),
+        )
+    }
+
+    override val folders: FolderFacet = object : FolderFacet {
+        override fun folders(): Flow<List<MusicFolder>> = _folders.onStart { if (_folders.value == null) refresh() }.filterNotNull()
+
+        override val selection: StateFlow<FolderSelection> = _selection.asStateFlow()
+
+        override fun select(selection: FolderSelection) {
+            if (selection == _selection.value) return
+            _selection.value = selection
+            prefs.edit()
+                .putStringSet(KEY_INCLUDED, selection.included)
+                .putStringSet(KEY_EXCLUDED, selection.excluded)
+                .apply()
+            refresh()
+        }
     }
 
     private fun currentTracks(): List<Track> = _tracks.value.orEmpty()
@@ -316,5 +355,7 @@ class LocalMusicSource(context: Context, private val scope: CoroutineScope) : Mu
 
     private companion object {
         const val TAG = "LocalMusicSource"
+        const val KEY_INCLUDED = "folders_included"
+        const val KEY_EXCLUDED = "folders_excluded"
     }
 }

@@ -82,6 +82,9 @@ interface LibraryDao {
     @Query("SELECT * FROM track WHERE id = :id")
     suspend fun track(id: String): TrackEntity?
 
+    @Query("SELECT COUNT(*) FROM track WHERE in_library = 1")
+    fun librarySongCount(): Flow<Int>
+
     @Query("SELECT * FROM track WHERE id IN (:ids)")
     suspend fun tracks(ids: List<String>): List<TrackEntity>
 

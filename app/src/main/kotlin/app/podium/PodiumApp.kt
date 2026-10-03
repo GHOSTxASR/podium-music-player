@@ -92,12 +92,14 @@ import app.podium.core.designsystem.theme.AtmosphereBackground
 import app.podium.core.designsystem.theme.PodiumMotion
 import app.podium.core.designsystem.theme.PodiumTheme
 import app.podium.core.designsystem.theme.Spacing
+import app.podium.core.interaction.Clicker
+import app.podium.core.interaction.Feedback
 import app.podium.core.interaction.InputRouter
+import app.podium.core.interaction.LocalFeedback
 import app.podium.core.interaction.LocalInputRouter
 import app.podium.core.interaction.PodiumHaptics
 import app.podium.core.interaction.PodiumInput
 import app.podium.core.interaction.WheelButton
-import app.podium.core.interaction.rememberPodiumHaptics
 import app.podium.core.model.AlbumId
 import app.podium.core.model.ArtistId
 import app.podium.core.model.Track
@@ -118,6 +120,7 @@ import app.podium.feature.nowplaying.UpNextScreen
 import app.podium.feature.settings.CustomColorScreen
 import app.podium.feature.settings.FinishScreen
 import app.podium.feature.settings.GrainScreen
+import app.podium.feature.settings.MusicFoldersScreen
 import app.podium.feature.settings.SettingsScreen
 import app.podium.feature.settings.ThemeScreen
 import app.podium.player.api.PlayIntent
@@ -150,6 +153,9 @@ sealed interface Dest {
     data object CustomColor : Dest
     data class Album(val id: AlbumId) : Dest
     data class Artist(val id: ArtistId) : Dest
+
+    /** A level of the music-folder tree in Settings ("" is the top). */
+    data class MusicFolders(val path: String) : Dest
 }
 
 private val fixedDests = listOf(
@@ -160,12 +166,14 @@ private val fixedDests = listOf(
 private fun Dest.encode(): String = when (this) {
     is Dest.Album -> "Album:${id.value}"
     is Dest.Artist -> "Artist:${id.value}"
+    is Dest.MusicFolders -> "MusicFolders:$path"
     else -> toString()
 }
 
 private fun decodeDest(text: String): Dest? = when {
     text.startsWith("Album:") -> Dest.Album(AlbumId(text.removePrefix("Album:")))
     text.startsWith("Artist:") -> Dest.Artist(ArtistId(text.removePrefix("Artist:")))
+    text.startsWith("MusicFolders:") -> Dest.MusicFolders(text.removePrefix("MusicFolders:"))
     else -> fixedDests[text]
 }
 
@@ -187,6 +195,7 @@ private fun titleOf(dest: Dest, graph: AppGraph): String = when (dest) {
     Dest.NowPlaying -> "Now Playing"
     Dest.UpNext -> "Up Next"
     Dest.Settings -> "Settings"
+    is Dest.MusicFolders -> if (dest.path.isEmpty()) "Music folders" else dest.path.trimEnd('/').substringAfterLast('/')
     Dest.Theme -> "Theme"
     Dest.Finish -> "Finish"
     Dest.Grain -> "Grain"
@@ -223,7 +232,11 @@ fun PodiumApp(graph: AppGraph, onSourceAction: (CapabilityAction) -> Unit) {
         val navigator = remember(backStack) { Navigator(backStack) }
         val router = remember { InputRouter() }
         val overlay = remember { OverlayHost() }
-        val haptics = rememberPodiumHaptics()
+        val hapticsOn by graph.deviceSettings.haptics.collectAsStateWithLifecycle()
+        val clicksOn by graph.deviceSettings.clicks.collectAsStateWithLifecycle()
+        val feedback = remember(hapticsOn, clicksOn) { Feedback(haptics = hapticsOn, clicker = if (clicksOn) graph.sounds else Clicker.Silent) }
+        val view = LocalView.current
+        val haptics = remember(view, feedback) { PodiumHaptics(view, feedback) }
         val scope = rememberCoroutineScope()
 
         SystemBarIcons(darkIcons = palette.isLight)
@@ -246,6 +259,7 @@ fun PodiumApp(graph: AppGraph, onSourceAction: (CapabilityAction) -> Unit) {
             LocalInputRouter provides router,
             LocalOverlayHost provides overlay,
             LocalArtworkLoader provides graph.artworkLoader,
+            LocalFeedback provides feedback,
         ) {
             // One structure for every finish, so trying finishes on never rebuilds the screen.
             GlassHost(
@@ -262,7 +276,10 @@ fun PodiumApp(graph: AppGraph, onSourceAction: (CapabilityAction) -> Unit) {
                             ) { state ->
                                 when (state) {
                                     Power.OFF -> Box(Modifier.fillMaxSize().background(Color.Black).semantics { contentDescription = "Display off" })
-                                    Power.BOOTING -> BootScreen(onStart = graph::onBootStarted, onFinished = graph::onBootFinished)
+                                    Power.BOOTING -> {
+                                        val checks by graph.bootChecks.collectAsStateWithLifecycle()
+                                        BootScreen(checks = checks, onChime = graph::onBootChime, onFinished = graph::onBootFinished)
+                                    }
                                     Power.ON -> ScreenOs(graph, snapshot, backStack, navigator, overlay, atmosphere, onSourceAction)
                                 }
                             }
@@ -531,11 +548,14 @@ private fun ScreenContent(
         Dest.UpNext -> UpNextScreen(controller)
         Dest.Settings -> SettingsScreen(
             repository = settings,
+            folders = graph.musicFolders,
             onTheme = { navigator.push(Dest.Theme) },
             onFinish = { navigator.push(Dest.Finish) },
             onCustomColor = { navigator.push(Dest.CustomColor) },
             onGrain = { navigator.push(Dest.Grain) },
+            onMusicFolders = { navigator.push(Dest.MusicFolders("")) },
         )
+        is Dest.MusicFolders -> MusicFoldersScreen(graph.musicFolders, screen.path, onOpen = { navigator.push(Dest.MusicFolders(it)) })
         Dest.Theme -> ThemeScreen(settings)
         Dest.Finish -> FinishScreen(settings, onCustomColor = { navigator.push(Dest.CustomColor) })
         Dest.Grain -> GrainScreen(settings)

@@ -35,6 +35,22 @@ class SharedPrefsDeviceSettings(context: Context) : DeviceSettingsRepository {
     private val _startupSound = MutableStateFlow(prefs.getBoolean(KEY_SOUND, true))
     override val startupSound: StateFlow<Boolean> = _startupSound.asStateFlow()
 
+    private val _haptics = MutableStateFlow(prefs.getBoolean(KEY_HAPTICS, true))
+    override val haptics: StateFlow<Boolean> = _haptics.asStateFlow()
+
+    private val _clicks = MutableStateFlow(prefs.getBoolean(KEY_CLICKS, false))
+    override val clicks: StateFlow<Boolean> = _clicks.asStateFlow()
+
+    override fun setHaptics(enabled: Boolean) {
+        _haptics.value = enabled
+        prefs.edit { putBoolean(KEY_HAPTICS, enabled) }
+    }
+
+    override fun setClicks(enabled: Boolean) {
+        _clicks.value = enabled
+        prefs.edit { putBoolean(KEY_CLICKS, enabled) }
+    }
+
     override fun setAppearance(appearance: DeviceAppearance) {
         _appearance.value = appearance
         prefs.edit {
@@ -60,5 +76,7 @@ class SharedPrefsDeviceSettings(context: Context) : DeviceSettingsRepository {
         const val KEY_GRAIN = "grain"
         const val KEY_SOUND = "startup_sound"
         const val KEY_DISPLAY = "display_theme"
+        const val KEY_HAPTICS = "haptics"
+        const val KEY_CLICKS = "clicks"
     }
 }

@@ -23,4 +23,7 @@ interface MusicSource {
     val recommendations: RecommendationFacet? get() = null
     val downloads: DownloadFacet? get() = null
     val auth: AuthFacet? get() = null
+
+    /** For libraries read from storage: which folders are read (D-32). */
+    val folders: FolderFacet? get() = null
 }
