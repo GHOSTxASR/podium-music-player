@@ -64,6 +64,25 @@ class QueueManager(
         return listOf(QueueOp.ReplaceAll(items, current))
     }
 
+    /**
+     * Bring back a queue saved in an earlier run (D-31). Every slot gets a fresh id; nothing is
+     * pinned (resolutions don't outlive a run). Ignored unless the queue is empty, so a restore that
+     * finishes after the listener already started something never replaces it.
+     */
+    fun restore(saved: SavedQueue): List<QueueOp> {
+        if (!s.isEmpty) return emptyList()
+        val items = saved.items.map { QueueItem(newUid(), it.track, it.origin, originalOrder = it.originalOrder) }
+        _state.value = QueueState(
+            items = items,
+            currentIndex = saved.currentIndex,
+            repeatMode = saved.repeatMode,
+            shuffleEnabled = saved.shuffleEnabled,
+            context = saved.contextLabel?.let(::PlayContext),
+        )
+        checkInvariants()
+        return listOf(QueueOp.ReplaceAll(items, saved.currentIndex))
+    }
+
     /** Insert right after the current item ("Play Next"); newest first. */
     fun playNext(tracks: List<Track>): List<QueueOp> {
         if (tracks.isEmpty()) return emptyList()

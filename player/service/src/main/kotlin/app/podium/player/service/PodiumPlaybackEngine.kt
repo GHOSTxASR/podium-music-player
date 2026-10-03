@@ -19,31 +19,37 @@ import androidx.media3.datasource.ResolvingDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.MediaSource
+import app.podium.core.common.Outcome
 import app.podium.core.common.PodiumError
 import app.podium.core.model.QueueUid
 import app.podium.core.model.TrackId
-import app.podium.core.common.Outcome
 import app.podium.player.api.PlayContext
 import app.podium.player.api.QueueItemResolver
 import app.podium.player.api.QueueManager
 import app.podium.player.api.QueueOp
 import app.podium.player.api.RepeatMode
+import app.podium.player.api.persistedShape
 import app.podium.sources.api.PlaybackTarget
 import app.podium.sources.api.Purpose
 import app.podium.sources.api.resolve.ResolveOutcome
 import app.podium.sources.api.resolve.Selection
+import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChangedBy
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
-import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Owns ExoPlayer and keeps it a mirror of the [QueueManager] (ADR-006).
@@ -116,7 +122,70 @@ class PodiumPlaybackEngine(
             }
 
             override fun onPlayerError(error: PlaybackException) = handleError(error)
+
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                if (isPlaying) keepPositionSaved() else savePosition()
+            }
         })
+        restoreSavedQueue()
+        saveQueueChanges()
+    }
+
+    // --- Across runs (D-31) ------------------------------------------------------------------------
+
+    private var positionJob: Job? = null
+
+    /**
+     * Bring back the queue from the last run, paused where it stopped. The player isn't prepared,
+     * so nothing is opened or buffered until the listener presses play (the session prepares on
+     * play). A command that arrives first wins; the restore then does nothing.
+     */
+    private fun restoreSavedQueue() {
+        val store = deps.queueStore ?: return
+        scope.launch {
+            val saved = runCatching { store.load() }.onFailure { Log.w(TAG, "could not load the saved queue", it) }.getOrNull() ?: return@launch
+            val ops = queue.restore(saved)
+            if (ops.isEmpty()) return@launch
+            deps.catalog.remember(saved.items.map { it.track })
+            apply(ops)
+            player.seekTo(saved.currentIndex, saved.positionMs)
+            setRepeat(saved.repeatMode)
+            Log.d(TAG, "restored ${saved.items.size} queued songs")
+        }
+    }
+
+    /** Save the queue whenever its contents, order, current song or modes change (not on pins). */
+    @OptIn(FlowPreview::class)
+    private fun saveQueueChanges() {
+        val store = deps.queueStore ?: return
+        scope.launch {
+            queue.state
+                .distinctUntilChangedBy { it.persistedShape }
+                .drop(1) // the empty queue a fresh engine starts with isn't news
+                .debounce(SAVE_DEBOUNCE_MS)
+                .collect { state ->
+                    runCatching { store.save(state, player.currentPosition) }.onFailure { Log.w(TAG, "could not save the queue", it) }
+                }
+        }
+    }
+
+    private fun savePosition() {
+        val store = deps.queueStore ?: return
+        positionJob?.cancel()
+        val index = queue.state.value.currentIndex.takeIf { it >= 0 } ?: return
+        val position = player.currentPosition
+        scope.launch { runCatching { store.savePosition(index, position) } }
+    }
+
+    private fun keepPositionSaved() {
+        if (deps.queueStore == null) return
+        positionJob?.cancel()
+        positionJob = scope.launch {
+            while (isActive) {
+                delay(POSITION_SAVE_INTERVAL_MS)
+                savePosition()
+            }
+        }
     }
 
     // --- Commands ----------------------------------------------------------------------------------
@@ -304,6 +373,11 @@ class PodiumPlaybackEngine(
     }
 
     fun release() {
+        // The last word on where playback stood; brief, and only when the service goes away.
+        deps.queueStore?.let { store ->
+            val index = queue.state.value.currentIndex
+            if (index >= 0) runBlocking { withTimeoutOrNull(500) { runCatching { store.savePosition(index, player.currentPosition) } } }
+        }
         scope.cancel()
         player.release()
     }
@@ -313,6 +387,8 @@ class PodiumPlaybackEngine(
         private const val RESOLVE_TIMEOUT_MS = 15_000L
         private const val SKIP_AFTER_MS = 1_500L
         private const val MAX_CONSECUTIVE_ERRORS = 3
+        private const val SAVE_DEBOUNCE_MS = 750L
+        private const val POSITION_SAVE_INTERVAL_MS = 10_000L
     }
 }
 

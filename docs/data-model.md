@@ -9,6 +9,16 @@
 4. **No redundant derived data** unless it removes a hot-path join; each denormalisation is noted.
 5. **Every write path has a test; every schema change has a migration test.**
 
+## 1a. Implemented — schema v1 (D-31, 2026-10-03)
+`core:database` (Room 3, bundled SQLite). Tables now: `source_account` (id, display_name, last_sync_at), `track`, `album`, `artist`, `liked_track`, `queue_state`, `queue_item`, plus `track_fts` (FTS5, outside Room's schema). Differences from the full design below, all deliberate:
+- `track` carries the library's grouping keys: `artist_id` (filed-under artist) and `album_id` (filed-under album, never null; songs without album metadata get `<source>|unknown/<artist>`), plus `source_album_id` for the source's own id. Credits, version analysis and advertised qualities are JSON (`artists_json`, `version_json`, `qualities_json`); availability and routes are encoded strings. A `content_hash` lets a sync skip unchanged rows. `genre` waits until the model has it.
+- `album` and `artist` are derived from the songs at sync time and rebuilt per source; `artist.artwork_uri` only comes from sources with artist pictures.
+- Sync never deletes songs: a song a source stops reporting gets `in_library = 0, removed_at`; it stays for anything that references it (the queue). Garbage collection (§6) comes later.
+- `liked_track` has no foreign key: a favorite outlives a sync that briefly can't see the song.
+- `queue_item` is keyed by `ordinal` (slot ids aren't stable across runs; a restored queue gets fresh ones). Saving the queue inserts any of its songs missing from `track` with `in_library = 0` (never overwriting a library row), and their sources into `source_account`.
+- `track_fts` is a self-contained FTS5 table (`track_id UNINDEXED, title, artist, album`, unicode61 remove_diacritics 2, prefix 2 3) kept current by triggers; only library songs are indexed.
+- Not yet: `track_equivalence`, `track_artist`, playlists, downloads, history, search history, lyrics/artwork/metadata caches, outbox.
+
 ## 2. Entity overview
 
 ```

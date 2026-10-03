@@ -66,6 +66,8 @@ import app.podium.player.api.FavoritesRepository
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.math.sign
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 /** Play [tracks] from [index], as a context labelled [label] ("Continuing from …"). */
@@ -75,6 +77,15 @@ typealias PlayTracks = (tracks: List<Track>, index: Int, label: String) -> Unit
 private fun rememberTracks(repository: LibraryRepository): Pair<List<Track>, Boolean> {
     val state by repository.songs.collectAsStateWithLifecycle()
     return (state as? LibraryState.Ready)?.tracks.orEmpty() to (state is LibraryState.Loading)
+}
+
+/** A value from the library, once it has loaded (null while loading). */
+private class Loaded<T>(val value: T)
+
+@Composable
+private fun <T> rememberLoaded(vararg keys: Any?, flow: () -> Flow<T>): Loaded<T>? {
+    val loaded = remember(*keys) { flow().map { Loaded(it) } }
+    return loaded.collectAsStateWithLifecycle(initialValue = null).value
 }
 
 @Composable
@@ -99,12 +110,12 @@ private fun songMenu(tracks: List<Track>, onPlayNext: (Track) -> Unit, onAddToQu
 /** Albums, A to Z. */
 @Composable
 fun AlbumsScreen(repository: LibraryRepository, onOpen: (AlbumId) -> Unit) {
-    val (tracks, loading) = rememberTracks(repository)
-    val albums = remember(tracks) { LibraryIndex.albums(tracks) }
+    val loaded = rememberLoaded(repository) { repository.albums() }
+    val albums = loaded?.value.orEmpty()
     val focus = rememberFocusListState("albums")
-    ListInputEffect(focus, onActivate = { onOpen(albums[it].id) })
+    ListInputEffect(focus, onActivate = { albums.getOrNull(it)?.let { a -> onOpen(a.id) } })
     when {
-        loading -> Unit
+        loaded == null -> Unit
         albums.isEmpty() -> EmptyState(PodiumSymbol.Album, "No albums yet", NoMusic)
         else -> FocusList(
             items = albums,
@@ -134,15 +145,17 @@ fun AlbumScreen(
     onPlayNext: (Track) -> Unit,
     onAddToQueue: (Track) -> Unit,
 ) {
-    val (tracks, loading) = rememberTracks(repository)
-    val album = remember(tracks, albumId) { LibraryIndex.albums(tracks).firstOrNull { it.id == albumId } }
+    val loaded = rememberLoaded(repository, albumId) { repository.album(albumId) }
+    val detail = loaded?.value
+    val album = detail?.album
+    val songs = detail?.tracks.orEmpty()
     val focus = rememberFocusListState("album:${albumId.value}")
-    val rows = remember(album) { listOf(AlbumRow.Header) + album?.tracks.orEmpty().mapIndexed { i, t -> AlbumRow.Song(t, i) } }
-    val menu = songMenu(tracks, onPlayNext, onAddToQueue)
-    val activate: (Int) -> Unit = { i -> (rows[i] as? AlbumRow.Song)?.let { album?.let { a -> onPlay(a.tracks, it.index, a.title) } } }
-    ListInputEffect(focus, onActivate = activate, onLongPress = { i -> (rows[i] as? AlbumRow.Song)?.let { menu(it.track) } })
+    val rows = remember(songs) { listOf(AlbumRow.Header) + songs.mapIndexed { i, t -> AlbumRow.Song(t, i) } }
+    val menu = songMenu(songs, onPlayNext, onAddToQueue)
+    val activate: (Int) -> Unit = { i -> (rows.getOrNull(i) as? AlbumRow.Song)?.let { album?.let { a -> onPlay(songs, it.index, a.title) } } }
+    ListInputEffect(focus, onActivate = activate, onLongPress = { i -> (rows.getOrNull(i) as? AlbumRow.Song)?.let { menu(it.track) } })
     when {
-        loading -> Unit
+        loaded == null -> Unit
         album == null -> EmptyState(PodiumSymbol.Album, "This album isn't here anymore", "Its songs may have been removed. Go back to Albums.")
         else -> FocusList(
             items = rows,
@@ -156,7 +169,7 @@ fun AlbumScreen(
             modifier = Modifier.fillMaxSize(),
         ) { row, _, focused ->
             when (row) {
-                AlbumRow.Header -> DetailHeader(album.artworkUri, album.title, album.artist, listOfNotNull(songCount(album.tracks.size), album.year?.toString()))
+                AlbumRow.Header -> DetailHeader(album.artworkUri, album.title, album.artist, listOfNotNull(songCount(album.trackCount), album.year?.toString()))
                 is AlbumRow.Song -> TrackRow(
                     title = row.track.title,
                     subtitle = row.track.artistDisplay,
@@ -171,6 +184,8 @@ fun AlbumScreen(
 }
 
 private fun songCount(n: Int) = if (n == 1) "1 song" else "$n songs"
+
+private fun albumCount(n: Int) = if (n == 1) "1 album" else "$n albums"
 
 /** Cover, title and quiet details at the top of an album or artist page. Not focusable. */
 @Composable
@@ -195,13 +210,12 @@ private fun DetailHeader(artworkUri: String?, title: String, subtitle: String, d
 /** Artists, A to Z. */
 @Composable
 fun ArtistsScreen(repository: LibraryRepository, onOpen: (ArtistId) -> Unit) {
-    val (tracks, loading) = rememberTracks(repository)
-    val images by repository.artistArtwork.collectAsStateWithLifecycle()
-    val artists = remember(tracks, images) { LibraryIndex.artists(tracks, images) }
+    val loaded = rememberLoaded(repository) { repository.artists() }
+    val artists = loaded?.value.orEmpty()
     val focus = rememberFocusListState("artists")
-    ListInputEffect(focus, onActivate = { onOpen(artists[it].id) })
+    ListInputEffect(focus, onActivate = { artists.getOrNull(it)?.let { a -> onOpen(a.id) } })
     when {
-        loading -> Unit
+        loaded == null -> Unit
         artists.isEmpty() -> EmptyState(PodiumSymbol.Person, "No artists yet", NoMusic)
         else -> FocusList(
             items = artists,
@@ -209,15 +223,15 @@ fun ArtistsScreen(repository: LibraryRepository, onOpen: (ArtistId) -> Unit) {
             key = { it.id.value },
             contentPadding = LocalScreenInsets.current.listPadding(),
             onActivate = { onOpen(artists[it].id) },
-            preview = { a -> a.artworkUri?.let { MenuPreview.Artwork(listOf(it), round = true) } ?: MenuPreview.Artwork(a.albums.mapNotNull { it.artworkUri }.take(6)) },
+            preview = { a -> a.artworkUri?.let { MenuPreview.Artwork(listOf(it), round = true) } ?: MenuPreview.Artwork(a.covers) },
             modifier = Modifier.fillMaxSize(),
         ) { artist, _, focused ->
             TrackRow(
                 artist.name,
-                if (artist.albums.size == 1) "1 album" else "${artist.albums.size} albums",
+                albumCount(artist.albumCount),
                 focused,
                 artist.artworkUri,
-                trailing = artist.tracks.size.toString(),
+                trailing = artist.trackCount.toString(),
                 roundArtwork = true,
             )
         }
@@ -233,21 +247,21 @@ private sealed interface ArtistRow {
 /** One artist: all their songs, then their albums. */
 @Composable
 fun ArtistScreen(repository: LibraryRepository, artistId: ArtistId, onOpenAlbum: (AlbumId) -> Unit, onPlay: PlayTracks) {
-    val (tracks, loading) = rememberTracks(repository)
-    val images by repository.artistArtwork.collectAsStateWithLifecycle()
-    val artist = remember(tracks, artistId, images) { LibraryIndex.artists(tracks, images).firstOrNull { it.id == artistId } }
-    val rows = remember(artist) { listOf(ArtistRow.Header, ArtistRow.AllSongs) + artist?.albums.orEmpty().map { ArtistRow.AlbumEntry(it) } }
+    val loaded = rememberLoaded(repository, artistId) { repository.artist(artistId) }
+    val detail = loaded?.value
+    val artist = detail?.artist
+    val rows = remember(detail) { listOf(ArtistRow.Header, ArtistRow.AllSongs) + detail?.albums.orEmpty().map { ArtistRow.AlbumEntry(it) } }
     val focus = rememberFocusListState("artist:${artistId.value}")
     val activate: (Int) -> Unit = { i ->
-        when (val row = rows[i]) {
-            ArtistRow.AllSongs -> artist?.let { onPlay(it.tracks, 0, it.name) }
+        when (val row = rows.getOrNull(i)) {
+            ArtistRow.AllSongs -> detail?.let { onPlay(it.tracks, 0, it.artist.name) }
             is ArtistRow.AlbumEntry -> onOpenAlbum(row.album.id)
-            ArtistRow.Header -> Unit
+            ArtistRow.Header, null -> Unit
         }
     }
     ListInputEffect(focus, onActivate = activate)
     when {
-        loading -> Unit
+        loaded == null -> Unit
         artist == null -> EmptyState(PodiumSymbol.Person, "This artist isn't here anymore", "Their songs may have been removed. Go back to Artists.")
         else -> FocusList(
             items = rows,
@@ -265,7 +279,7 @@ fun ArtistScreen(repository: LibraryRepository, artistId: ArtistId, onOpenAlbum:
             preview = { row ->
                 when (row) {
                     is ArtistRow.AlbumEntry -> MenuPreview.Artwork(listOfNotNull(row.album.artworkUri))
-                    else -> MenuPreview.Artwork(artist.albums.mapNotNull { it.artworkUri }.take(6))
+                    else -> MenuPreview.Artwork(artist.covers)
                 }
             },
             modifier = Modifier.fillMaxSize(),
@@ -274,12 +288,12 @@ fun ArtistScreen(repository: LibraryRepository, artistId: ArtistId, onOpenAlbum:
                 ArtistRow.Header -> DetailHeader(
                     artist.artworkUri,
                     artist.name,
-                    if (artist.albums.size == 1) "1 album" else "${artist.albums.size} albums",
-                    listOf(songCount(artist.tracks.size)),
+                    albumCount(artist.albumCount),
+                    listOf(songCount(artist.trackCount)),
                     round = true,
                 )
                 ArtistRow.AllSongs -> MenuRow("All songs", focused, leading = PodiumSymbol.PlaylistPlay, showChevron = false)
-                is ArtistRow.AlbumEntry -> TrackRow(row.album.title, songCount(row.album.tracks.size), focused, row.album.artworkUri, trailing = row.album.year?.toString())
+                is ArtistRow.AlbumEntry -> TrackRow(row.album.title, songCount(row.album.trackCount), focused, row.album.artworkUri, trailing = row.album.year?.toString())
             }
         }
     }
@@ -326,8 +340,9 @@ fun FavoritesScreen(
  */
 @Composable
 fun CoverFlowScreen(repository: LibraryRepository, onOpen: (AlbumId) -> Unit) {
-    val (tracks, loading) = rememberTracks(repository)
-    val albums = remember(tracks) { LibraryIndex.albums(tracks) }
+    val loaded = rememberLoaded(repository) { repository.albums() }
+    val loading = loaded == null
+    val albums = loaded?.value.orEmpty()
     val insets = LocalScreenInsets.current
     val colors = PodiumTheme.colors
     val type = PodiumTheme.type

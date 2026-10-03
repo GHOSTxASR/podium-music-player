@@ -7,7 +7,11 @@
 |---|---|
 | 0 Audit · 1 Product/UX spec · 2 Architecture | ✅ 2026-10-02 |
 | S0 Source research (BitChord, providers) | ✅ 2026-10-02 — `research/BITCHORD_ARCHITECTURE_REVIEW.md`, `architecture/*`, ADR-013/014 |
-| **Checkpoint** | Awaiting user decisions (platform, optional providers D-20/D-21, license D-13, device) |
+| Checkpoint decisions | ✅ 2026-10-02 — Android/Compose, physical device; D-20/D-21 still open |
+| S1 contracts · Phase 3 design system · S3 Media3 · S2 local source · Phase 4 slice | ✅ 2026-10-02/03 |
+| UI evolution (device shell, Now Playing, Carbon/Bone, the paper) | ✅ 2026-10-03 — D-26 … D-30 |
+| S2b library database (Room 3: library cache, favorites, saved queue, FTS5) | ✅ 2026-10-03 — D-31 |
+| Next | Boot sequence & music folders, then Online (Audius) — D-32, D-33 |
 
 ## Revised order
 

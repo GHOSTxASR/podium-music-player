@@ -3,6 +3,7 @@ package app.podium.player.service
 import android.app.PendingIntent
 import android.content.Context
 import app.podium.core.common.Clock
+import app.podium.player.api.QueueStore
 import app.podium.player.api.TrackCatalog
 import app.podium.sources.api.ArtworkResolver
 import app.podium.sources.api.SourceHealthMonitor
@@ -20,6 +21,9 @@ interface PlaybackDependencies {
     val catalog: TrackCatalog
     val artwork: ArtworkResolver
     val clock: Clock
+
+    /** Where the queue is kept between runs (D-31); null keeps it in memory only. */
+    val queueStore: QueueStore? get() = null
 
     /** Opens the app when the user taps the media notification. */
     fun sessionActivity(context: Context): PendingIntent?

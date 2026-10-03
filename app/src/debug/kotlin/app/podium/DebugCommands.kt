@@ -12,6 +12,18 @@ import kotlinx.coroutines.withTimeoutOrNull
  * as their own queue without touching the listener's library. For example:
  * `adb shell am start -n app.podium.debug/app.podium.MainActivity --es podium.debug play-test-tones --ei podium.index 2 --ez podium.paused true`
  */
+/**
+ * Window-level debug commands: `keep-screen-on` holds the display on while Podium is in front (for
+ * unattended device testing, without touching the phone's own settings); `allow-screen-off` undoes it.
+ */
+internal fun applyDebugWindowCommand(intent: Intent?, activity: android.app.Activity) {
+    val flag = android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
+    when (intent?.getStringExtra("podium.debug")) {
+        "keep-screen-on" -> activity.window.addFlags(flag)
+        "allow-screen-off" -> activity.window.clearFlags(flag)
+    }
+}
+
 internal fun handleDebugIntent(intent: Intent?, graph: AppGraph) {
     when (intent?.getStringExtra("podium.debug")) {
         "play-test-tones" -> graph.appScope.launch {

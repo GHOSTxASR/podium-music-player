@@ -95,9 +95,8 @@ fun MusicScreen(
     val actions by repository.pendingActions.collectAsStateWithLifecycle()
     val favoriteIds by favorites.favorites.collectAsStateWithLifecycle()
     val tracks = (songs as? LibraryState.Ready)?.tracks.orEmpty()
-    val albums = remember(tracks) { LibraryIndex.albums(tracks) }
-    val images by repository.artistArtwork.collectAsStateWithLifecycle()
-    val artists = remember(tracks, images) { LibraryIndex.artists(tracks, images) }
+    val albums by remember(repository) { repository.albums() }.collectAsStateWithLifecycle(initialValue = emptyList())
+    val artists by remember(repository) { repository.artists() }.collectAsStateWithLifecycle(initialValue = emptyList())
     val albumArt = remember(albums) { albums.mapNotNull { it.artworkUri }.take(10) }
     val artistArt = remember(artists) { artists.mapNotNull { it.artworkUri }.take(8) }
     val songArt = remember(tracks) { LibraryIndex.artwork(tracks) }

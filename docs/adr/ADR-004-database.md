@@ -24,5 +24,12 @@ FTS5 on all devices is decisive for instant offline search over a synced library
 ## Tradeoffs
 New major version risk. **Fallback:** Room 2.8 has near-identical annotations; the switch is package renames plus replacing `SQLiteConnection` usage in two places (callbacks, FTS triggers).
 
+## Implementation notes (2026-10-03, D-31)
+- Versions: Room `androidx.room3` 3.0.3, `androidx.sqlite:sqlite-bundled` 2.7.1, KSP 2.3.12 (works with Kotlin 2.4.20 and AGP 9.4 built-in Kotlin). Module `core:database`; schema v1 at `core/database/schemas/app.podium.core.database.PodiumDatabase/1.json`.
+- FTS5 is a self-contained table (`track_fts`, keyed by track id) maintained by triggers created in the open callback — not external content over `track`'s implicit rowid, which VACUUM may renumber.
+- Unit tests run on the development machine with the bundled driver's desktop artifact (`sqlite-bundled-jvm`, swapped in for `-android` on unit-test classpaths) under Robolectric, so tests exercise the same SQLite build (FTS5 included) the app ships.
+- `PodiumDatabase.create` copies the file aside before a schema upgrade (`DatabaseBackup`, reads `user_version` from the header without opening). `MigrationTestHelper` tests arrive with schema v2.
+- R8: Room's generated `PodiumDatabase_Impl` survives shrinking (checked in the release APK); bundled SQLite adds a native library per ABI.
+
 ## Future implications
 KMP-ready if desktop/iOS ever happens. JSON columns (capabilities, format info) can be queried with SQLite JSON functions.

@@ -21,6 +21,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         graph.playbackController.connect()
         handleDebugIntent(intent, graph)
+        applyDebugWindowCommand(intent, this)
         setContent {
             PodiumApp(graph, onSourceAction = ::perform)
         }
@@ -29,6 +30,7 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         handleDebugIntent(intent, graph)
+        applyDebugWindowCommand(intent, this)
     }
 
     override fun onResume() {

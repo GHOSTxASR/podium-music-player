@@ -12,6 +12,9 @@ navigation3 = "1.2.0"
 media3 = "1.11.1"
 coil = "3.6.3"
 backdrop = "2.0.1"
+room3 = "3.0.3"
+sqlite = "2.7.1"
+ksp = "2.3.12"
 junit = "4.13.2"
 robolectric = "4.17"
 turbine = "1.2.1"
@@ -56,6 +59,11 @@ media3-test-utils-robolectric = { module = "androidx.media3:media3-test-utils-ro
 
 coil-compose = { module = "io.coil-kt.coil3:coil-compose", version.ref = "coil" }
 backdrop = { module = "io.github.kyant0:backdrop", version.ref = "backdrop" }
+room3-runtime = { module = "androidx.room3:room3-runtime", version.ref = "room3" }
+room3-compiler = { module = "androidx.room3:room3-compiler", version.ref = "room3" }
+room3-testing = { module = "androidx.room3:room3-testing", version.ref = "room3" }
+sqlite-bundled = { module = "androidx.sqlite:sqlite-bundled", version.ref = "sqlite" }
+sqlite-bundled-jvm = { module = "androidx.sqlite:sqlite-bundled-jvm", version.ref = "sqlite" }
 
 junit = { module = "junit:junit", version.ref = "junit" }
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
@@ -77,6 +85,8 @@ android-library = { id = "com.android.library", version.ref = "agp" }
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
+ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
+room3 = { id = "androidx.room3", version.ref = "room3" }
 podium-jvm-library = { id = "podium.jvm.library" }
 podium-android-library = { id = "podium.android.library" }
 podium-android-compose = { id = "podium.android.compose" }

@@ -173,4 +173,56 @@ class QueueManagerTest {
             assertTrue(run >= 0)
         }
     }
+
+    @Test
+    fun `a saved queue comes back in order, with fresh slot ids, its modes and its context`() {
+        val first = QueueManager()
+        first.setContext(album, 0, PlayContext("Album"), shuffle = true, seed = 7)
+        first.addToQueue(listOf(track("Mine", key = "m")))
+        first.skipTo(first.state.value.items[2].uid)
+        first.setRepeat(RepeatMode.ONE)
+        val saved = first.state.value.toSaved(positionMs = 61_000)!!
+
+        val next = QueueManager()
+        next.playNext(emptyList()) // nothing queued yet
+        val ops = next.restore(saved)
+        val restored = next.state.value
+        assertEquals(titles(first), titles(next))
+        assertEquals(2, restored.currentIndex)
+        assertEquals(RepeatMode.ONE, restored.repeatMode)
+        assertTrue(restored.shuffleEnabled)
+        assertEquals("Album", restored.context?.label)
+        assertEquals(first.state.value.items.map { it.origin }, restored.items.map { it.origin })
+        assertTrue(restored.items.all { it.selection == null }, "resolutions don't outlive a run")
+        assertEquals(QueueOp.ReplaceAll(restored.items, 2), ops.single())
+
+        // Un-shuffling a restored queue does exactly what it would have done before the restart.
+        first.setShuffle(false)
+        next.setShuffle(false)
+        assertEquals(titles(first), titles(next))
+    }
+
+    @Test
+    fun `a restore never replaces what the listener already started`() {
+        val saved = QueueManager().apply { setContext(album, 0, null) }.state.value.toSaved(0)!!
+        val q = QueueManager()
+        q.setContext(listOf(track("Now", key = "now")), 0, null)
+        assertTrue(q.restore(saved).isEmpty())
+        assertEquals(listOf("Now"), titles(q))
+    }
+
+    @Test
+    fun `restored slots never collide with slots added later`() {
+        val saved = QueueManager().apply { setContext(album, 0, null) }.state.value.toSaved(0)!!
+        val q = QueueManager()
+        q.restore(saved)
+        q.addToQueue(listOf(track("Later", key = "later")))
+        q.checkInvariants()
+    }
+
+    @Test
+    fun `an empty queue has nothing to save`() {
+        assertEquals(null, QueueState().toSaved(0))
+    }
 }
+

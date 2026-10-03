@@ -4,6 +4,10 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import app.podium.core.common.Clock
+import app.podium.core.database.DatabaseFavorites
+import app.podium.core.database.DatabaseQueueStore
+import app.podium.core.database.LibraryStore
+import app.podium.core.database.PodiumDatabase
 import app.podium.core.model.SourceId
 import app.podium.player.api.PlayIntent
 import app.podium.player.api.TrackCatalog
@@ -34,7 +38,11 @@ class AppGraph(private val context: Context) {
     val registry = SourceRegistry(health)
     val matcher = TrackMatcher()
     val resolver = StreamResolver(registry, health, matcher, clock)
-    val catalog = TrackCatalog(registry)
+    /** The library database (ADR-004, D-31): library cache, favorites, the saved queue. */
+    val database = PodiumDatabase.create(context)
+    val libraryStore = LibraryStore(database)
+    val catalog = TrackCatalog(registry) { id -> libraryStore.track(id) }
+    val queueStore = DatabaseQueueStore(database)
     val artwork = ArtworkResolver(registry)
 
     val localSource = LocalMusicSource(context, appScope)
@@ -47,10 +55,10 @@ class AppGraph(private val context: Context) {
 
     /** Debug-only narrowing of the library to one source (see DebugCommands); null = everything. */
     val libraryScope = MutableStateFlow<SourceId?>(null)
-    val library = RegistryLibraryRepository(registry, catalog, appScope, libraryScope)
+    val library = DatabaseLibraryRepository(registry, libraryStore, catalog, appScope, libraryScope)
     val artworkLoader = ResolvingArtworkLoader(artwork)
     val deviceSettings = SharedPrefsDeviceSettings(context)
-    val favorites = SharedPrefsFavorites(context)
+    val favorites = DatabaseFavorites(database, appScope).also { LegacyFavorites.moveInto(context, it, appScope) }
     private val chime = BootChime(context)
 
     /** The virtual device's power (D-26). A fresh process starts by booting; the activity coming
@@ -106,6 +114,7 @@ class AppGraph(private val context: Context) {
         override val catalog = this@AppGraph.catalog
         override val artwork = this@AppGraph.artwork
         override val clock = this@AppGraph.clock
+        override val queueStore = this@AppGraph.queueStore
 
         override fun sessionActivity(context: Context): PendingIntent = PendingIntent.getActivity(
             context,

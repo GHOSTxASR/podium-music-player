@@ -191,16 +191,13 @@ private fun titleOf(dest: Dest, graph: AppGraph): String = when (dest) {
     Dest.Finish -> "Finish"
     Dest.Grain -> "Grain"
     Dest.CustomColor -> "Custom color"
-    is Dest.Album, is Dest.Artist -> {
-        val songs by graph.library.songs.collectAsStateWithLifecycle()
-        val tracks = (songs as? LibraryState.Ready)?.tracks.orEmpty()
-        remember(tracks, dest) {
-            when (dest) {
-                is Dest.Album -> LibraryIndex.albums(tracks).firstOrNull { it.id == dest.id }?.title ?: "Album"
-                is Dest.Artist -> LibraryIndex.artists(tracks).firstOrNull { it.id == dest.id }?.name ?: "Artist"
-                else -> ""
-            }
-        }
+    is Dest.Album -> {
+        val album by remember(dest) { graph.library.album(dest.id) }.collectAsStateWithLifecycle(initialValue = null)
+        album?.album?.title ?: "Album"
+    }
+    is Dest.Artist -> {
+        val artist by remember(dest) { graph.library.artist(dest.id) }.collectAsStateWithLifecycle(initialValue = null)
+        artist?.artist?.name ?: "Artist"
     }
 }
 
