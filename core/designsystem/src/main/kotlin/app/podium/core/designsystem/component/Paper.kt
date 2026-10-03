@@ -12,17 +12,12 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -30,7 +25,6 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
@@ -48,29 +42,14 @@ import kotlin.math.sqrt
 import kotlinx.coroutines.delay
 
 /**
- * The "infinite paper" (D-29): every screen is a column on one horizontal sheet. A list shows the
- * previous column peeking in at the left, its own items as a straight column bounded on the right by
- * an arc that mirrors the Wheel's right side (hollow facing the list, the selection indicator riding
- * on it), and a glimpse of the next column — what the focused item leads to — beyond the arc.
+ * The "infinite paper" (D-29, D-30): every screen is a column on one sheet. A list curves along an
+ * arc that mirrors the Wheel's right side (the selection indicator riding on it), with the previous
+ * column at middle-left and a glimpse of the next column — what the focused item leads to — at
+ * middle-right. [PaperGeometry] holds the measurements.
  */
 object Paper {
-    /** Width of the left strip where the previous column peeks in. */
-    const val PeekFraction = 0.09f
-
-    /** Width of the region beyond the arc where the next column is previewed. */
-    const val NextFraction = 0.17f
-
     /** Gap between the rows' right edge and the arc. */
     val ArcGap: Dp = 12.dp
-
-    /** The arc's radius relative to the readable height: large, so the bow stays subtle. */
-    const val RadiusFactor = 1.8f
-
-    /** How far a row at [dy] from the readable centre bends left, for readable height [h]. */
-    fun bend(dy: Float, h: Float): Float {
-        val r = h * RadiusFactor
-        return r - sqrt((r * r - dy * dy).coerceAtLeast(0f))
-    }
 }
 
 /**
@@ -115,14 +94,8 @@ sealed interface MenuPreview {
 fun PreviewPane(preview: MenuPreview, size: Dp, modifier: Modifier = Modifier) {
     val colors = PodiumTheme.colors
     val motion = PodiumTheme.motion
-    val distance = modifier
-        .graphicsLayer {
-            alpha = if (colors.isDark) 0.6f else 0.68f
-            scaleX = 0.94f
-            scaleY = 0.94f
-        }
-        .blur(1.5.dp)
-    val corner = if (colors.isIndustrial) 2.dp else 6.dp
+    val distance = modifier.distant()
+    val corner = previewCorner()
     when (preview) {
         MenuPreview.None -> Unit
         is MenuPreview.Swatch -> Box(distance.size(size).clip(RoundedCornerShape(corner)).background(preview.color))
@@ -182,59 +155,73 @@ fun PreviewPane(preview: MenuPreview, size: Dp, modifier: Modifier = Modifier) {
 }
 
 /**
- * The previous column's labels peeking in at the left edge (D-29): right-aligned, so only their
- * ends show, centred on the item that led here ([chosen]), dim and slightly soft — the paper you
- * came from, still there.
+ * The paper's geometry for a screen of [width] × [height] whose readable region is inset by
+ * [padTop] and [padBottom] (D-29, after the user's sketch): a ")" arc whose apex sits at mid-height
+ * near the right; rows that ride the arc; the previous column's live miniature in the free space
+ * the curve leaves at middle-left; the next column at middle-right beyond the arc. Shared by the
+ * list layout and the navigation transitions, so a screen sliding away lands exactly in its box.
  */
-@Composable
-fun PaperPeekLabels(labels: List<String>, chosen: Int, modifier: Modifier = Modifier) {
-    val colors = PodiumTheme.colors
-    val type = PodiumTheme.type
-    val insets = LocalScreenInsets.current
-    BoxWithConstraints(
-        modifier
-            .padding(top = insets.top, bottom = insets.bottom)
-            .graphicsLayer { alpha = if (colors.isDark) 0.7f else 0.75f }
-            .blur(0.8.dp),
-    ) {
-        // The item that led here lines up with the top of the new list, where the eye lands.
-        val rowH = 52.dp
-        val centre = 8.dp
-        for (k in -5..5) {
-            val label = labels.getOrNull(chosen + k) ?: continue
-            Box(
-                Modifier
-                    .offset(y = centre + rowH * k)
-                    .fillMaxWidth()
-                    .height(rowH)
-                    .wrapContentWidth(Alignment.End, unbounded = true)
-                    .padding(end = 8.dp),
-                contentAlignment = Alignment.CenterEnd,
-            ) {
-                BasicText(
-                    label,
-                    style = type.row.copy(color = if (k == 0) colors.labelSecondary else colors.labelTertiary),
-                    maxLines = 1,
-                    softWrap = false,
-                )
-            }
-        }
+class PaperGeometry(val width: Dp, val height: Dp, val padTop: Dp, val padBottom: Dp) {
+    val readable: Dp = (height - padTop - padBottom).coerceAtLeast(1.dp)
+    val centreY: Dp = padTop + readable / 2
+    val apexX: Dp = width * 0.80f
+    private val radius: Dp = readable * 1.05f
+    val columnWidth: Dp = width * 0.56f
+    /** The column's left edge where the arc is furthest right (mid-height); rows elsewhere sit further left. */
+    val columnLeft: Dp = apexX - Paper.ArcGap - columnWidth
+    val boxHeight: Dp = readable * 0.34f
+    val boxTop: Dp = centreY - boxHeight / 2
+    /** Scale at which a whole screen fits a box's height: the next column growing out of its box. */
+    val miniScale: Float = boxHeight / height
+    val rightBoxX: Dp = apexX + 12.dp
+
+    /** The previous column's box mirrors the next one: the same square, running off the left edge. */
+    val leftBoxRight: Dp = columnLeft - 10.dp
+    val leftBoxX: Dp = leftBoxRight - boxHeight
+
+    /** The previous column is shown zoomed in on the middle of its list, where the item that led here sits. */
+    val peekScale: Float = (boxHeight / readable * 1.6f).coerceAtMost(0.6f)
+
+    /** Where the previous screen's top-left sits, at [peekScale]: its labels start at the box's visible edge, its middle at the box's. */
+    val peekOriginX: Dp = maxOf(leftBoxX, 0.dp) + 4.dp - columnLeft * peekScale
+    val peekOriginY: Dp = centreY - centreY * peekScale
+
+    /** How far left of the apex the arc (and a row) sits at [dy] from mid-height. */
+    fun bend(dy: Dp): Dp {
+        val r = radius.value
+        val d = dy.value.coerceIn(-r, r)
+        return (r - sqrt(r * r - d * d)).dp
+    }
+
+    fun arcX(y: Dp): Dp = apexX - bend(y - centreY)
+
+    /** 0 at mid-height, 1 at either end of the readable region: drives the ends' fade and blur. */
+    fun depth(y: Dp): Float = (kotlin.math.abs((y - centreY).value) / (readable.value / 2f)).coerceIn(0f, 1f)
+
+    /** 1 inside the readable region, falling to 0 within [fade] beyond it — rows never drift under the title or the mini player. */
+    fun within(y: Dp, fade: Dp = 24.dp): Float {
+        val out = maxOf(padTop - y, y - (height - padBottom), 0.dp)
+        return (1f - out / fade).coerceIn(0f, 1f)
     }
 }
 
-/** The previous column was a picture (Now Playing): its artwork's edge peeks in. */
+/** True while composing a live miniature of another column: no input, no glimpses, no side effects. */
+val LocalMiniature = staticCompositionLocalOf { false }
+
+/** In a miniature, the item (by list key) that led to the current column, shown focused. */
+val LocalMiniatureFocusKey = staticCompositionLocalOf<String?> { null }
+
+/** Both glimpses sit a step away from the column in focus: dimmer, a touch smaller, softly out of focus. */
 @Composable
-fun PaperPeekArtwork(uri: String?, modifier: Modifier = Modifier) {
-    val colors = PodiumTheme.colors
-    BoxWithConstraints(modifier.graphicsLayer { alpha = if (colors.isDark) 0.6f else 0.7f }.blur(1.dp)) {
-        val size = maxHeight * 0.42f
-        Box(
-            Modifier
-                .align(Alignment.CenterEnd)
-                .wrapContentWidth(Alignment.End, unbounded = true)
-                .size(size),
-        ) {
-            ArtworkImage(uri, size, fallbackText = "", modifier = Modifier.fillMaxSize())
-        }
-    }
+internal fun Modifier.distant(): Modifier {
+    val dark = PodiumTheme.colors.isDark
+    return graphicsLayer {
+        alpha = if (dark) 0.6f else 0.68f
+        scaleX = 0.94f
+        scaleY = 0.94f
+    }.blur(1.5.dp)
 }
+
+@Composable
+internal fun previewCorner(): Dp = if (PodiumTheme.colors.isIndustrial) 2.dp else 6.dp
+

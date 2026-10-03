@@ -10,6 +10,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
@@ -106,9 +107,11 @@ fun ArtworkImage(
     size: Dp,
     fallbackText: String,
     modifier: Modifier = Modifier,
+    /** Artists are round, like a portrait; everything else is square. */
+    round: Boolean = false,
 ) {
     val colors = PodiumTheme.colors
-    val shape = RoundedCornerShape(if (colors.isIndustrial) 2.dp else artworkRadius(size))
+    val shape = if (round) CircleShape else RoundedCornerShape(if (colors.isIndustrial) 2.dp else artworkRadius(size))
     val art = rememberArtworkState(uri, size)
     Box(
         modifier

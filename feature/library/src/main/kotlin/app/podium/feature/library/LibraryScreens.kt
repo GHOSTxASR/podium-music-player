@@ -96,7 +96,8 @@ fun MusicScreen(
     val favoriteIds by favorites.favorites.collectAsStateWithLifecycle()
     val tracks = (songs as? LibraryState.Ready)?.tracks.orEmpty()
     val albums = remember(tracks) { LibraryIndex.albums(tracks) }
-    val artists = remember(tracks) { LibraryIndex.artists(tracks) }
+    val images by repository.artistArtwork.collectAsStateWithLifecycle()
+    val artists = remember(tracks, images) { LibraryIndex.artists(tracks, images) }
     val albumArt = remember(albums) { albums.mapNotNull { it.artworkUri }.take(10) }
     val artistArt = remember(artists) { artists.mapNotNull { it.artworkUri }.take(8) }
     val songArt = remember(tracks) { LibraryIndex.artwork(tracks) }
@@ -105,7 +106,7 @@ fun MusicScreen(
         actions.forEach { add(MenuEntry(it.note, MenuPreview.None, { onSourceAction(it.action) }, leading = PodiumSymbol.Lock, chevron = false)) }
         add(MenuEntry("Cover Flow", MenuPreview.Carousel(albumArt), onCoverFlow))
         add(MenuEntry("Albums", MenuPreview.Artwork(albumArt), onAlbums))
-        add(MenuEntry("Artists", MenuPreview.Artwork(artistArt, round = true), onArtists))
+        add(MenuEntry("Artists", if (artistArt.isEmpty()) MenuPreview.None else MenuPreview.Artwork(artistArt, round = true), onArtists))
         add(MenuEntry("Songs", MenuPreview.Artwork(songArt), onSongs))
         add(MenuEntry("Favorites", if (favoriteArt.isEmpty()) MenuPreview.None else MenuPreview.Artwork(favoriteArt), onFavorites))
     }

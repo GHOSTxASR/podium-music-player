@@ -1,5 +1,7 @@
 package app.podium.core.designsystem.component
 
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -90,7 +92,7 @@ fun MenuRow(
             leadingContent()
             Spacer(Modifier.width(Spacing.m))
         }
-        PodiumText(label, illuminated(if (focused) type.rowFocused else type.row, focused), primary, Modifier.weight(1f))
+        PodiumText(label, illuminated(if (focused) type.rowFocused else type.row, focused), primary, Modifier.weight(1f).scrollsWhenFocused(focused))
         if (value != null) {
             // The label keeps its room; a long value gives way first.
             PodiumText(value, type.footnote, secondary, Modifier.padding(start = Spacing.s).widthIn(max = 132.dp))
@@ -126,6 +128,7 @@ fun TrackRow(
     trailingContent: (@Composable () -> Unit)? = null,
     /** Album track lists show the track number instead of repeating the same artwork. */
     number: Int? = null,
+    roundArtwork: Boolean = false,
 ) {
     val colors = PodiumTheme.colors
     val type = PodiumTheme.type
@@ -141,7 +144,7 @@ fun TrackRow(
                 PodiumText(number.toString(), type.caption, secondaryText(focused, colors.labelTertiary))
             }
         } else {
-            ArtworkImage(artworkUri, 44.dp, fallbackText = title)
+            ArtworkImage(artworkUri, 44.dp, fallbackText = title, round = roundArtwork)
         }
         Spacer(Modifier.width(Spacing.m))
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.Center) {
@@ -149,6 +152,7 @@ fun TrackRow(
                 title,
                 illuminated(if (focused || active) type.rowFocused else type.row, focused),
                 if (active && !focused) colors.highlightText else primaryText(focused, colors.labelPrimary),
+                Modifier.scrollsWhenFocused(focused),
             )
             PodiumText(subtitle, type.rowSecondary, secondaryText(focused, colors.labelSecondary))
             if (note != null) PodiumText(note, type.footnote, secondaryText(focused, colors.labelTertiary))
@@ -180,3 +184,13 @@ fun formatDuration(ms: Long?): String? {
     val s = totalSeconds % 60
     return if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%d:%02d".format(m, s)
 }
+
+/**
+ * The focused row's text scrolls slowly when it doesn't fit, as on the original iPod, so long
+ * titles are readable without widening the column. Other rows ellipsize. Off with reduced motion.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun Modifier.scrollsWhenFocused(focused: Boolean): Modifier =
+    if (focused && !PodiumTheme.motion.reduced) basicMarquee(initialDelayMillis = 900, repeatDelayMillis = 1_800) else this
+

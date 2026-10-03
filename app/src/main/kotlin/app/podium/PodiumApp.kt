@@ -6,18 +6,21 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.ContentTransform
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.keyframes
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
-import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideIn
 import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideOut
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -49,7 +52,9 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -61,14 +66,15 @@ import app.podium.core.designsystem.artwork.BackgroundExtension
 import app.podium.core.designsystem.artwork.LocalArtworkLoader
 import app.podium.core.designsystem.artwork.rememberArtwork
 import app.podium.core.designsystem.component.GlassMenu
+import app.podium.core.designsystem.component.LocalMiniature
+import app.podium.core.designsystem.component.LocalMiniatureFocusKey
 import app.podium.core.designsystem.component.LocalOverlayHost
 import app.podium.core.designsystem.component.LocalPaperDecor
 import app.podium.core.designsystem.component.LocalPaperPeek
 import app.podium.core.designsystem.component.LocalScreenInsets
 import app.podium.core.designsystem.component.MiniPlayer
 import app.podium.core.designsystem.component.OverlayHost
-import app.podium.core.designsystem.component.PaperPeekArtwork
-import app.podium.core.designsystem.component.PaperPeekLabels
+import app.podium.core.designsystem.component.PaperGeometry
 import app.podium.core.designsystem.component.PodWheel
 import app.podium.core.designsystem.component.ScreenInsets
 import app.podium.core.designsystem.glass.GlassHost
@@ -334,6 +340,8 @@ private fun ScreenOs(
         val insets = ScreenInsets(top = ScreenHeaderHeight, bottom = miniBlock)
         val density = LocalDensity.current
         val screenHeight = maxHeight
+        // The same geometry the lists use, so a screen moving away lands exactly in its box.
+        val paper = PaperGeometry(maxWidth, maxHeight, insets.top + 8.dp, insets.bottom + 8.dp)
 
         GlassHost(
             modifier = Modifier.fillMaxSize(),
@@ -348,9 +356,9 @@ private fun ScreenOs(
                             bottomStartPx = with(density) { (screenHeight - insets.bottom.coerceAtLeast(24.dp)).toPx() },
                         ),
                         onBack = { navigator.pop() },
-                        transitionSpec = { forward(motion) },
-                        popTransitionSpec = { backward(motion) },
-                        predictivePopTransitionSpec = { backward(motion) },
+                        transitionSpec = { paperForward(paper, density, motion.reduced) },
+                        popTransitionSpec = { paperBack(paper, density, motion.reduced) },
+                        predictivePopTransitionSpec = { paperBack(paper, density, motion.reduced) },
                         entryProvider = { key ->
                             // Glass lets Now Playing rise from the mini player; Carbon and Bone keep the whole
                             // hierarchy on one horizontal sheet of paper (D-29).
@@ -359,12 +367,14 @@ private fun ScreenOs(
                                 // Each screen sees the column before it on the paper peeking in at its left.
                                 val position = backStack.indexOf(screen)
                                 val previous = if (position > 0) backStack[position - 1] else null
-                                val peek: (@Composable (Modifier) -> Unit)? = previous?.let { prev -> { m -> PreviousColumn(prev, screen, graph, m) } }
+                                val peek: (@Composable (Modifier) -> Unit)? = previous?.let { prev ->
+                                    { m -> PreviousColumn(prev, screen, graph, navigator, m) }
+                                }
                                 val scope = LocalNavAnimatedContentScope.current
                                 val decor: @Composable () -> Modifier = {
                                     with(scope) {
                                         Modifier.animateEnterExit(
-                                            enter = fadeIn(tween(220, delayMillis = if (motion.reduced) 0 else 260)),
+                                            enter = fadeIn(tween(220, delayMillis = if (motion.reduced) 0 else PaperTransitionMillis - 140)),
                                             exit = fadeOut(tween(80)),
                                         )
                                     }
@@ -419,34 +429,45 @@ private fun ScreenOs(
     }
 }
 
-/** The column before [current] on the paper, as a peek: its labels around the one that led here. */
+/**
+ * The column before [current], live (D-29): the previous screen itself, scaled into the box at
+ * middle-left with the item that led here focused. It takes no input and has no side effects
+ * (its own wheel targets go to a throwaway router); tapping it goes back.
+ */
 @Composable
-private fun PreviousColumn(previous: Dest, current: Dest, graph: AppGraph, modifier: Modifier) {
-    val songs by graph.library.songs.collectAsStateWithLifecycle()
+private fun PreviousColumn(previous: Dest, current: Dest, graph: AppGraph, navigator: Navigator, modifier: Modifier) {
     val snapshot by graph.playbackController.snapshot.collectAsStateWithLifecycle()
-    val favoriteIds by graph.favorites.favorites.collectAsStateWithLifecycle()
-    val tracks = (songs as? LibraryState.Ready)?.tracks.orEmpty()
-    if (previous == Dest.NowPlaying) {
-        PaperPeekArtwork(snapshot.item?.artworkUri, modifier)
-        return
+    val focusKey = when (current) {
+        is Dest.Album -> current.id.value
+        is Dest.Artist -> current.id.value
+        Dest.NowPlaying -> snapshot.item?.trackId?.value
+        Dest.Theme -> "Theme"
+        Dest.Finish -> "Finish"
+        Dest.CustomColor -> if (previous == Dest.Finish) "CUSTOM" else "CustomColor"
+        Dest.Grain -> "Grain"
+        else -> titleOf(current, graph)
     }
-    val currentTitle = titleOf(current, graph)
-    val chosen = if (current == Dest.NowPlaying) snapshot.item?.title.orEmpty() else currentTitle
-    val labels = remember(previous, tracks, snapshot.isActive, favoriteIds) { peekLabels(previous, tracks, snapshot.isActive, favoriteIds) }
-    PaperPeekLabels(labels, labels.indexOfFirst { it.equals(chosen, ignoreCase = true) }.coerceAtLeast(0), modifier)
-}
-
-private fun peekLabels(dest: Dest, tracks: List<Track>, nowPlaying: Boolean, favorites: Set<TrackId>): List<String> = when (dest) {
-    Dest.Home -> listOfNotNull("Music", "Shuffle songs", if (nowPlaying) "Now Playing" else null, "Settings")
-    Dest.Music -> listOf("Cover Flow", "Albums", "Artists", "Songs", "Favorites")
-    Dest.Settings -> listOf("Theme", "Finish", "Custom color", "Grain", "Startup sound")
-    Dest.Albums, Dest.CoverFlow -> LibraryIndex.albums(tracks).map { it.title }
-    Dest.Artists -> LibraryIndex.artists(tracks).map { it.name }
-    Dest.Songs -> tracks.map { it.title }
-    Dest.Favorites -> tracks.filter { it.id in favorites }.map { it.title }
-    is Dest.Album -> LibraryIndex.albums(tracks).firstOrNull { it.id == dest.id }?.tracks?.map { it.title }.orEmpty()
-    is Dest.Artist -> listOf("All songs") + LibraryIndex.artists(tracks).firstOrNull { it.id == dest.id }?.albums?.map { it.title }.orEmpty()
-    else -> emptyList()
+    val backLabel = "Back to ${titleOf(previous, graph)}"
+    Box(modifier) {
+        Box(Modifier.fillMaxSize()) {
+            CompositionLocalProvider(
+                LocalMiniature provides true,
+                LocalMiniatureFocusKey provides focusKey,
+                LocalInputRouter provides remember { InputRouter() },
+                LocalOverlayHost provides remember { OverlayHost() },
+                LocalPaperPeek provides null,
+            ) {
+                ScreenContent(previous, graph, navigator, onSourceAction = {})
+            }
+        }
+        // The miniature is a picture of where you were: touching it takes you back there.
+        Box(
+            Modifier
+                .matchParentSize()
+                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { navigator.pop() }
+                .semantics { contentDescription = backLabel },
+        )
+    }
 }
 
 private val MiniPlayerScreens = setOf(Dest.Home, Dest.Music, Dest.Albums, Dest.Artists, Dest.Songs, Dest.Favorites)
@@ -644,20 +665,76 @@ private fun SystemBarIcons(darkIcons: Boolean) {
     }
 }
 
-private fun AnimatedContentTransitionScope<Scene<Dest>>.forward(motion: PodiumMotion): ContentTransform =
-    if (motion.reduced) {
-        fadeIn(motion.fadeStandard()) togetherWith fadeOut(motion.fadeFast())
-    } else {
-        // The iPod strip: the next level slides in from the right as the current one leaves left.
-        slideInHorizontally(motion.navigateOffset()) { it } togetherWith slideOutHorizontally(motion.navigateOffset()) { -it }
-    }
+/** One move along the paper. */
+private const val PaperTransitionMillis = 600
 
-private fun AnimatedContentTransitionScope<Scene<Dest>>.backward(motion: PodiumMotion): ContentTransform =
-    if (motion.reduced) {
-        fadeIn(motion.fadeStandard()) togetherWith fadeOut(motion.fadeFast())
-    } else {
-        slideInHorizontally(motion.navigateOffset()) { -it } togetherWith slideOutHorizontally(motion.navigateOffset()) { it }
-    }
+/**
+ * Forward along the paper (D-29, after the user's sketch): the next column grows out of its
+ * preview box at middle-right and rises along the curve into focus, while the current screen
+ * sinks down and to the left into the previous-column box — the Wheel turning one step.
+ */
+private fun AnimatedContentTransitionScope<Scene<Dest>>.paperForward(g: PaperGeometry, density: Density, reduced: Boolean): ContentTransform {
+    if (reduced) return fadeIn(tween(160)) togetherWith fadeOut(tween(120))
+    val (right, left, lift) = paperPoints(g, density)
+    val d = PaperTransitionMillis
+    val enter = slideIn(
+        keyframes {
+            durationMillis = d
+            right at 0 using FastOutSlowInEasing
+            IntOffset(right.x / 2, right.y - lift) at d * 45 / 100 using FastOutSlowInEasing
+            IntOffset.Zero at d
+        },
+    ) { right } + scaleIn(tween(d, easing = FastOutSlowInEasing), initialScale = g.miniScale) + fadeIn(tween(d / 2), initialAlpha = 0.55f)
+    val exit = slideOut(
+        keyframes {
+            durationMillis = d
+            IntOffset.Zero at 0 using FastOutSlowInEasing
+            IntOffset(left.x / 2, left.y + lift) at d * 55 / 100 using FastOutSlowInEasing
+            left at d
+        },
+    ) { left } + scaleOut(tween(d, easing = FastOutSlowInEasing), targetScale = g.peekScale) + fadeOut(tween(d * 35 / 100, delayMillis = d * 65 / 100))
+    return enter togetherWith exit
+}
+
+/** Back along the paper: the previous column rises out of its box into focus; the current one sinks into the next box. */
+private fun AnimatedContentTransitionScope<Scene<Dest>>.paperBack(g: PaperGeometry, density: Density, reduced: Boolean): ContentTransform {
+    if (reduced) return fadeIn(tween(160)) togetherWith fadeOut(tween(120))
+    val (right, left, lift) = paperPoints(g, density)
+    val d = PaperTransitionMillis
+    val enter = slideIn(
+        keyframes {
+            durationMillis = d
+            left at 0 using FastOutSlowInEasing
+            IntOffset(left.x / 2, left.y - lift) at d * 45 / 100 using FastOutSlowInEasing
+            IntOffset.Zero at d
+        },
+    ) { left } + scaleIn(tween(d, easing = FastOutSlowInEasing), initialScale = g.peekScale) + fadeIn(tween(d / 2), initialAlpha = 0.55f)
+    val exit = slideOut(
+        keyframes {
+            durationMillis = d
+            IntOffset.Zero at 0 using FastOutSlowInEasing
+            IntOffset(right.x / 2, right.y + lift) at d * 55 / 100 using FastOutSlowInEasing
+            right at d
+        },
+    ) { right } + scaleOut(tween(d, easing = FastOutSlowInEasing), targetScale = g.miniScale) + fadeOut(tween(d * 35 / 100, delayMillis = d * 65 / 100))
+    return enter togetherWith exit
+}
+
+/**
+ * Centre offsets of a screen sitting in the next box (whole, at [PaperGeometry.miniScale]) and in
+ * the previous box (zoomed to its list, at [PaperGeometry.peekScale]), and how far the path arcs.
+ */
+private fun paperPoints(g: PaperGeometry, density: Density): Triple<IntOffset, IntOffset, Int> = with(density) {
+    val right = IntOffset(
+        (g.rightBoxX + g.width * g.miniScale / 2 - g.width / 2).roundToPx(),
+        (g.centreY - g.height / 2).roundToPx(),
+    )
+    val left = IntOffset(
+        (g.peekOriginX + g.width * g.peekScale / 2 - g.width / 2).roundToPx(),
+        (g.peekOriginY + g.height * g.peekScale / 2 - g.height / 2).roundToPx(),
+    )
+    Triple(right, left, (g.height * 0.12f).roundToPx())
+}
 
 /**
  * Now Playing rises from where the mini player sits and sinks back into it, so library → mini

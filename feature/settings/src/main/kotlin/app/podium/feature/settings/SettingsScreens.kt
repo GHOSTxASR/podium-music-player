@@ -44,6 +44,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.podium.core.designsystem.component.FocusList
 import app.podium.core.designsystem.component.ListInputEffect
+import app.podium.core.designsystem.component.LocalMiniature
 import app.podium.core.designsystem.component.LocalScreenInsets
 import app.podium.core.designsystem.component.MenuPreview
 import app.podium.core.designsystem.component.MenuRow
@@ -155,14 +156,15 @@ fun FinishScreen(repository: DeviceSettingsRepository, onCustomColor: () -> Unit
     val appearance by repository.appearance.collectAsStateWithLifecycle()
     val presets = FinishPreset.entries
     val focus = remember { FocusListState(initialIndex = presets.indexOf(repository.appearance.value.preset)) }
-    LaunchedEffect(focus) {
+    val miniature = LocalMiniature.current
+    if (!miniature) LaunchedEffect(focus) {
         snapshotFlow { focus.focusedIndex }.collect { index ->
             val preset = presets.getOrNull(index) ?: return@collect
             val current = repository.appearance.value
             repository.setPreview(if (preset == current.preset) null else current.copy(preset = preset))
         }
     }
-    DisposableEffect(Unit) { onDispose { repository.setPreview(null) } }
+    if (!LocalMiniature.current) DisposableEffect(Unit) { onDispose { repository.setPreview(null) } }
     val activate: (Int) -> Unit = { index ->
         val preset = presets[index]
         if (preset == FinishPreset.CUSTOM) {
@@ -208,14 +210,15 @@ fun ThemeScreen(repository: DeviceSettingsRepository) {
     val appearance by repository.appearance.collectAsStateWithLifecycle()
     val themes = DisplayTheme.entries
     val focus = remember { FocusListState(initialIndex = themes.indexOf(repository.appearance.value.display)) }
-    LaunchedEffect(focus) {
+    val miniature = LocalMiniature.current
+    if (!miniature) LaunchedEffect(focus) {
         snapshotFlow { focus.focusedIndex }.collect { index ->
             val theme = themes.getOrNull(index) ?: return@collect
             val current = repository.appearance.value
             repository.setPreview(if (theme == current.display) null else current.copy(display = theme))
         }
     }
-    DisposableEffect(Unit) { onDispose { repository.setPreview(null) } }
+    if (!LocalMiniature.current) DisposableEffect(Unit) { onDispose { repository.setPreview(null) } }
     val activate: (Int) -> Unit = { index ->
         repository.setAppearance(repository.appearance.value.copy(display = themes[index]))
         repository.setPreview(null)
@@ -263,7 +266,7 @@ fun GrainScreen(repository: DeviceSettingsRepository) {
     val haptics = rememberPodiumHaptics()
     val appearance = remember { repository.appearance.value }
     var grain by remember { mutableFloatStateOf(appearance.grain) }
-    DisposableEffect(Unit) { onDispose { repository.setPreview(null) } }
+    if (!LocalMiniature.current) DisposableEffect(Unit) { onDispose { repository.setPreview(null) } }
     if (appearance.isGlass) {
         Box(Modifier.fillMaxSize().padding(top = insets.top, bottom = insets.bottom), contentAlignment = Alignment.Center) {
             MessageState(PodiumSymbol.Settings, "Grain needs a solid finish", "Choose a finish other than Glass, then come back here.")
@@ -318,8 +321,11 @@ fun CustomColorScreen(repository: DeviceSettingsRepository) {
     var text by remember { mutableStateOf(formatHex(argb).drop(1)) }
     var invalid by remember { mutableStateOf(false) }
 
-    LaunchedEffect(argb) { repository.setPreview(appearance.copy(preset = FinishPreset.CUSTOM, customArgb = argb)) }
-    DisposableEffect(Unit) { onDispose { repository.setPreview(null) } }
+    val miniature = LocalMiniature.current
+    if (!miniature) {
+        LaunchedEffect(argb) { repository.setPreview(appearance.copy(preset = FinishPreset.CUSTOM, customArgb = argb)) }
+        if (!LocalMiniature.current) DisposableEffect(Unit) { onDispose { repository.setPreview(null) } }
+    }
 
     val apply = {
         repository.setAppearance(appearance.copy(preset = FinishPreset.CUSTOM, customArgb = argb))

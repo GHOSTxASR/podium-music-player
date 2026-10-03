@@ -54,14 +54,15 @@ object LibraryIndex {
             )
         }.sortedWith(compareBy(collator) { it.title })
 
-    fun artists(tracks: List<Track>): List<LibraryArtist> {
+    /** Artists, with their pictures where a source has one ([images]); otherwise none — the UI draws a portrait monogram. */
+    fun artists(tracks: List<Track>, images: Map<ArtistId, String> = emptyMap()): List<LibraryArtist> {
         val albums = albums(tracks)
         return tracks.groupBy(::artistIdOf).map { (id, songs) ->
             val theirAlbums = albums.filter { album -> album.tracks.any { artistIdOf(it) == id } }
             LibraryArtist(
                 id = id,
                 name = songs.first().artists.firstOrNull()?.name ?: songs.first().artistDisplay,
-                artworkUri = theirAlbums.firstNotNullOfOrNull { it.artworkUri },
+                artworkUri = images[id],
                 albums = theirAlbums,
                 tracks = songs.sortedWith(compareBy(collator) { it.title }),
             )

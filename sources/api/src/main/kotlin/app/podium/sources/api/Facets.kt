@@ -94,6 +94,7 @@ data class AlbumSummary(
 data class ArtistSummary(
     val id: ArtistId,
     val name: String,
+    /** A picture of the artist, if the source has one. Never an album cover standing in for it. */
     val artwork: ArtworkRef? = null,
     val trackCount: Int? = null,
 )

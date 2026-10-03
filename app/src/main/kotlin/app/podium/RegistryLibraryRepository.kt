@@ -5,6 +5,7 @@ import app.podium.feature.library.LibraryRepository
 import app.podium.feature.library.LibraryState
 import app.podium.feature.library.SourceAction
 import app.podium.player.api.TrackCatalog
+import app.podium.core.model.ArtistId
 import app.podium.core.model.SourceId
 import app.podium.sources.api.Capability
 import app.podium.sources.api.SourceRegistry
@@ -56,6 +57,24 @@ class RegistryLibraryRepository(
         }
         .onEach { (it as? LibraryState.Ready)?.let { ready -> catalog.remember(ready.tracks) } }
         .stateIn(scope, SharingStarted.Eagerly, LibraryState.Loading)
+
+    override val artistArtwork: StateFlow<Map<ArtistId, String>> = registry.connectedSources
+        .combine(onlySource) { sources, only ->
+            sources.filter { it.enabled && it.capabilities.isUsable(Capability.LIBRARY) && (only == null || it.sourceId == only) }
+                .map { it.sourceId }
+        }
+        .distinctUntilChanged()
+        .flatMapLatest { ids ->
+            val libraries = ids.mapNotNull { registry.get(it)?.library }
+            if (libraries.isEmpty()) {
+                flowOf(emptyMap())
+            } else {
+                combine(libraries.map { it.artists() }) { parts ->
+                    parts.flatMap { it }.mapNotNull { a -> a.artwork?.let { a.id to it.uri } }.toMap()
+                }
+            }
+        }
+        .stateIn(scope, SharingStarted.Eagerly, emptyMap())
 
     override val pendingActions: StateFlow<List<SourceAction>> = registry.connectedSources
         .map { sources ->

@@ -45,18 +45,23 @@ Evidence: `research/2026-10-02-liquid-glass-and-hig.md`, `research/2026-10-02-ty
 - **Readable region** = screen − ScreenHeader − (MiniPlayer + 16dp when shown). Lists pad by `LocalScreenInsets`; content fades under the header and mini player (§5.5), inside the screen only.
 - Power: off = black screen and paused playback; on = boot (§5.8); any Wheel press also wakes it.
 
-### 1.1.1 The paper (D-29)
-Every list sits on one horizontal sheet:
+### 1.1.1 The paper (D-29, D-30)
+Every list sits on one sheet that curves like the Wheel's right side:
 ```
-| prev |  Music                  ●) |  ▒▒▒ next
-| col. |  Shuffle songs            ) |  ▒▒▒ column
-| peek |  Now Playing             )  |  ▒▒▒ (preview)
-|  9 % |  Settings              )    |   17 %
+          Cover Flow        ⟩ )
+           Albums            ⟩ )
+ ▒▒▒▒|      Artists           ⟩ ●)  |▒▒▒▒
+ prev|      Songs             ⟩ )   |next
+ ▒▒▒▒|     Favorites         ⟩ )    |▒▒▒▒
+         (fading, softening toward the ends)
 ```
-- Left 9 %: the previous column's labels, right-aligned and cut by the display edge, the one that led here aligned with the top of the list; dim and slightly soft. Root screens have none.
-- The list: a straight column; rows end where the arc is nearest; the arc (radius 1.8 × readable height, hairline, tertiary) bows out to the right between, hollow facing the list, mirroring the Wheel's right side. The selection indicator rides on the arc.
-- Right 17 %+: the focused item's next column (`MenuPreview`: cycling artwork, a sideways carousel, a swatch, or the instrument diagram), smaller, dimmer, slightly soft, running off the display edge — never a card.
-- Forward slides everything left (header title too), back slides it right; glimpses of the leaving screen fade at once, the arriving screen's fade in once settled. Overlay menus are plain lists.
+- **The arc** (`PaperGeometry`): a ")" whose apex sits at mid-height of the readable region at 80 % of the width, radius 1.05 × the readable height, hairline, tertiary — hollow facing the list, mirroring the Wheel's right side. The selection indicator rides on it.
+- **Rows ride the arc.** Each row is shifted left by the curve at its height, so the list curves and scrolls along it. Toward the ends rows fade (to 40 %), shrink a little (5 %) and soften (up to 3 dp blur on API 31+); the focused row stays crisp. Rows fade out within 24 dp of the readable region's edges, so they never drift under the title or the mini player. Short lists sit centred on the apex.
+- **Two glimpses at mid-height, either side of the list,** the same square (34 % of the readable height), the same distance treatment (60 % opacity, 94 % scale, 1.5 dp soften), each running off its display edge:
+  - Right, beyond the arc: the focused item's next column (`MenuPreview`: cycling artwork, a sideways carousel, a swatch, or the instrument diagram).
+  - Left, before the list: the previous column, live — that screen itself (`LocalPaperPeek`, a `LocalMiniature` composition with no input or side effects), zoomed in on its list with the item that led here focused (`LocalMiniatureFocusKey`), on a raised tile. Tapping it goes back. Root screens have none.
+- **Moving along the paper** (`paperForward` / `paperBack`, 600 ms, all themes): forward, the next column grows out of its box at the right and rises over the top of the curve into focus, while the current screen sinks down and to the left into the previous column's box; back is the mirror. Glimpses of the leaving screen fade at once; the arriving screen's fade in as it lands. Reduced motion: a crossfade. Glass keeps Now Playing's rise from the mini player. Overlay menus are plain lists.
+- **Long titles:** the column is ~56 % of the width, so titles ellipsize sooner than on a full-width list; the focused row's title scrolls slowly when it doesn't fit (see §3).
 
 ### 1.2 Compact landscape (phones)
 `[ Screen (flexible) | Wheel column (D = clamp(0.78 × height, 220, 300)) ]`. Wheel on the right (left if left-handed). In Music/Albums contexts the screen shows **Album Flow**. MiniPlayer moves to the top of the wheel column as a narrower capsule.
@@ -138,7 +143,7 @@ Atmosphere follows the **now-playing** artwork app-wide; on album/artist screens
 Font scale: honoured to 200% (Android nonlinear scaling). Rows grow (`minHeight`, never fixed height). Wheel legends cap at 1.3× (fixed geometry; semantics carry the label). Bold-text (`fontWeightAdjustment`) adds +100 to weights (cap 700).
 
 ### 3.3 Truncation
-Titles: end ellipsis; Now Playing: narrow width → wrap to 2 lines → ellipsis. **No marquees** (motion without user action).
+Titles: end ellipsis; Now Playing: narrow width → wrap to 2 lines → ellipsis. Only the focused list row may scroll its title, slowly, after 0.9 s, when it doesn't fit (as the original iPod did; it follows the user's own focus, and is off with reduced motion). No other marquees.
 
 ---
 

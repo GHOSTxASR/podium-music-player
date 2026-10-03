@@ -178,8 +178,11 @@ class TestMusicSource(
     }
 
     private fun artists(): List<ArtistSummary> = tracks.groupBy { it.artists.first().id!! }.map { (id, ts) ->
-        ArtistSummary(id, ts.first().artistDisplay, trackCount = ts.size)
+        // Artist imagery is its own thing (never an album cover): generated portraits here.
+        ArtistSummary(id, ts.first().artistDisplay, ArtworkRef(sourceId, "artist/" + id.providerKey()), ts.size)
     }
+
+    private fun app.podium.core.model.ArtistId.providerKey() = value.substringAfter(TrackId.SEPARATOR)
 
     override val library: LibraryFacet? = if (variant == Variant.MIRROR) null else object : LibraryFacet {
         override fun tracks(): Flow<List<Track>> = flowOf(tracks)
@@ -243,12 +246,14 @@ class TestMusicSource(
 
     override val artwork: ArtworkFacet = object : ArtworkFacet {
         override suspend fun load(ref: ArtworkRef, sizePx: Int): ArtworkPayload? = withContext(Dispatchers.IO) {
-            val albumKey = ref.key.removePrefix("album/")
-            val file = File(artDir, "$albumKey-$sizePx.png")
+            val portrait = ref.key.startsWith("artist/")
+            val albumKey = ref.key.removePrefix("album/").removePrefix("artist/")
+            val name = (if (portrait) "artist-" else "") + albumKey
+            val file = File(artDir, "$name-$sizePx.png")
             if (!file.exists()) {
                 // Rows load the same cover concurrently: render privately, then publish atomically.
-                val tmp = File.createTempFile("$albumKey-$sizePx", ".part", artDir.apply { mkdirs() })
-                renderArtwork(albumKey, sizePx, tmp)
+                val tmp = File.createTempFile("$name-$sizePx", ".part", artDir.apply { mkdirs() })
+                if (portrait) renderPortrait(albumKey, sizePx, tmp) else renderArtwork(albumKey, sizePx, tmp)
                 if (!tmp.renameTo(file)) tmp.delete()
             }
             ArtworkPayload.LocalFile(file.absolutePath)
@@ -286,6 +291,21 @@ class TestMusicSource(
         paint.color = p[2]
         canvas.drawRect(size * 0.08f, size * 0.80f, size * 0.52f, size * 0.84f, paint)
         canvas.drawCircle(cx, cy, size * 0.035f, paint)
+        out.parentFile?.mkdirs()
+        FileOutputStream(out).use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        bitmap.recycle()
+    }
+
+    /** A generated artist portrait: a head-and-shoulders silhouette on a tone from the name. */
+    private fun renderPortrait(artistKey: String, size: Int, out: File) {
+        val hue = ((artistKey.hashCode() and 0x7fffffff) % 360).toFloat()
+        val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+        canvas.drawColor(android.graphics.Color.HSVToColor(floatArrayOf(hue, 0.35f, 0.32f)))
+        paint.color = android.graphics.Color.HSVToColor(floatArrayOf(hue, 0.22f, 0.78f))
+        canvas.drawCircle(size * 0.5f, size * 0.40f, size * 0.17f, paint)
+        canvas.drawOval(size * 0.18f, size * 0.62f, size * 0.82f, size * 1.18f, paint)
         out.parentFile?.mkdirs()
         FileOutputStream(out).use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
         bitmap.recycle()

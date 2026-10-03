@@ -29,7 +29,8 @@ import app.podium.core.designsystem.component.LocalOverlayHost
 import app.podium.core.designsystem.component.LocalPaperPeek
 import app.podium.core.designsystem.component.LocalScreenInsets
 import app.podium.core.designsystem.component.OverlayHost
-import app.podium.core.designsystem.component.PaperPeekLabels
+import app.podium.core.designsystem.component.LocalMiniature
+import app.podium.core.designsystem.component.LocalMiniatureFocusKey
 import app.podium.core.designsystem.component.PodWheel
 import app.podium.core.designsystem.component.ScreenInsets
 import app.podium.core.designsystem.shell.DeviceAppearance
@@ -62,7 +63,7 @@ import java.io.File
 import kotlin.test.assertTrue
 
 /**
- * The paper composition (D-29) in Carbon and Bone at several device sizes: every node the display
+ * The paper composition (D-29, D-30) in every theme at several device sizes: every node the display
  * draws must stay inside it. Screenshots go to build/screenshots/ for review.
  */
 @RunWith(AndroidJUnit4::class)
@@ -76,16 +77,24 @@ class PaperLayoutTest {
 
     @Test fun boneHome() = check("bone-home", PHONE, DisplayTheme.BONE, "Podium") { Home() }
 
-    @Test fun carbonMusicSmall() = check("carbon-music-small", SMALL, DisplayTheme.CARBON, "Music", peek = listOf("Music", "Shuffle songs", "Settings")) {
-        MusicScreen(Library, NoFavorites, {}, {}, {}, {}, {}, {})
+    @Test fun carbonMusicSmall() = check("carbon-music-small", SMALL, DisplayTheme.CARBON, "Music", previous = { Home() }, focusKey = "Music") {
+        Music()
     }
 
-    @Test fun boneAlbums() = check("bone-albums", PHONE, DisplayTheme.BONE, "Albums", peek = listOf("Cover Flow", "Albums", "Artists")) {
+    @Test fun glassMusic() = check("glass-music", PHONE, DisplayTheme.GLASS, "Music", previous = { Home() }, focusKey = "Music") {
+        Music()
+    }
+
+    @Test fun boneAlbums() = check("bone-albums", PHONE, DisplayTheme.BONE, "Albums", previous = { Music() }, focusKey = "Albums") {
         AlbumsScreen(Library) {}
     }
 
-    @Test fun carbonAlbum() = check("carbon-album", PHONE, DisplayTheme.CARBON, "Coastline", peek = ALBUMS.map { it.second }) {
+    @Test fun carbonAlbum() = check("carbon-album", PHONE, DisplayTheme.CARBON, "Coastline", previous = { AlbumsScreen(Library) {} }, focusKey = ALBUMS.first().first.value) {
         AlbumScreen(Library, ALBUMS.first().first, onPlay = { _, _, _ -> }, onPlayNext = {}, onAddToQueue = {})
+    }
+
+    @Test fun glassSongs() = check("glass-songs", PHONE, DisplayTheme.GLASS, "Songs", previous = { Music() }, focusKey = "Songs") {
+        SongsScreen(Library, onPlay = { _, _ -> }, onPlayNext = {}, onAddToQueue = {})
     }
 
     @Test fun carbonCoverFlow() = check("carbon-coverflow", PHONE, DisplayTheme.CARBON, "Cover Flow") { CoverFlowScreen(Library) {} }
@@ -95,12 +104,16 @@ class PaperLayoutTest {
     @Composable
     private fun Home() = HomeScreen(Library, "test://a0", nowPlayingActive = true, {}, {}, {}, {})
 
+    @Composable
+    private fun Music() = MusicScreen(Library, NoFavorites, {}, {}, {}, {}, {}, {})
+
     private fun check(
         name: String,
         qualifiers: String,
         theme: DisplayTheme,
         title: String,
-        peek: List<String>? = null,
+        previous: (@Composable () -> Unit)? = null,
+        focusKey: String? = null,
         screen: @Composable () -> Unit,
     ) {
         RuntimeEnvironment.setQualifiers(qualifiers)
@@ -119,9 +132,21 @@ class PaperLayoutTest {
                             screen = {
                                 CompositionLocalProvider(
                                     LocalScreenInsets provides ScreenInsets(top = ScreenHeaderHeight, bottom = 8.dp),
-                                    LocalPaperPeek provides peek?.let { labels -> { m -> PaperPeekLabels(labels, 1, m) } },
+                                    // The previous column, live, as the shell provides it.
+                                    LocalPaperPeek provides previous?.let { prev ->
+                                        { m ->
+                                            Box(m) {
+                                                CompositionLocalProvider(
+                                                    LocalMiniature provides true,
+                                                    LocalMiniatureFocusKey provides focusKey,
+                                                    LocalInputRouter provides InputRouter(),
+                                                    LocalPaperPeek provides null,
+                                                ) { prev() }
+                                            }
+                                        }
+                                    },
                                 ) { screen() }
-                                ScreenHeader(title, canGoBack = peek != null, onBack = {}, playing = false)
+                                ScreenHeader(title, canGoBack = previous != null, onBack = {}, playing = false)
                             },
                             wheel = { d -> PodWheel(onInput = {}, diameter = d, palette = palette) },
                             powerButton = { PowerButton(on = true, palette = palette, onToggle = {}) },

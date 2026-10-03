@@ -213,7 +213,8 @@ class LocalMusicSource(context: Context, private val scope: CoroutineScope) : Mu
 
     private fun artistsOf(tracks: List<Track>): List<ArtistSummary> = tracks
         .groupBy { it.artists.first().id ?: ArtistId.of(descriptor.id, it.artistDisplay) }
-        .map { (id, ts) -> ArtistSummary(id, ts.first().artistDisplay, ts.first().artwork, ts.size) }
+        // MediaStore has no artist images; an album cover is not a picture of the artist.
+        .map { (id, ts) -> ArtistSummary(id, ts.first().artistDisplay, artwork = null, trackCount = ts.size) }
         .sortedBy { it.name.lowercase() }
 
     override val library: LibraryFacet = object : LibraryFacet {

@@ -1,5 +1,6 @@
 package app.podium.core.designsystem.component
 
+import android.os.Build
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
@@ -7,7 +8,9 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.PaddingValues
@@ -15,10 +18,13 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -29,16 +35,22 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.BlurEffect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.TileMode
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.selected
@@ -134,13 +146,20 @@ fun <T> FocusList(
         snapshotFlow { state.focusMoves }.collectLatest { state.keepFocusedInView() }
     }
 
-    val rows: @Composable (Modifier) -> Unit = { listModifier ->
-        LazyColumn(state = listState, contentPadding = contentPadding, modifier = listModifier) {
+    // Paper lists bend each row along the arc and fade/soften it toward the ends; plain lists don't.
+    val rows: @Composable (Modifier, (Modifier.(index: Int) -> Modifier)?) -> Unit = { listModifier, along ->
+        LazyColumn(
+            state = listState,
+            contentPadding = contentPadding,
+            verticalArrangement = if (paper) Arrangement.Center else Arrangement.Top,
+            modifier = listModifier,
+        ) {
             itemsIndexed(items, key = { _, item -> key(item) }) { index, item ->
                 val focused = index == state.focusedIndex
                 Box(
                     Modifier
                         .fillMaxWidth()
+                        .then(if (along != null) Modifier.along(index) else Modifier)
                         .semantics { selected = focused }
                         .pointerInput(index) {
                             if (!focusable(item)) return@pointerInput
@@ -166,69 +185,109 @@ fun <T> FocusList(
                 if (!lensVisible) return@Canvas
                 drawLens(colors.isIndustrial, colors.isDark, colors.highlight, colors.labelPrimary, solidFocus, 0f, size.width, lensTop.value, lensHeight.value, dotX = null)
             }
-            rows(Modifier.fillMaxSize())
+            rows(Modifier.fillMaxSize(), null)
         }
         return
     }
 
-    BoxWithConstraints(modifier.clipToBounds()) {
-        val width = maxWidth
-        val height = maxHeight
-        val peekW = width * Paper.PeekFraction
-        val nextW = width * Paper.NextFraction
-        val listW = width - peekW - nextW - Paper.ArcGap
-        val padTop = contentPadding.calculateTopPadding()
-        val padBottom = contentPadding.calculateBottomPadding()
-        val readableH = (height - padTop - padBottom).coerceAtLeast(1.dp)
-        val readableHPx = with(density) { readableH.toPx() }
-        val padTopPx = with(density) { padTop.toPx() }
-        val arcBaseXPx = with(density) { (peekW + listW + Paper.ArcGap).toPx() }
-        fun arcXPx(yPx: Float) = arcBaseXPx - Paper.bend(yPx - padTopPx - readableHPx / 2f, readableHPx)
-
-        val decor = LocalPaperDecor.current()
-        // The previous column, peeking in from the left.
-        LocalPaperPeek.current?.let { peek ->
-            Box(Modifier.width(peekW).fillMaxHeight().clipToBounds().then(decor)) { peek(Modifier.fillMaxSize()) }
+    val miniature = LocalMiniature.current
+    // In a miniature, show the item that led to the current column as focused.
+    LocalMiniatureFocusKey.current?.let { focusKey ->
+        LaunchedEffect(items, focusKey) {
+            val i = items.indexOfFirst { key(it).toString() == focusKey }
+            if (i >= 0) state.focus(i)
         }
+    }
 
-        // The next column, beyond the arc, running off the display's edge.
-        val previewSize = minOf(width * 0.42f, readableH * 0.5f)
-        val focusedItem = items.getOrNull(state.focusedIndex)
-        Box(
-            Modifier
-                .offset(x = peekW + listW + Paper.ArcGap + 14.dp, y = padTop + (readableH - previewSize) / 2)
-                .size(previewSize)
-                .then(decor),
-        ) {
-            AnimatedContent(
-                targetState = focusedItem?.let(preview) ?: MenuPreview.None,
-                transitionSpec = { fadeIn(tween(if (motion.reduced) 0 else 320)) togetherWith fadeOut(tween(if (motion.reduced) 0 else 200)) },
-                label = "nextColumn",
-            ) { p -> PreviewPane(p, previewSize) }
+    BoxWithConstraints(modifier.clipToBounds()) {
+        val g = PaperGeometry(maxWidth, maxHeight, contentPadding.calculateTopPadding(), contentPadding.calculateBottomPadding())
+        val decor = LocalPaperDecor.current()
+
+        if (!miniature) {
+            // The previous column, live, at middle-left: a tile like the next column's at the right,
+            // mirrored off the left edge, showing that screen zoomed to its list.
+            LocalPaperPeek.current?.let { peek ->
+                val corner = previewCorner()
+                Box(
+                    Modifier
+                        .offset(x = g.leftBoxX, y = g.boxTop)
+                        .size(g.boxHeight)
+                        .then(decor)
+                        .distant()
+                        .clip(RoundedCornerShape(corner))
+                        .background(colors.canvasRaised),
+                ) {
+                    Box(
+                        Modifier
+                            .offset(x = g.peekOriginX - g.leftBoxX, y = g.peekOriginY - g.boxTop)
+                            .wrapContentSize(Alignment.TopStart, unbounded = true)
+                            .requiredSize(g.width, g.height)
+                            .graphicsLayer {
+                                scaleX = g.peekScale
+                                scaleY = g.peekScale
+                                transformOrigin = TransformOrigin(0f, 0f)
+                            },
+                    ) { peek(Modifier.fillMaxSize()) }
+                }
+            }
+
+            // The next column at middle-right, beyond the arc, running off the display's edge.
+            val focusedItem = items.getOrNull(state.focusedIndex)
+            Box(
+                Modifier
+                    .offset(x = g.rightBoxX, y = g.boxTop)
+                    .size(g.boxHeight)
+                    .then(decor),
+            ) {
+                AnimatedContent(
+                    targetState = focusedItem?.let(preview) ?: MenuPreview.None,
+                    transitionSpec = { fadeIn(tween(if (motion.reduced) 0 else 320)) togetherWith fadeOut(tween(if (motion.reduced) 0 else 200)) },
+                    label = "nextColumn",
+                ) { p -> PreviewPane(p, g.boxHeight) }
+            }
         }
 
         // The arc, the lens and the indicator riding on the arc.
         Canvas(Modifier.fillMaxSize()) {
             val path = Path()
-            val steps = 40
+            val steps = 48
             for (i in 0..steps) {
-                val y = padTopPx + readableHPx * (i / steps.toFloat())
-                val x = arcXPx(y)
-                if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+                val y = g.padTop + g.readable * (i / steps.toFloat())
+                val x = g.arcX(y).toPx()
+                if (i == 0) path.moveTo(x, y.toPx()) else path.lineTo(x, y.toPx())
             }
             drawPath(path, colors.labelTertiary.copy(alpha = if (colors.isDark) 0.45f else 0.6f), style = Stroke(width = 1.dp.toPx()))
             if (lensVisible) {
                 val centre = lensTop.value + lensHeight.value / 2f
-                val left = peekW.toPx()
-                val right = arcXPx(centre) - Paper.ArcGap.toPx() / 2f
-                drawLens(colors.isIndustrial, colors.isDark, colors.highlight, colors.labelPrimary, solidFocus, left, right, lensTop.value, lensHeight.value, dotX = arcXPx(centre))
+                val centreDp = centre.toDp()
+                val left = (g.columnLeft - g.bend(centreDp - g.centreY)).toPx()
+                val right = (g.arcX(centreDp) - Paper.ArcGap / 2).toPx()
+                drawLens(colors.isIndustrial, colors.isDark, colors.highlight, colors.labelPrimary, solidFocus, left, right, lensTop.value, lensHeight.value, dotX = g.arcX(centreDp).toPx())
             }
         }
 
-        // Rows end where the arc is nearest (its ends); the arc bows out to the right between.
-        val rowsW = listW - with(density) { Paper.bend(readableHPx / 2f, readableHPx).toDp() }
+        // Each row rides the arc: shifted left by the curve at its height, and fading, shrinking a
+        // little and softening toward the ends — a drum, not a sheet. The focused row stays crisp.
+        val along: Modifier.(Int) -> Modifier = { index ->
+            graphicsLayer {
+                val info = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == index } ?: return@graphicsLayer
+                val y = (info.offset + info.size / 2f).toDp() + g.padTop
+                translationX = -g.bend(y - g.centreY).toPx()
+                val d = g.depth(y)
+                val focusedRow = index == state.focusedIndex
+                alpha = (if (focusedRow) maxOf(0.9f, 1f - 0.6f * d * d) else 1f - 0.6f * d * d) * g.within(y)
+                val scale = 1f - 0.05f * d * d
+                scaleX = scale
+                scaleY = scale
+                val soften = ((d - 0.45f) / 0.55f).coerceIn(0f, 1f)
+                renderEffect = if (!focusedRow && soften > 0f && Build.VERSION.SDK_INT >= 31) {
+                    val r = (3.dp.toPx() * soften * soften).coerceAtLeast(0.01f)
+                    BlurEffect(r, r, TileMode.Decal)
+                } else null
+            }
+        }
         CompositionLocalProvider(LocalRowPadding provides 10.dp) {
-            rows(Modifier.offset(x = peekW).width(rowsW).fillMaxHeight())
+            rows(Modifier.offset(x = g.columnLeft).width(g.columnWidth).fillMaxHeight(), along)
         }
     }
 }

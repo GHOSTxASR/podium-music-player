@@ -42,7 +42,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.podium.core.designsystem.artwork.ArtworkImage
 import app.podium.core.designsystem.component.FocusList
 import app.podium.core.designsystem.component.ListInputEffect
+import app.podium.core.designsystem.component.LocalMiniatureFocusKey
 import app.podium.core.designsystem.component.LocalOverlayHost
+import app.podium.core.designsystem.component.LocalRowPadding
 import app.podium.core.designsystem.component.LocalScreenInsets
 import app.podium.core.designsystem.component.MenuAction
 import app.podium.core.designsystem.component.MenuPreview
@@ -61,10 +63,10 @@ import app.podium.core.model.AlbumId
 import app.podium.core.model.ArtistId
 import app.podium.core.model.Track
 import app.podium.player.api.FavoritesRepository
-import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.math.sign
+import kotlinx.coroutines.launch
 
 /** Play [tracks] from [index], as a context labelled [label] ("Continuing from …"). */
 typealias PlayTracks = (tracks: List<Track>, index: Int, label: String) -> Unit
@@ -172,17 +174,18 @@ private fun songCount(n: Int) = if (n == 1) "1 song" else "$n songs"
 
 /** Cover, title and quiet details at the top of an album or artist page. Not focusable. */
 @Composable
-private fun DetailHeader(artworkUri: String?, title: String, subtitle: String, details: List<String>) {
+private fun DetailHeader(artworkUri: String?, title: String, subtitle: String, details: List<String>, round: Boolean = false) {
     val colors = PodiumTheme.colors
     val type = PodiumTheme.type
+    // Sized for the paper's column (D-30): a long title wraps at words, never mid-word.
     Row(
-        Modifier.fillMaxWidth().padding(horizontal = Spacing.gutter + Spacing.xs, vertical = Spacing.m),
+        Modifier.fillMaxWidth().padding(horizontal = LocalRowPadding.current, vertical = Spacing.m),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        ArtworkImage(artworkUri, 84.dp, fallbackText = title)
-        Spacer(Modifier.width(Spacing.l))
+        ArtworkImage(artworkUri, 64.dp, fallbackText = title, round = round)
+        Spacer(Modifier.width(Spacing.m))
         Column(Modifier.weight(1f)) {
-            PodiumText(title, type.title, colors.labelPrimary, Modifier.semantics { heading() }, maxLines = 2)
+            PodiumText(title, type.rowFocused, colors.labelPrimary, Modifier.semantics { heading() }, maxLines = 2)
             PodiumText(subtitle, type.rowSecondary, colors.labelSecondary)
             details.forEach { PodiumText(it, type.footnote, colors.labelTertiary) }
         }
@@ -193,7 +196,8 @@ private fun DetailHeader(artworkUri: String?, title: String, subtitle: String, d
 @Composable
 fun ArtistsScreen(repository: LibraryRepository, onOpen: (ArtistId) -> Unit) {
     val (tracks, loading) = rememberTracks(repository)
-    val artists = remember(tracks) { LibraryIndex.artists(tracks) }
+    val images by repository.artistArtwork.collectAsStateWithLifecycle()
+    val artists = remember(tracks, images) { LibraryIndex.artists(tracks, images) }
     val focus = rememberFocusListState("artists")
     ListInputEffect(focus, onActivate = { onOpen(artists[it].id) })
     when {
@@ -205,7 +209,7 @@ fun ArtistsScreen(repository: LibraryRepository, onOpen: (ArtistId) -> Unit) {
             key = { it.id.value },
             contentPadding = LocalScreenInsets.current.listPadding(),
             onActivate = { onOpen(artists[it].id) },
-            preview = { a -> MenuPreview.Artwork(a.albums.mapNotNull { it.artworkUri }.take(6), round = true) },
+            preview = { a -> a.artworkUri?.let { MenuPreview.Artwork(listOf(it), round = true) } ?: MenuPreview.Artwork(a.albums.mapNotNull { it.artworkUri }.take(6)) },
             modifier = Modifier.fillMaxSize(),
         ) { artist, _, focused ->
             TrackRow(
@@ -214,6 +218,7 @@ fun ArtistsScreen(repository: LibraryRepository, onOpen: (ArtistId) -> Unit) {
                 focused,
                 artist.artworkUri,
                 trailing = artist.tracks.size.toString(),
+                roundArtwork = true,
             )
         }
     }
@@ -229,7 +234,8 @@ private sealed interface ArtistRow {
 @Composable
 fun ArtistScreen(repository: LibraryRepository, artistId: ArtistId, onOpenAlbum: (AlbumId) -> Unit, onPlay: PlayTracks) {
     val (tracks, loading) = rememberTracks(repository)
-    val artist = remember(tracks, artistId) { LibraryIndex.artists(tracks).firstOrNull { it.id == artistId } }
+    val images by repository.artistArtwork.collectAsStateWithLifecycle()
+    val artist = remember(tracks, artistId, images) { LibraryIndex.artists(tracks, images).firstOrNull { it.id == artistId } }
     val rows = remember(artist) { listOf(ArtistRow.Header, ArtistRow.AllSongs) + artist?.albums.orEmpty().map { ArtistRow.AlbumEntry(it) } }
     val focus = rememberFocusListState("artist:${artistId.value}")
     val activate: (Int) -> Unit = { i ->
@@ -270,6 +276,7 @@ fun ArtistScreen(repository: LibraryRepository, artistId: ArtistId, onOpenAlbum:
                     artist.name,
                     if (artist.albums.size == 1) "1 album" else "${artist.albums.size} albums",
                     listOf(songCount(artist.tracks.size)),
+                    round = true,
                 )
                 ArtistRow.AllSongs -> MenuRow("All songs", focused, leading = PodiumSymbol.PlaylistPlay, showChevron = false)
                 is ArtistRow.AlbumEntry -> TrackRow(row.album.title, songCount(row.album.tracks.size), focused, row.album.artworkUri, trailing = row.album.year?.toString())
@@ -336,6 +343,16 @@ fun CoverFlowScreen(repository: LibraryRepository, onOpen: (AlbumId) -> Unit) {
 
     val position = remember { Animatable(focus.focusedIndex.toFloat()) }
     val scope = rememberCoroutineScope()
+    // As a miniature (the column before an album), rest on the album that was opened.
+    LocalMiniatureFocusKey.current?.let { key ->
+        LaunchedEffect(albums, key) {
+            val i = albums.indexOfFirst { it.id.value == key }
+            if (i >= 0) {
+                focus.focus(i)
+                position.snapTo(i.toFloat())
+            }
+        }
+    }
     LaunchedEffect(focus.focusedIndex) {
         val target = focus.focusedIndex.toFloat()
         if (motion.reduced) position.snapTo(target) else position.animateTo(target, spring(dampingRatio = 0.92f, stiffness = 380f))

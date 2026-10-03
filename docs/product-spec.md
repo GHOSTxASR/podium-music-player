@@ -83,7 +83,7 @@ Priority: **P0** = v1.0 must ship · **P1** = v1.x · **P2** = later.
 |---|---|
 | Open Podium | Restores last queue paused at its position; Home shows with focus on the last-used item. |
 | Rotate the wheel | Focus lens glides row to row, one haptic tick per detent. |
-| Select Music | Strip slides left (iPod push). |
+| Select Music | The paper moves one step: Music rises out of its preview into focus; Home sinks into the glimpse at the left (D-30). |
 | Search an artist/song | Home ▸ Search, or the title-bar search button from anywhere. Results across sources stream in. |
 | Open an album | Album screen: artwork, tracks; or flip a cover in Album Flow. |
 | Play a song | Queue = album from that track; Now Playing pushes automatically (setting). |
