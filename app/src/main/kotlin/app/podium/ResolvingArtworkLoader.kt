@@ -1,5 +1,6 @@
 package app.podium
 
+import app.podium.core.common.DiskActivity
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.LruCache
@@ -24,6 +25,7 @@ class ResolvingArtworkLoader(private val resolver: ArtworkResolver) : ArtworkLoa
     override fun peek(uri: String, sizePx: Int): ImageBitmap? = cache.get("$uri@$sizePx")?.asImageBitmap()
 
     override suspend fun load(uri: String, sizePx: Int): ImageBitmap? {
+        DiskActivity.pulse()
         val key = "$uri@$sizePx"
         cache.get(key)?.let { return it.asImageBitmap() }
         val bitmap = withContext(Dispatchers.IO) {

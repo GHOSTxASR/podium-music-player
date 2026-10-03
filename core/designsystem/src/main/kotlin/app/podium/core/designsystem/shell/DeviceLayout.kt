@@ -35,6 +35,8 @@ fun DeviceLayout(
     screen: @Composable BoxScope.() -> Unit,
     wheel: @Composable (diameter: Dp) -> Unit,
     powerButton: @Composable () -> Unit,
+    /** The indicator lights (D-33), at the bottom corner opposite the power button. */
+    indicators: @Composable () -> Unit = {},
 ) {
     BoxWithConstraints(modifier.windowInsetsPadding(WindowInsets.systemBars.union(WindowInsets.displayCutout))) {
         if (maxWidth <= maxHeight) {
@@ -50,6 +52,7 @@ fun DeviceLayout(
                 Box(Modifier.fillMaxWidth().padding(vertical = WheelGap)) {
                     Box(Modifier.align(Alignment.Center)) { wheel(diameter) }
                     Box(Modifier.align(Alignment.TopEnd).padding(end = Spacing.s)) { powerButton() }
+                    Box(Modifier.align(Alignment.BottomStart).padding(start = Spacing.m)) { indicators() }
                 }
             }
         } else {
@@ -65,6 +68,7 @@ fun DeviceLayout(
                 Box(Modifier.fillMaxHeight().padding(horizontal = WheelGap)) {
                     Box(Modifier.align(Alignment.Center)) { wheel(diameter) }
                     Box(Modifier.align(Alignment.TopEnd)) { powerButton() }
+                    Box(Modifier.align(Alignment.BottomStart)) { indicators() }
                 }
             }
         }

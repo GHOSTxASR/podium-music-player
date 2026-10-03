@@ -229,6 +229,9 @@ Below the artwork: the artwork mirrored vertically, blurred 48dp, opacity 30% (d
 - The screen is a text container, never glass; the power button is a control and is glass on the Glass finish.
 - Boot (D-32, "old hardware, new software"): a power-on self-test types itself in the system monospace face (11 sp, phosphor off-white `#D9D8D2` on black, blinking block cursor): "Podium ROM 3.1", a copyright line, then checks with dot leaders and results in a column — Processor (cores), Memory (counts up to the phone's RAM in MB), Display (pixels), Click wheel, Audio (speaker / headphones / bluetooth), Library (songs). Each result lands with a `tick` haptic (and click, if on); the memory count purrs with detent ticks. Then the screen clears to the mark: the ring sweeps closed (700 ms), the centre lands with a `press`, the wordmark fades in, and a hairline progress capsule fills over 1.5 s with two stalls (like a disk seeking), ending on `confirm`. ~4.5 s; any Wheel press skips; reduced motion shows the lines at once and the mark static (~1.2 s). The startup chord (`res/raw/podium_boot.ogg`: an original strummed C major 9 with a room tail, synthesized for Podium — not Apple's trademarked chime) starts with the mark as a UI sound: system-sounds volume, silent on silent/vibrate, skipped when music is playing, toggle in Settings ▸ Startup sound.
 
+### 5.8.1 Indicator lights (D-33)
+Bottom corner of the body, opposite the power button: two 18 dp diodes in recessed bezels with 8 sp legends ("Battery", "Disk"). Battery: `#4CE06A` > 60 %, `#B8E04C` > 30 %, `#FFB020` > 15 %, `#FF3B30` below; breathes (1.4 s) while charging, blinks (0.9 s) at ≤ 10 %. Disk: `#FFA726`, a double flicker (60 ms + 140 ms) per `DiskActivity` pulse.
+
 ### 5.9 Display themes: Glass, Carbon, Bone (D-29)
 | | Glass | Carbon | Bone |
 |---|---|---|---|

@@ -24,6 +24,7 @@ import app.podium.sources.local.LocalMusicSource
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import app.podium.core.designsystem.shell.BatteryLevel
 import app.podium.core.designsystem.shell.BootCheck
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -64,6 +65,9 @@ class AppGraph(private val context: Context) {
     val artworkLoader = ResolvingArtworkLoader(artwork)
     val deviceSettings = SharedPrefsDeviceSettings(context)
     val favorites = DatabaseFavorites(database, appScope).also { LegacyFavorites.moveInto(context, it, appScope) }
+    /** The phone's battery, for the battery LED (D-33). */
+    val battery: StateFlow<BatteryLevel?> = BatteryMonitor.levels(context).stateIn(appScope, SharingStarted.Eagerly, null)
+
     /** The startup chord and the Wheel's clicks (D-32). */
     val sounds = DeviceSounds(context)
 

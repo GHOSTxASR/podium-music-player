@@ -62,6 +62,7 @@ import androidx.navigation3.runtime.NavEntry
 import androidx.navigation3.scene.Scene
 import androidx.navigation3.ui.LocalNavAnimatedContentScope
 import androidx.navigation3.ui.NavDisplay
+import app.podium.core.common.DiskActivity
 import app.podium.core.designsystem.artwork.BackgroundExtension
 import app.podium.core.designsystem.artwork.LocalArtworkLoader
 import app.podium.core.designsystem.artwork.rememberArtwork
@@ -86,6 +87,7 @@ import app.podium.core.designsystem.shell.PowerButton
 import app.podium.core.designsystem.shell.ScreenHeader
 import app.podium.core.designsystem.shell.ScreenHeaderHeight
 import app.podium.core.designsystem.shell.ShellPalette
+import app.podium.core.designsystem.shell.StatusLeds
 import app.podium.core.designsystem.shell.palette
 import app.podium.core.designsystem.theme.Atmosphere
 import app.podium.core.designsystem.theme.AtmosphereBackground
@@ -294,6 +296,10 @@ fun PodiumApp(graph: AppGraph, onSourceAction: (CapabilityAction) -> Unit) {
                         },
                         powerButton = {
                             PowerButton(on = power != Power.OFF, palette = palette, onToggle = graph::togglePower)
+                        },
+                        indicators = {
+                            val battery by graph.battery.collectAsStateWithLifecycle()
+                            StatusLeds(battery, DiskActivity.pulses, palette)
                         },
                     )
                 },
@@ -566,13 +572,17 @@ private fun ScreenContent(
 /** The back stack's only writer. */
 private class Navigator(private val stack: SnapshotStateList<Dest>) {
     fun push(screen: Dest) {
-        if (stack.last() != screen) stack.add(screen)
+        if (stack.last() != screen) {
+            stack.add(screen)
+            DiskActivity.pulse() // opening a folder on the paper
+        }
     }
 
     /** @return false at the root. */
     fun pop(): Boolean {
         if (stack.size <= 1) return false
         stack.removeAt(stack.lastIndex)
+        DiskActivity.pulse()
         return true
     }
 

@@ -1,6 +1,7 @@
 package app.podium
 
 import android.util.Log
+import app.podium.core.common.DiskActivity
 import app.podium.core.database.LibraryStore
 import app.podium.core.database.StoredAlbum
 import app.podium.core.database.StoredArtist
@@ -85,6 +86,7 @@ class DatabaseLibraryRepository(
         }
             .conflate()
             .collect { (tracks, pictures) ->
+                DiskActivity.pulse()
                 runCatching { store.sync(id, name, tracks, pictures) }
                     .onSuccess { if (it.changed) Log.d(TAG, "synced $id: $it") }
                     .onFailure { Log.w(TAG, "could not sync $id", it) }
