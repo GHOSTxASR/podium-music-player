@@ -40,6 +40,8 @@ Parameters are tokens (tunable on device; values are starting points):
 | `wheel.accel` | ×1 < 22 det/s · ×2 < 36 · ×4 ≥ 36 (ListFocus with ≥ 50 items only; shorter lists always move one item per detent) |
 | `wheel.maxHapticRate` | 60/s |
 
+Global: hold ⏯ switches the device off (as on the original); any press wakes it.
+
 Algorithm:
 1. `down` inside the ring band → candidate gesture; record the zone under the finger; play `press` haptic and show zone pressed state **immediately** (tactility).
 2. Track the angle `θ = atan2(y − cy, x − cx)` with unwrap. If |Δθ| > slop before `up` → enter **rotation**: cancel the press visual (no button fires), accumulate Δθ, emit a `Rotate` each time the accumulator crosses ±`detentDeg` (with hysteresis on direction change).
@@ -55,8 +57,10 @@ Latency budget: detent emission → focus state change in the same frame; lens b
 | Context | Rotate | Center | Long-press Center | Menu | Notes |
 |---|---|---|---|---|---|
 | `ListFocus` (Home, Music, all lists, Search results, Settings) | Move focus ±1 (accelerated in long lists); `IndexGlyph` HUD on sorted lists during fast spins | Activate: push destination / play track (queue = list context) / toggle setting | Context menu for focused item | Back | Boundary: lens squash + `boundary` haptic, no wrap |
-| `Volume` (Now Playing default) | System media volume ±1 step per *k* detents (D-16) | Enter `Scrub` | Now Playing context menu | Back | VolumeBar shown while turning |
-| `Scrub` (Now Playing) | Seek ±1% of duration per detent (min 1 s, max 10 s) | Commit & return to `Volume` | — | Return to `Volume` (does **not** navigate) | Auto-returns after 3 s idle; `step` haptic per detent |
+| `Volume` (Now Playing default) | System media volume ±1 step per *k* detents (D-16) | Enter `Scrub` | More menu | Back | VolumeBar shown while turning |
+| `Scrub` (Now Playing) | Seek ≈ 0.5 % of duration per detent (0.5–3 s), ×2/×5/×10 at 11/20/32 detents/s | Enter `Actions` | More menu | Return to `Volume` (does **not** navigate) | Auto-returns after 3 s idle |
+| `Actions` (Now Playing) | Move the focus lens across shuffle, repeat, favorite, Up Next, More | Activate the focused action | More menu | Return to `Volume` | Auto-returns after 5 s idle (iPod: Center cycles the Now Playing items) |
+| `Queue move` (Up Next ▸ song menu ▸ Move) | Move the lifted song among upcoming songs (preview) | Place it (`QueueManager.move`) | — | Cancel | Section follows its new neighbours, as in the queue |
 | `Flow` (Album Flow) | Move album ±1 (accelerated) | Flip cover → track list; Center again plays the focused track | Album context menu | Back (flip back first if flipped) | |
 | `Queue` (Up Next) | Move focus | Skip to focused item | Item menu: Play next, Move, Remove, Go to album | Back | |
 | `Reorder` (Up Next / playlist edit) | Move the grabbed item ±1 position | Drop | — | Cancel (item returns) | Entered via item menu ▸ Move |

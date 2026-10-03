@@ -13,4 +13,10 @@ object WheelAcceleration {
 
     fun multiplier(velocity: Float, itemCount: Int): Int =
         if (itemCount < MIN_ITEMS) 1 else tiers.firstOrNull { velocity >= it.first }?.second ?: 1
+
+    /** Seeking tiers: slow turns are precise, fast spins cover a whole song in a turn or two. */
+    private val seekTiers = listOf(32f to 10, 20f to 5, 11f to 2)
+
+    /** Multiplier for scrubbing: (minimum detents per second, multiplier), fastest first. */
+    fun seekMultiplier(velocity: Float): Int = seekTiers.firstOrNull { velocity >= it.first }?.second ?: 1
 }

@@ -139,6 +139,7 @@ fun MiniPlayer(
     onOpen: () -> Unit,
     onPlayPause: () -> Unit,
     modifier: Modifier = Modifier,
+    onNext: (() -> Unit)? = null,
 ) {
     val colors = PodiumTheme.colors
     val type = PodiumTheme.type
@@ -150,7 +151,7 @@ fun MiniPlayer(
             .semantics { contentDescription = "Now playing: $title, $subtitle. Opens Now Playing" },
     ) {
         Row(
-            Modifier.fillMaxSize().padding(start = Spacing.s, end = Spacing.xs),
+            Modifier.fillMaxSize().padding(start = Spacing.s + Spacing.xxs, end = Spacing.xs),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             ArtworkImage(artworkUri, 40.dp, fallbackText = title)
@@ -170,6 +171,20 @@ fun MiniPlayer(
                 contentAlignment = Alignment.Center,
             ) {
                 Symbol(if (isPlaying) PodiumSymbol.Pause else PodiumSymbol.Play, colors.labelPrimary, size = 26.dp, weight = 600, filled = true)
+            }
+            if (onNext != null) {
+                Box(
+                    Modifier
+                        .size(44.dp)
+                        .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onNext)
+                        .semantics {
+                            role = Role.Button
+                            contentDescription = "Next track"
+                        },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Symbol(PodiumSymbol.Next, colors.labelSecondary, size = 24.dp, weight = 600, filled = true)
+                }
             }
         }
         ProgressHairline(progress, isPlaying, Modifier.align(Alignment.BottomCenter).padding(horizontal = Spacing.xl).padding(bottom = 5.dp))

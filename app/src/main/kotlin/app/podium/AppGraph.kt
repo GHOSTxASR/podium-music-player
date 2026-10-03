@@ -47,6 +47,7 @@ class AppGraph(private val context: Context) {
     val library = RegistryLibraryRepository(registry, catalog, appScope)
     val artworkLoader = ResolvingArtworkLoader(artwork)
     val deviceSettings = SharedPrefsDeviceSettings(context)
+    val favorites = SharedPrefsFavorites(context)
     private val chime = BootChime(context)
 
     /** The virtual device's power (D-26). A fresh process starts by booting; the activity coming

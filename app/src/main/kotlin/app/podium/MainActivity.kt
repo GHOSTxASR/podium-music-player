@@ -1,5 +1,6 @@
 package app.podium
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -19,9 +20,15 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         graph.playbackController.connect()
+        handleDebugIntent(intent, graph)
         setContent {
             PodiumApp(graph, onSourceAction = ::perform)
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleDebugIntent(intent, graph)
     }
 
     override fun onResume() {

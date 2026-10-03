@@ -36,12 +36,12 @@ Evidence: `research/2026-10-02-liquid-glass-and-hig.md`, `research/2026-10-02-ty
 │ ╰──────────────────────────╯ │
 │           ╭───────╮       (⏻) │  Power button beside the Wheel (36dp in a 48dp target)
 │        ╭──┤ MENU  ├──╮         │
-│        │⏮  ( ◯ )  ⏭│         │  The Wheel, D = clamp(0.62 × width, 216, 300), ≤ 0.34 × height
+│        │⏮  ( ◯ )  ⏭│         │  The Wheel, D = clamp(0.58 × width, 216, 300), ≤ 0.31 × height
 │        ╰──┤  ⏯   ├──╯         │
 │           ╰───────╯            │
 └──────────────────────────────┘  gesture nav inset
 ```
-- The screen takes all height the Wheel doesn't: window − system bars − 8dp − 2 × 18dp − D.
+- The screen takes all height the Wheel doesn't (window − system bars − 8dp − 2 × 18dp − D), within a device-like proportion: width:height 0.60–0.82 in portrait, 1.20–1.70 in landscape (screen left, Wheel and power button right). `DeviceLayout` owns this; the screen content never knows about the shell.
 - **Readable region** = screen − ScreenHeader − (MiniPlayer + 16dp when shown). Lists pad by `LocalScreenInsets`; content fades under the header and mini player (§5.5), inside the screen only.
 - Power: off = black screen and paused playback; on = boot (§5.8); any Wheel press also wakes it.
 
@@ -255,8 +255,13 @@ Capsule 56dp, width `min(window − 32, 420)`, 12dp above the Wheel; `GlassFloat
 ### 6.6 `AlbumArtwork`
 Coil-backed; size-bucketed requests (48, 96, 192, 512, 1024 px); radius per §4; placeholder = monogram (first letter of album, `labelTertiary` on `canvasRaised`) — never a generic music note. Now Playing artwork has `shadow.artwork`. Crossfade 150ms on load (no fade if from memory cache).
 
-### 6.7 Now Playing composition (compact portrait)
-TitleBar ("Now Playing", More) · artwork (square, `min(width − 48, availableHeight − 132)`, min 180) · background extension · title (`nowPlayingTitle`, centered, ≤ 2 lines) · artist (`nowPlayingSubtitle`, secondary, centered) · `ProgressScrubber` · row: elapsed — "3 of 12" (tertiary) — remaining · secondary actions row (borderless glyph buttons, **not glass**): Like · Lyrics · Up Next · `QualityLabel` · Wheel.
+### 6.7 Now Playing composition (D-28)
+Inside the virtual screen, under the shell's ScreenHeader ("Now Playing", back, play state):
+- **Stacked** (default): artwork box (takes all height the controls leave) · title (`nowPlayingTitle`, scrolls slowly when too long, never wraps) · artist (secondary) · album (tertiary) · progress row (elapsed — bar — remaining; tap or drag to seek; becomes the volume bar while volume changes) · status slot, two fixed lines ("N of M" + measured quality; then one note: error, scrubbing, "Playing from …", "Source reported …") · transport (⏮ 30 dp, ⏯ 42 dp, ⏭ 30 dp, bare glyphs) · one glass capsule with shuffle, repeat, favorite, Up Next, More (20 dp glyphs, quieter; slots 36–46 dp to fit).
+- **Compact** (artwork box would be < 0.45 × width): artwork beside the text block, the rest below.
+- **Landscape screen** (width > 1.15 × height): artwork on the left (square box), everything else beside it.
+- **Artwork:** `FittedArtwork` keeps the image's proportions (square stays square; portrait/landscape aren't cropped, extremes beyond 1:2 are); shadow; hairline rim; while loading it shows a smaller cached copy, else a quiet surface; missing art gets `ArtworkFallback` (two tones from the title, Podium's ring, the initial). Breathes 0.93 (paused) → 1.0 (playing). Track change: direction-aware crossfade with ±11 % travel and 0.93 → 1 scale (crossfade only with reduced motion); no transition when the next song shares the cover.
+- **Environment:** `BackgroundExtension` (blurred art, top/bottom fade) plus a scrim keyed to the art's luminance, so bright covers in dark mode (dark covers in light mode) keep text legible. It is the captured layer the capsule's glass refracts.
 
 ### 6.8 `ProgressScrubber` / `VolumeBar`
 - Track 4dp (8dp in Scrub mode), radius full, fill `labelPrimary`, remaining `labelPrimary` 20%. Thumb appears only in Scrub mode / touch drag (12dp circle, `GlassControl`).

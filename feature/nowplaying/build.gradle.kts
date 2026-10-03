@@ -14,3 +14,10 @@ dependencies {
     implementation(project(":sources:api"))
     implementation(libs.androidx.lifecycle.runtime.compose)
 }
+
+dependencies {
+    // Layout screenshots at several device sizes (Robolectric native graphics).
+    testImplementation(platform(libs.compose.bom))
+    testImplementation(libs.compose.ui.test.junit4)
+    debugImplementation(libs.compose.ui.test.manifest)
+}

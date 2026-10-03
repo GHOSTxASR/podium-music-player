@@ -27,6 +27,9 @@ class FocusListState(initialIndex: Int = 0, val listState: LazyListState = LazyL
 
     var itemCount by mutableIntStateOf(0)
 
+    /** Which rows can hold focus (section headers can't). Set by the list each composition. */
+    var isFocusable: (Int) -> Boolean = { true }
+
     /** Incremented whenever focus moves by input (not by clamping), so the lens can animate. */
     var focusMoves by mutableIntStateOf(0)
         private set
@@ -39,7 +42,7 @@ class FocusListState(initialIndex: Int = 0, val listState: LazyListState = LazyL
         val base = if (!visible.isEmpty() && focusedIndex !in visible) {
             if (focusedIndex < visible.first) visible.first else visible.last
         } else focusedIndex
-        val target = (base + delta).coerceIn(0, itemCount - 1)
+        val target = stepFrom(base, delta)
         if (target == focusedIndex) return false
         focusedIndex = target
         focusMoves++
@@ -55,6 +58,25 @@ class FocusListState(initialIndex: Int = 0, val listState: LazyListState = LazyL
 
     fun clamp() {
         if (itemCount > 0 && focusedIndex > itemCount - 1) focusedIndex = itemCount - 1
+        if (itemCount > 0 && !isFocusable(focusedIndex)) {
+            focusedIndex = stepFrom(focusedIndex, 1).takeIf(isFocusable) ?: stepFrom(focusedIndex, -1)
+        }
+    }
+
+    /** [delta] focusable rows away from [from], stopping at the last focusable row each way. */
+    private fun stepFrom(from: Int, delta: Int): Int {
+        val dir = if (delta > 0) 1 else -1
+        var index = from
+        var remaining = kotlin.math.abs(delta)
+        var i = from + dir
+        while (remaining > 0 && i in 0 until itemCount) {
+            if (isFocusable(i)) {
+                index = i
+                remaining--
+            }
+            i += dir
+        }
+        return index
     }
 
     /** Indices fully inside the readable region (between the content paddings). */

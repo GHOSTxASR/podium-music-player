@@ -21,6 +21,8 @@ class ResolvingArtworkLoader(private val resolver: ArtworkResolver) : ArtworkLoa
         override fun sizeOf(key: String, value: Bitmap) = value.byteCount
     }
 
+    override fun peek(uri: String, sizePx: Int): ImageBitmap? = cache.get("$uri@$sizePx")?.asImageBitmap()
+
     override suspend fun load(uri: String, sizePx: Int): ImageBitmap? {
         val key = "$uri@$sizePx"
         cache.get(key)?.let { return it.asImageBitmap() }

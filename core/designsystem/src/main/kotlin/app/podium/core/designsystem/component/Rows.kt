@@ -90,6 +90,8 @@ fun TrackRow(
     modifier: Modifier = Modifier,
     trailing: String? = null,
     note: String? = null,
+    /** The song that's playing: accent title and a playing glyph in place of [trailing]. */
+    active: Boolean = false,
 ) {
     val colors = PodiumTheme.colors
     val type = PodiumTheme.type
@@ -103,11 +105,18 @@ fun TrackRow(
         ArtworkImage(artworkUri, 44.dp, fallbackText = title)
         Spacer(Modifier.width(Spacing.m))
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.Center) {
-            PodiumText(title, if (focused) type.rowFocused else type.row, rowColor(focused, colors.labelPrimary))
+            PodiumText(
+                title,
+                if (focused || active) type.rowFocused else type.row,
+                rowColor(focused, if (active) colors.highlightText else colors.labelPrimary),
+            )
             PodiumText(subtitle, type.rowSecondary, rowColor(focused, colors.labelSecondary))
             if (note != null) PodiumText(note, type.footnote, rowColor(focused, colors.labelTertiary))
         }
-        if (trailing != null) {
+        if (active) {
+            Spacer(Modifier.width(Spacing.s))
+            Symbol(PodiumSymbol.Equalizer, rowColor(focused, colors.highlightText), size = 20.dp, weight = 600)
+        } else if (trailing != null) {
             PodiumText(trailing, type.caption, rowColor(focused, colors.labelSecondary), Modifier.padding(start = Spacing.s))
         }
     }

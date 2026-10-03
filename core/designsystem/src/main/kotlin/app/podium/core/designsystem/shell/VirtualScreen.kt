@@ -22,6 +22,9 @@ import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
@@ -36,13 +39,18 @@ import app.podium.core.designsystem.theme.Spacing
 import app.podium.core.designsystem.type.PodiumText
 
 val ScreenCorner: Dp = 22.dp
+
+/** Marks the display panel, so tests can check that nothing on screen escapes it. */
+const val DisplayTestTag = "podium-display"
 val ScreenHeaderHeight: Dp = 44.dp
 private val BezelWidth = 3.dp
 
 /**
- * The display set into the device (D-26): a black bezel window, the screen inside it with its own
- * canvas, and a glass cover — a faint diagonal reflection and a recess shadow drawn over the
- * content. The screen is a text container, so it is never glass itself.
+ * The display set into the device (D-26): a black bezel window, the panel inside it with its own
+ * canvas, and a glass cover — a recess shadow, a hairline panel edge and one faint reflection drawn
+ * over the content. A hard boundary: everything inside is clipped to the panel, so no artwork,
+ * glow, scroll, transition or glass can reach the body. The screen is a text container, so it is
+ * never glass itself.
  */
 @Composable
 fun VirtualScreen(modifier: Modifier = Modifier, content: @Composable BoxScope.() -> Unit) {
@@ -59,6 +67,7 @@ fun VirtualScreen(modifier: Modifier = Modifier, content: @Composable BoxScope.(
         Box(
             Modifier
                 .fillMaxSize()
+                .testTag(DisplayTestTag)
                 .clip(inner)
                 .background(colors.canvas)
                 .drawWithContent {
@@ -70,6 +79,12 @@ fun VirtualScreen(modifier: Modifier = Modifier, content: @Composable BoxScope.(
                             1f to Color.Transparent,
                             endY = 10.dp.toPx(),
                         ),
+                    )
+                    // The display's own edge: a hairline where the panel meets the bezel.
+                    drawRoundRect(
+                        Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.5f), Color.White.copy(alpha = 0.07f))),
+                        cornerRadius = CornerRadius(ScreenCorner.toPx()),
+                        style = Stroke(width = 1.dp.toPx()),
                     )
                     // Cover glass: one faint reflection, strongest at the top-left corner.
                     drawRect(

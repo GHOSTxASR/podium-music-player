@@ -9,6 +9,12 @@ import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.core.keyframes
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import app.podium.core.designsystem.shell.DeviceLayout
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
@@ -69,7 +75,6 @@ import app.podium.core.designsystem.shell.PowerButton
 import app.podium.core.designsystem.shell.ScreenHeader
 import app.podium.core.designsystem.shell.ScreenHeaderHeight
 import app.podium.core.designsystem.shell.ShellPalette
-import app.podium.core.designsystem.shell.VirtualScreen
 import app.podium.core.designsystem.shell.palette
 import app.podium.core.designsystem.theme.Atmosphere
 import app.podium.core.designsystem.theme.AtmosphereBackground
@@ -164,58 +169,62 @@ fun PodiumApp(graph: AppGraph, onSourceAction: (CapabilityAction) -> Unit) {
             LocalOverlayHost provides overlay,
             LocalArtworkLoader provides graph.artworkLoader,
         ) {
-            BoxWithConstraints(Modifier.fillMaxSize()) {
-                val diameter = shellWheelDiameter(maxWidth, maxHeight)
-                // One structure for every finish, so trying finishes on never rebuilds the screen.
-                GlassHost(
-                    modifier = Modifier.fillMaxSize(),
-                    content = { Body(palette, atmosphere, nowPlayingArt) },
-                    functional = {
-                        Column(
-                            Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.systemBars).padding(top = Spacing.s),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                        ) {
-                            VirtualScreen(Modifier.weight(1f).fillMaxWidth().padding(horizontal = Spacing.m)) {
-                                AnimatedContent(
-                                    targetState = power,
-                                    transitionSpec = { fadeIn(tween(280)) togetherWith fadeOut(tween(280)) },
-                                    label = "power",
-                                ) { state ->
-                                    when (state) {
-                                        Power.OFF -> Box(Modifier.fillMaxSize().background(Color.Black))
-                                        Power.BOOTING -> BootScreen(onStart = graph::onBootStarted, onFinished = graph::onBootFinished)
-                                        Power.ON -> ScreenOs(graph, snapshot, backStack, navigator, overlay, atmosphere, onSourceAction)
-                                    }
+            // One structure for every finish, so trying finishes on never rebuilds the screen.
+            GlassHost(
+                modifier = Modifier.fillMaxSize(),
+                content = { Body(palette, atmosphere, nowPlayingArt) },
+                functional = {
+                    DeviceLayout(
+                        modifier = Modifier.fillMaxSize(),
+                        screen = {
+                            AnimatedContent(
+                                targetState = power,
+                                transitionSpec = { powerTransition(initialState, targetState) },
+                                label = "power",
+                            ) { state ->
+                                when (state) {
+                                    Power.OFF -> Box(Modifier.fillMaxSize().background(Color.Black).semantics { contentDescription = "Display off" })
+                                    Power.BOOTING -> BootScreen(onStart = graph::onBootStarted, onFinished = graph::onBootFinished)
+                                    Power.ON -> ScreenOs(graph, snapshot, backStack, navigator, overlay, atmosphere, onSourceAction)
                                 }
                             }
-                            Box(Modifier.fillMaxWidth().padding(vertical = WheelGap)) {
-                                PodWheel(
-                                    onInput = { router.dispatch(it) },
-                                    diameter = diameter,
-                                    isPlaying = snapshot.intent == PlayIntent.PLAY,
-                                    palette = palette,
-                                    modifier = Modifier.align(Alignment.Center),
-                                )
-                                PowerButton(
-                                    on = power != Power.OFF,
-                                    palette = palette,
-                                    onToggle = graph::togglePower,
-                                    modifier = Modifier.align(Alignment.TopEnd).padding(end = Spacing.s),
-                                )
-                            }
-                        }
-                    },
-                )
-            }
+                        },
+                        wheel = { diameter ->
+                            PodWheel(
+                                onInput = { router.dispatch(it) },
+                                diameter = diameter,
+                                isPlaying = snapshot.intent == PlayIntent.PLAY,
+                                palette = palette,
+                            )
+                        },
+                        powerButton = {
+                            PowerButton(on = power != Power.OFF, palette = palette, onToggle = graph::togglePower)
+                        },
+                    )
+                },
+            )
         }
     }
 }
 
-private val WheelGap = 18.dp
-
-/** As large a screen as possible: the Wheel takes what it needs and no more. */
-private fun shellWheelDiameter(width: Dp, height: Dp): Dp =
-    (width * 0.62f).coerceIn(216.dp, 300.dp).coerceAtMost(height * 0.34f)
+/**
+ * The display's power changes (D-26). Switching off dims the panel first, holds a beat, then goes
+ * black — inside the screen only; the body and the Wheel stay as they are. Waking lights the black
+ * panel straight into the boot screen.
+ */
+private fun AnimatedContentTransitionScope<Power>.powerTransition(from: Power, to: Power): ContentTransform = when {
+    to == Power.OFF -> fadeIn(
+        keyframes {
+            durationMillis = 520
+            0f at 0
+            0.55f at 150
+            0.55f at 290
+            1f at 520
+        },
+    ) togetherWith fadeOut(tween(durationMillis = 1, delayMillis = 520))
+    from == Power.OFF -> fadeIn(tween(180)) togetherWith fadeOut(tween(1, delayMillis = 180))
+    else -> fadeIn(tween(320)) togetherWith fadeOut(tween(320))
+}
 
 /** The device body: the Glass finish shows the artwork's atmosphere for the Wheel to refract. */
 @Composable
@@ -266,7 +275,9 @@ private fun ScreenOs(
                         popTransitionSpec = { backward(motion) },
                         predictivePopTransitionSpec = { backward(motion) },
                         entryProvider = { key ->
-                            NavEntry(key) { screen -> ScreenContent(screen, graph, navigator, onSourceAction) }
+                            NavEntry(key, metadata = if (key == Screen.NowPlaying) riseFromMiniPlayer(motion) else emptyMap()) { screen ->
+                                ScreenContent(screen, graph, navigator, onSourceAction)
+                            }
                         },
                     )
                 }
@@ -298,6 +309,7 @@ private fun ScreenOs(
                             },
                             onOpen = navigator::showNowPlaying,
                             onPlayPause = controller::togglePlayPause,
+                            onNext = controller::next,
                             modifier = Modifier.padding(Spacing.s).fillMaxWidth(),
                         )
                     }
@@ -353,7 +365,7 @@ private fun ScreenContent(
             onPlayNext = { controller.playNext(listOf(it.id)) },
             onAddToQueue = { controller.addToQueue(listOf(it.id)) },
         )
-        Screen.NowPlaying -> NowPlayingScreen(controller, graph.volume, onUpNext = { navigator.push(Screen.UpNext) })
+        Screen.NowPlaying -> NowPlayingScreen(controller, graph.volume, graph.favorites, onUpNext = { navigator.push(Screen.UpNext) })
         Screen.UpNext -> UpNextScreen(controller)
         Screen.Settings -> SettingsScreen(
             repository = settings,
@@ -442,6 +454,11 @@ private fun GlobalInput(
                     WheelButton.CENTER -> false
                 }
                 is PodiumInput.LongPress -> when (input.button) {
+                    // Hold ⏯ to switch off, as on the original.
+                    WheelButton.PLAY_PAUSE -> {
+                        graph.togglePower()
+                        true
+                    }
                     WheelButton.MENU -> {
                         if (!navigator.popToRoot()) haptics.boundary()
                         true
@@ -495,3 +512,26 @@ private fun AnimatedContentTransitionScope<Scene<Screen>>.backward(motion: Podiu
     } else {
         slideInHorizontally(motion.navigateOffset()) { -it } togetherWith slideOutHorizontally(motion.navigateOffset()) { it }
     }
+
+/**
+ * Now Playing rises from where the mini player sits and sinks back into it, so library → mini
+ * player → Now Playing reads as one gesture. Its siblings keep the horizontal strip.
+ */
+private fun riseFromMiniPlayer(motion: PodiumMotion): Map<String, Any> {
+    val sink: AnimatedContentTransitionScope<Scene<*>>.() -> ContentTransform = {
+        if (motion.reduced) {
+            fadeIn(motion.fadeStandard()) togetherWith fadeOut(motion.fadeFast())
+        } else {
+            (fadeIn(tween(240)) + scaleIn(tween(320), initialScale = 0.97f)) togetherWith
+                (slideOutVertically(motion.navigateOffset()) { it } + fadeOut(tween(220, delayMillis = 80)))
+        }.apply { targetContentZIndex = -1f }
+    }
+    return NavDisplay.transitionSpec {
+        if (motion.reduced) {
+            fadeIn(motion.fadeStandard()) togetherWith fadeOut(motion.fadeFast())
+        } else {
+            (slideInVertically(motion.navigateOffset()) { it } + fadeIn(tween(200))) togetherWith
+                (fadeOut(tween(260)) + scaleOut(tween(320), targetScale = 0.97f))
+        }
+    } + NavDisplay.popTransitionSpec(sink) + NavDisplay.predictivePopTransitionSpec { sink() }
+}

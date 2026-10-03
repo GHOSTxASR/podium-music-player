@@ -54,6 +54,8 @@ fun <T> FocusList(
     onActivate: (index: Int) -> Unit,
     modifier: Modifier = Modifier,
     onLongPress: (index: Int) -> Unit = {},
+    /** Rows that can't hold focus (section headers): skipped by the wheel, never under the lens. */
+    focusable: (T) -> Boolean = { true },
     row: @Composable (item: T, index: Int, focused: Boolean) -> Unit,
 ) {
     val colors = PodiumTheme.colors
@@ -63,8 +65,10 @@ fun <T> FocusList(
     val activate by rememberUpdatedState(onActivate)
     val longPress by rememberUpdatedState(onLongPress)
 
+    val currentFocusable by rememberUpdatedState(focusable)
     SideEffect {
         state.itemCount = items.size
+        state.isFocusable = { i -> items.getOrNull(i)?.let(currentFocusable) ?: false }
         state.clamp()
     }
 
@@ -152,6 +156,7 @@ fun <T> FocusList(
                         .fillMaxWidth()
                         .semantics { selected = focused }
                         .pointerInput(index) {
+                            if (!focusable(item)) return@pointerInput
                             detectTapGestures(
                                 onTap = {
                                     state.focus(index)

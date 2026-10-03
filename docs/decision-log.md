@@ -119,3 +119,16 @@ Every significant decision, newest at the bottom. Major ones have an ADR in `adr
 - Wheel made calmer after on-device feedback (fast spins skipped the highlight past songs): 18° detents (was 15°), acceleration only in lists of ≥ 50 items as the spec intended, and only above ≈ 1 rev/s (×2 at 22 det/s, ×4 at 36; ×8 removed). Volume keeps ≈ 1.25 turns for a full sweep.
 - The session player reports the queue's shuffle state to controllers itself (ExoPlayer's own shuffle never changes, so the session never re-read it). Found on device.
 
+### D-28 · Now Playing, artwork and the strict display boundary
+- **Context:** user brief (2026-10-03): a signature Now Playing inside the virtual screen, artwork as the star, Liquid Glass only for controls, a hard display boundary, wheel integration without breaking the established contract. Research: `docs/research/NOW_PLAYING_VISUAL_REFERENCES.md`.
+- **Decision:**
+  - The display is a hard boundary: `VirtualScreen` clips everything; `DeviceLayout` places screen, Wheel and power button (portrait and landscape) with a fixed screen proportion; screens know only `LocalScreenInsets`. A Robolectric test renders Now Playing at five device sizes and fails if any node on the display leaves it.
+  - Now Playing per design-system.md §6.7 (stacked / compact / landscape compositions computed from the screen, aspect-true artwork with breathing and direction-aware transitions, brightness-keyed environment, bare transport, one glass action capsule).
+  - Wheel on Now Playing keeps the iPod contract (volume default; Center cycles volume → scrub → actions; hold Center = More; Menu returns to volume). Scrubbing is velocity-aware. Hold ⏯ = off, as on the original.
+  - Up Next: headers are non-focusable rows (the lens only covers songs), the current song has an active state, and songs move with the Wheel through `QueueManager.move` (no touch drag yet).
+  - Favorites are real: `FavoritesRepository`, persisted by source-qualified `TrackId` in SharedPreferences until the library database (S4) migrates them.
+  - Mini player gains Next; Now Playing rises from it and sinks back (Nav3 per-entry transitions); screen sleep dims, holds, then goes black inside the display only.
+  - Artwork loading: a synchronous cache peek (no placeholder flash for cached art), a smaller cached copy as placeholder while the large one decodes, crossfade otherwise.
+  - Icons: Favorite and Power join the Material Symbols subset (34 glyphs); filled symbols use a static instance with the variable font's coincident hole/fill contours removed (they rendered a hairline seam on device).
+- **Tradeoffs:** the stacked layout gives the artwork ≈ 230 dp on a 411 × 911 dp phone (the Wheel takes the rest); a second backdrop capture inside Now Playing (artwork environment) on the Full/Blur tiers; a debug-only adb command drives the test tones so device tests never touch the listener's library.
+

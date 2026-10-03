@@ -2,7 +2,6 @@ package app.podium.core.designsystem.shell
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -19,11 +18,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.input.pointer.pointerInput
@@ -36,12 +32,15 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import app.podium.core.designsystem.glass.GlassMaterial
 import app.podium.core.designsystem.glass.glass
+import app.podium.core.designsystem.symbol.PodiumSymbol
+import app.podium.core.designsystem.symbol.Symbol
 import app.podium.core.designsystem.theme.PodiumTheme
 import app.podium.core.interaction.rememberPodiumHaptics
 
 /**
  * The device's power button: small, set into the body beside the Wheel. Glass on the Glass finish
- * (it is a control), otherwise a solid button in the Wheel's colour. The glyph dims when off.
+ * (it is a control), otherwise a solid button in the Wheel's colour. The glyph (from the same
+ * symbol font as every other Podium icon) dims when off.
  */
 @Composable
 fun PowerButton(on: Boolean, palette: ShellPalette, onToggle: () -> Unit, modifier: Modifier = Modifier) {
@@ -102,21 +101,7 @@ fun PowerButton(on: Boolean, palette: ShellPalette, onToggle: () -> Unit, modifi
                 .then(face),
             contentAlignment = Alignment.Center,
         ) {
-            Canvas(Modifier.size(16.dp)) {
-                val stroke = 1.9.dp.toPx()
-                val r = size.minDimension / 2f - stroke / 2f
-                // The IEC power symbol: an open ring with a bar through the gap.
-                drawArc(
-                    color = glyph,
-                    startAngle = -60f,
-                    sweepAngle = 300f,
-                    useCenter = false,
-                    topLeft = Offset(center.x - r, center.y - r),
-                    size = androidx.compose.ui.geometry.Size(r * 2, r * 2),
-                    style = Stroke(stroke, cap = StrokeCap.Round),
-                )
-                drawLine(glyph, Offset(center.x, center.y - r - stroke / 4f), Offset(center.x, center.y - r * 0.15f), stroke, StrokeCap.Round)
-            }
+            Symbol(PodiumSymbol.Power, glyph, size = 18.dp, weight = 600)
         }
     }
 }
