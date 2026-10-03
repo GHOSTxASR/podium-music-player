@@ -6,15 +6,12 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.ContentTransform
+import androidx.compose.animation.core.keyframes
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
-import androidx.compose.animation.core.keyframes
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
-import app.podium.core.designsystem.shell.DeviceLayout
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
@@ -50,27 +47,35 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation3.runtime.NavEntry
 import androidx.navigation3.scene.Scene
+import androidx.navigation3.ui.LocalNavAnimatedContentScope
 import androidx.navigation3.ui.NavDisplay
 import app.podium.core.designsystem.artwork.BackgroundExtension
 import app.podium.core.designsystem.artwork.LocalArtworkLoader
 import app.podium.core.designsystem.artwork.rememberArtwork
 import app.podium.core.designsystem.component.GlassMenu
 import app.podium.core.designsystem.component.LocalOverlayHost
+import app.podium.core.designsystem.component.LocalPaperDecor
+import app.podium.core.designsystem.component.LocalPaperPeek
 import app.podium.core.designsystem.component.LocalScreenInsets
 import app.podium.core.designsystem.component.MiniPlayer
 import app.podium.core.designsystem.component.OverlayHost
+import app.podium.core.designsystem.component.PaperPeekArtwork
+import app.podium.core.designsystem.component.PaperPeekLabels
 import app.podium.core.designsystem.component.PodWheel
 import app.podium.core.designsystem.component.ScreenInsets
 import app.podium.core.designsystem.glass.GlassHost
 import app.podium.core.designsystem.glass.scrollEdgeFade
 import app.podium.core.designsystem.shell.BootScreen
 import app.podium.core.designsystem.shell.DeviceBody
+import app.podium.core.designsystem.shell.DeviceLayout
 import app.podium.core.designsystem.shell.PowerButton
 import app.podium.core.designsystem.shell.ScreenHeader
 import app.podium.core.designsystem.shell.ScreenHeaderHeight
@@ -87,7 +92,18 @@ import app.podium.core.interaction.PodiumHaptics
 import app.podium.core.interaction.PodiumInput
 import app.podium.core.interaction.WheelButton
 import app.podium.core.interaction.rememberPodiumHaptics
+import app.podium.core.model.AlbumId
+import app.podium.core.model.ArtistId
+import app.podium.core.model.Track
+import app.podium.core.model.TrackId
+import app.podium.feature.library.AlbumScreen
+import app.podium.feature.library.AlbumsScreen
+import app.podium.feature.library.ArtistScreen
+import app.podium.feature.library.ArtistsScreen
+import app.podium.feature.library.CoverFlowScreen
+import app.podium.feature.library.FavoritesScreen
 import app.podium.feature.library.HomeScreen
+import app.podium.feature.library.LibraryIndex
 import app.podium.feature.library.LibraryState
 import app.podium.feature.library.MusicScreen
 import app.podium.feature.library.SongsScreen
@@ -97,6 +113,7 @@ import app.podium.feature.settings.CustomColorScreen
 import app.podium.feature.settings.FinishScreen
 import app.podium.feature.settings.GrainScreen
 import app.podium.feature.settings.SettingsScreen
+import app.podium.feature.settings.ThemeScreen
 import app.podium.player.api.PlayIntent
 import app.podium.player.api.PlaybackController
 import app.podium.player.api.PlaybackSnapshot
@@ -106,23 +123,80 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
-/** The hierarchy inside the screen (vertical-slice-plan.md §2, plus Settings for D-26). */
-enum class Screen(val title: String) {
-    Home("Podium"),
-    Music("Music"),
-    Songs("Songs"),
-    NowPlaying("Now Playing"),
-    UpNext("Up Next"),
-    Settings("Settings"),
-    Finish("Finish"),
-    Grain("Grain"),
-    CustomColor("Custom color"),
+/**
+ * Places on the paper (D-29): the hierarchy inside the screen. Album and Artist carry their ids,
+ * so they survive process death through [BackStackSaver] like everything else.
+ */
+sealed interface Dest {
+    data object Home : Dest
+    data object Music : Dest
+    data object CoverFlow : Dest
+    data object Albums : Dest
+    data object Artists : Dest
+    data object Songs : Dest
+    data object Favorites : Dest
+    data object NowPlaying : Dest
+    data object UpNext : Dest
+    data object Settings : Dest
+    data object Theme : Dest
+    data object Finish : Dest
+    data object Grain : Dest
+    data object CustomColor : Dest
+    data class Album(val id: AlbumId) : Dest
+    data class Artist(val id: ArtistId) : Dest
 }
 
-private val BackStackSaver = listSaver<SnapshotStateList<Screen>, String>(
-    save = { stack -> stack.map { it.name } },
-    restore = { names -> mutableStateListOf(*names.map(Screen::valueOf).toTypedArray()) },
+private val fixedDests = listOf(
+    Dest.Home, Dest.Music, Dest.CoverFlow, Dest.Albums, Dest.Artists, Dest.Songs, Dest.Favorites, Dest.NowPlaying,
+    Dest.UpNext, Dest.Settings, Dest.Theme, Dest.Finish, Dest.Grain, Dest.CustomColor,
+).associateBy { it.toString() }
+
+private fun Dest.encode(): String = when (this) {
+    is Dest.Album -> "Album:${id.value}"
+    is Dest.Artist -> "Artist:${id.value}"
+    else -> toString()
+}
+
+private fun decodeDest(text: String): Dest? = when {
+    text.startsWith("Album:") -> Dest.Album(AlbumId(text.removePrefix("Album:")))
+    text.startsWith("Artist:") -> Dest.Artist(ArtistId(text.removePrefix("Artist:")))
+    else -> fixedDests[text]
+}
+
+private val BackStackSaver = listSaver<SnapshotStateList<Dest>, String>(
+    save = { stack -> stack.map { it.encode() } },
+    restore = { names -> mutableStateListOf(*names.mapNotNull(::decodeDest).ifEmpty { listOf(Dest.Home) }.toTypedArray()) },
 )
+
+/** The header title for a place on the paper. */
+@Composable
+private fun titleOf(dest: Dest, graph: AppGraph): String = when (dest) {
+    Dest.Home -> "Podium"
+    Dest.Music -> "Music"
+    Dest.CoverFlow -> "Cover Flow"
+    Dest.Albums -> "Albums"
+    Dest.Artists -> "Artists"
+    Dest.Songs -> "Songs"
+    Dest.Favorites -> "Favorites"
+    Dest.NowPlaying -> "Now Playing"
+    Dest.UpNext -> "Up Next"
+    Dest.Settings -> "Settings"
+    Dest.Theme -> "Theme"
+    Dest.Finish -> "Finish"
+    Dest.Grain -> "Grain"
+    Dest.CustomColor -> "Custom color"
+    is Dest.Album, is Dest.Artist -> {
+        val songs by graph.library.songs.collectAsStateWithLifecycle()
+        val tracks = (songs as? LibraryState.Ready)?.tracks.orEmpty()
+        remember(tracks, dest) {
+            when (dest) {
+                is Dest.Album -> LibraryIndex.albums(tracks).firstOrNull { it.id == dest.id }?.title ?: "Album"
+                is Dest.Artist -> LibraryIndex.artists(tracks).firstOrNull { it.id == dest.id }?.name ?: "Artist"
+                else -> ""
+            }
+        }
+    }
+}
 
 /**
  * The device (D-26). The window is the device's body in the chosen finish; a recessed virtual
@@ -132,16 +206,17 @@ private val BackStackSaver = listSaver<SnapshotStateList<Screen>, String>(
  */
 @Composable
 fun PodiumApp(graph: AppGraph, onSourceAction: (CapabilityAction) -> Unit) {
-    PodiumTheme {
+    val appearance by graph.deviceSettings.appearance.collectAsStateWithLifecycle()
+    val preview by graph.deviceSettings.preview.collectAsStateWithLifecycle()
+    val effective = preview ?: appearance
+    PodiumTheme(displayTheme = effective.display) {
         val controller = graph.playbackController
         val snapshot by controller.snapshot.collectAsStateWithLifecycle()
         val power by graph.power.collectAsStateWithLifecycle()
-        val appearance by graph.deviceSettings.appearance.collectAsStateWithLifecycle()
-        val preview by graph.deviceSettings.preview.collectAsStateWithLifecycle()
         val colors = PodiumTheme.colors
-        val palette = (preview ?: appearance).palette(colors.isDark)
+        val palette = effective.palette(colors.isDark)
 
-        val backStack = rememberSaveable(saver = BackStackSaver) { mutableStateListOf(Screen.Home) }
+        val backStack = rememberSaveable(saver = BackStackSaver) { mutableStateListOf<Dest>(Dest.Home) }
         val navigator = remember(backStack) { Navigator(backStack) }
         val router = remember { InputRouter() }
         val overlay = remember { OverlayHost() }
@@ -242,7 +317,7 @@ private fun BoxScope.Body(palette: ShellPalette, atmosphere: Atmosphere, art: Im
 private fun ScreenOs(
     graph: AppGraph,
     snapshot: PlaybackSnapshot,
-    backStack: SnapshotStateList<Screen>,
+    backStack: SnapshotStateList<Dest>,
     navigator: Navigator,
     overlay: OverlayHost,
     atmosphere: Atmosphere,
@@ -250,8 +325,9 @@ private fun ScreenOs(
 ) {
     val controller = graph.playbackController
     val motion = PodiumTheme.motion
+    val colors = PodiumTheme.colors
     val top = backStack.last()
-    val miniPlayerVisible = snapshot.isActive && top in MiniPlayerScreens
+    val miniPlayerVisible = snapshot.isActive && top.showsMiniPlayer()
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val miniBlock = if (miniPlayerVisible) Spacing.miniPlayer + Spacing.s * 2 else Spacing.s
@@ -262,7 +338,8 @@ private fun ScreenOs(
         GlassHost(
             modifier = Modifier.fillMaxSize(),
             content = {
-                AtmosphereBackground(atmosphere, Modifier.fillMaxSize())
+                // Glass tints the display with the artwork's atmosphere; Carbon and Bone stay matte.
+                if (!colors.isIndustrial) AtmosphereBackground(atmosphere, Modifier.fillMaxSize())
                 CompositionLocalProvider(LocalScreenInsets provides insets) {
                     NavDisplay(
                         backStack = backStack,
@@ -275,8 +352,26 @@ private fun ScreenOs(
                         popTransitionSpec = { backward(motion) },
                         predictivePopTransitionSpec = { backward(motion) },
                         entryProvider = { key ->
-                            NavEntry(key, metadata = if (key == Screen.NowPlaying) riseFromMiniPlayer(motion) else emptyMap()) { screen ->
-                                ScreenContent(screen, graph, navigator, onSourceAction)
+                            // Glass lets Now Playing rise from the mini player; Carbon and Bone keep the whole
+                            // hierarchy on one horizontal sheet of paper (D-29).
+                            val rise = key == Dest.NowPlaying && !colors.isIndustrial
+                            NavEntry(key, metadata = if (rise) riseFromMiniPlayer(motion) else emptyMap()) { screen ->
+                                // Each screen sees the column before it on the paper peeking in at its left.
+                                val position = backStack.indexOf(screen)
+                                val previous = if (position > 0) backStack[position - 1] else null
+                                val peek: (@Composable (Modifier) -> Unit)? = previous?.let { prev -> { m -> PreviousColumn(prev, screen, graph, m) } }
+                                val scope = LocalNavAnimatedContentScope.current
+                                val decor: @Composable () -> Modifier = {
+                                    with(scope) {
+                                        Modifier.animateEnterExit(
+                                            enter = fadeIn(tween(220, delayMillis = if (motion.reduced) 0 else 260)),
+                                            exit = fadeOut(tween(80)),
+                                        )
+                                    }
+                                }
+                                CompositionLocalProvider(LocalPaperPeek provides peek, LocalPaperDecor provides decor) {
+                                    ScreenContent(screen, graph, navigator, onSourceAction)
+                                }
                             }
                         },
                     )
@@ -284,7 +379,8 @@ private fun ScreenOs(
             },
             functional = {
                 ScreenHeader(
-                    title = top.title,
+                    title = titleOf(top, graph),
+                    depth = backStack.size,
                     canGoBack = backStack.size > 1,
                     onBack = { navigator.pop() },
                     playing = if (snapshot.isActive) snapshot.intent == PlayIntent.PLAY else null,
@@ -323,23 +419,63 @@ private fun ScreenOs(
     }
 }
 
-private val MiniPlayerScreens = setOf(Screen.Home, Screen.Music, Screen.Songs)
+/** The column before [current] on the paper, as a peek: its labels around the one that led here. */
+@Composable
+private fun PreviousColumn(previous: Dest, current: Dest, graph: AppGraph, modifier: Modifier) {
+    val songs by graph.library.songs.collectAsStateWithLifecycle()
+    val snapshot by graph.playbackController.snapshot.collectAsStateWithLifecycle()
+    val favoriteIds by graph.favorites.favorites.collectAsStateWithLifecycle()
+    val tracks = (songs as? LibraryState.Ready)?.tracks.orEmpty()
+    if (previous == Dest.NowPlaying) {
+        PaperPeekArtwork(snapshot.item?.artworkUri, modifier)
+        return
+    }
+    val currentTitle = titleOf(current, graph)
+    val chosen = if (current == Dest.NowPlaying) snapshot.item?.title.orEmpty() else currentTitle
+    val labels = remember(previous, tracks, snapshot.isActive, favoriteIds) { peekLabels(previous, tracks, snapshot.isActive, favoriteIds) }
+    PaperPeekLabels(labels, labels.indexOfFirst { it.equals(chosen, ignoreCase = true) }.coerceAtLeast(0), modifier)
+}
+
+private fun peekLabels(dest: Dest, tracks: List<Track>, nowPlaying: Boolean, favorites: Set<TrackId>): List<String> = when (dest) {
+    Dest.Home -> listOfNotNull("Music", "Shuffle songs", if (nowPlaying) "Now Playing" else null, "Settings")
+    Dest.Music -> listOf("Cover Flow", "Albums", "Artists", "Songs", "Favorites")
+    Dest.Settings -> listOf("Theme", "Finish", "Custom color", "Grain", "Startup sound")
+    Dest.Albums, Dest.CoverFlow -> LibraryIndex.albums(tracks).map { it.title }
+    Dest.Artists -> LibraryIndex.artists(tracks).map { it.name }
+    Dest.Songs -> tracks.map { it.title }
+    Dest.Favorites -> tracks.filter { it.id in favorites }.map { it.title }
+    is Dest.Album -> LibraryIndex.albums(tracks).firstOrNull { it.id == dest.id }?.tracks?.map { it.title }.orEmpty()
+    is Dest.Artist -> listOf("All songs") + LibraryIndex.artists(tracks).firstOrNull { it.id == dest.id }?.albums?.map { it.title }.orEmpty()
+    else -> emptyList()
+}
+
+private val MiniPlayerScreens = setOf(Dest.Home, Dest.Music, Dest.Albums, Dest.Artists, Dest.Songs, Dest.Favorites)
+
+private fun Dest.showsMiniPlayer() = this in MiniPlayerScreens || this is Dest.Album || this is Dest.Artist
 
 @Composable
 private fun ScreenContent(
-    screen: Screen,
+    screen: Dest,
     graph: AppGraph,
     navigator: Navigator,
     onSourceAction: (CapabilityAction) -> Unit,
 ) {
     val controller = graph.playbackController
     val settings = graph.deviceSettings
+    val play: (List<Track>, Int, String) -> Unit = { tracks, index, label ->
+        controller.playContext(tracks.map { it.id }, index, label)
+        navigator.showNowPlaying()
+    }
+    val playNext: (Track) -> Unit = { controller.playNext(listOf(it.id)) }
+    val addToQueue: (Track) -> Unit = { controller.addToQueue(listOf(it.id)) }
     when (screen) {
-        Screen.Home -> {
+        Dest.Home -> {
             val snapshot by controller.snapshot.collectAsStateWithLifecycle()
             HomeScreen(
+                repository = graph.library,
+                nowPlayingArtwork = snapshot.item?.artworkUri,
                 nowPlayingActive = snapshot.isActive,
-                onMusic = { navigator.push(Screen.Music) },
+                onMusic = { navigator.push(Dest.Music) },
                 onShuffleSongs = {
                     val tracks = (graph.library.songs.value as? LibraryState.Ready)?.tracks.orEmpty()
                     if (tracks.isNotEmpty()) {
@@ -348,40 +484,50 @@ private fun ScreenContent(
                     }
                 },
                 onNowPlaying = navigator::showNowPlaying,
-                onSettings = { navigator.push(Screen.Settings) },
+                onSettings = { navigator.push(Dest.Settings) },
             )
         }
-        Screen.Music -> MusicScreen(
+        Dest.Music -> MusicScreen(
             repository = graph.library,
-            onSongs = { navigator.push(Screen.Songs) },
+            favorites = graph.favorites,
+            onCoverFlow = { navigator.push(Dest.CoverFlow) },
+            onAlbums = { navigator.push(Dest.Albums) },
+            onArtists = { navigator.push(Dest.Artists) },
+            onSongs = { navigator.push(Dest.Songs) },
+            onFavorites = { navigator.push(Dest.Favorites) },
             onSourceAction = onSourceAction,
         )
-        Screen.Songs -> SongsScreen(
+        Dest.CoverFlow -> CoverFlowScreen(graph.library, onOpen = { navigator.push(Dest.Album(it)) })
+        Dest.Albums -> AlbumsScreen(graph.library, onOpen = { navigator.push(Dest.Album(it)) })
+        Dest.Artists -> ArtistsScreen(graph.library, onOpen = { navigator.push(Dest.Artist(it)) })
+        is Dest.Album -> AlbumScreen(graph.library, screen.id, onPlay = play, onPlayNext = playNext, onAddToQueue = addToQueue)
+        is Dest.Artist -> ArtistScreen(graph.library, screen.id, onOpenAlbum = { navigator.push(Dest.Album(it)) }, onPlay = play)
+        Dest.Favorites -> FavoritesScreen(graph.library, graph.favorites, onPlay = play, onPlayNext = playNext, onAddToQueue = addToQueue)
+        Dest.Songs -> SongsScreen(
             repository = graph.library,
-            onPlay = { tracks, index ->
-                controller.playContext(tracks.map { it.id }, index, "Songs")
-                navigator.showNowPlaying()
-            },
-            onPlayNext = { controller.playNext(listOf(it.id)) },
-            onAddToQueue = { controller.addToQueue(listOf(it.id)) },
+            onPlay = { tracks, index -> play(tracks, index, "Songs") },
+            onPlayNext = playNext,
+            onAddToQueue = addToQueue,
         )
-        Screen.NowPlaying -> NowPlayingScreen(controller, graph.volume, graph.favorites, onUpNext = { navigator.push(Screen.UpNext) })
-        Screen.UpNext -> UpNextScreen(controller)
-        Screen.Settings -> SettingsScreen(
+        Dest.NowPlaying -> NowPlayingScreen(controller, graph.volume, graph.favorites, onUpNext = { navigator.push(Dest.UpNext) })
+        Dest.UpNext -> UpNextScreen(controller)
+        Dest.Settings -> SettingsScreen(
             repository = settings,
-            onFinish = { navigator.push(Screen.Finish) },
-            onCustomColor = { navigator.push(Screen.CustomColor) },
-            onGrain = { navigator.push(Screen.Grain) },
+            onTheme = { navigator.push(Dest.Theme) },
+            onFinish = { navigator.push(Dest.Finish) },
+            onCustomColor = { navigator.push(Dest.CustomColor) },
+            onGrain = { navigator.push(Dest.Grain) },
         )
-        Screen.Finish -> FinishScreen(settings, onDone = { navigator.pop() }, onCustomColor = { navigator.push(Screen.CustomColor) })
-        Screen.Grain -> GrainScreen(settings, onDone = { navigator.pop() })
-        Screen.CustomColor -> CustomColorScreen(settings, onDone = { navigator.popTo(Screen.Settings) })
+        Dest.Theme -> ThemeScreen(settings)
+        Dest.Finish -> FinishScreen(settings, onCustomColor = { navigator.push(Dest.CustomColor) })
+        Dest.Grain -> GrainScreen(settings)
+        Dest.CustomColor -> CustomColorScreen(settings)
     }
 }
 
 /** The back stack's only writer. */
-private class Navigator(private val stack: SnapshotStateList<Screen>) {
-    fun push(screen: Screen) {
+private class Navigator(private val stack: SnapshotStateList<Dest>) {
+    fun push(screen: Dest) {
         if (stack.last() != screen) stack.add(screen)
     }
 
@@ -399,7 +545,7 @@ private class Navigator(private val stack: SnapshotStateList<Screen>) {
     }
 
     /** Back to [screen] if it's in the stack; otherwise one level. */
-    fun popTo(screen: Screen) {
+    fun popTo(screen: Dest) {
         if (screen !in stack) {
             pop()
             return
@@ -409,11 +555,11 @@ private class Navigator(private val stack: SnapshotStateList<Screen>) {
 
     /** Now Playing is a single instance: return to it if it's already in the stack. */
     fun showNowPlaying() {
-        val existing = stack.indexOf(Screen.NowPlaying)
+        val existing = stack.indexOf(Dest.NowPlaying)
         if (existing >= 0) {
             while (stack.lastIndex > existing) stack.removeAt(stack.lastIndex)
         } else {
-            stack.add(Screen.NowPlaying)
+            stack.add(Dest.NowPlaying)
         }
     }
 }
@@ -498,7 +644,7 @@ private fun SystemBarIcons(darkIcons: Boolean) {
     }
 }
 
-private fun AnimatedContentTransitionScope<Scene<Screen>>.forward(motion: PodiumMotion): ContentTransform =
+private fun AnimatedContentTransitionScope<Scene<Dest>>.forward(motion: PodiumMotion): ContentTransform =
     if (motion.reduced) {
         fadeIn(motion.fadeStandard()) togetherWith fadeOut(motion.fadeFast())
     } else {
@@ -506,7 +652,7 @@ private fun AnimatedContentTransitionScope<Scene<Screen>>.forward(motion: Podium
         slideInHorizontally(motion.navigateOffset()) { it } togetherWith slideOutHorizontally(motion.navigateOffset()) { -it }
     }
 
-private fun AnimatedContentTransitionScope<Scene<Screen>>.backward(motion: PodiumMotion): ContentTransform =
+private fun AnimatedContentTransitionScope<Scene<Dest>>.backward(motion: PodiumMotion): ContentTransform =
     if (motion.reduced) {
         fadeIn(motion.fadeStandard()) togetherWith fadeOut(motion.fadeFast())
     } else {

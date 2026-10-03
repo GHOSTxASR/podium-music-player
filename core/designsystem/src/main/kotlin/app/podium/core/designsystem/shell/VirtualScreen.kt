@@ -1,5 +1,11 @@
 package app.podium.core.designsystem.shell
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -39,6 +45,7 @@ import app.podium.core.designsystem.theme.Spacing
 import app.podium.core.designsystem.type.PodiumText
 
 val ScreenCorner: Dp = 22.dp
+private val IndustrialScreenCorner: Dp = 10.dp
 
 /** Marks the display panel, so tests can check that nothing on screen escapes it. */
 const val DisplayTestTag = "podium-display"
@@ -55,8 +62,9 @@ private val BezelWidth = 3.dp
 @Composable
 fun VirtualScreen(modifier: Modifier = Modifier, content: @Composable BoxScope.() -> Unit) {
     val colors = PodiumTheme.colors
-    val outer = RoundedCornerShape(ScreenCorner + BezelWidth)
-    val inner = RoundedCornerShape(ScreenCorner)
+    val corner = if (colors.isIndustrial) IndustrialScreenCorner else ScreenCorner
+    val outer = RoundedCornerShape(corner + BezelWidth)
+    val inner = RoundedCornerShape(corner)
     Box(
         modifier
             .clip(outer)
@@ -83,11 +91,12 @@ fun VirtualScreen(modifier: Modifier = Modifier, content: @Composable BoxScope.(
                     // The display's own edge: a hairline where the panel meets the bezel.
                     drawRoundRect(
                         Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.5f), Color.White.copy(alpha = 0.07f))),
-                        cornerRadius = CornerRadius(ScreenCorner.toPx()),
+                        cornerRadius = CornerRadius(corner.toPx()),
                         style = Stroke(width = 1.dp.toPx()),
                     )
-                    // Cover glass: one faint reflection, strongest at the top-left corner.
-                    drawRect(
+                    // Cover glass: one faint reflection, strongest at the top-left corner. Industrial
+                    // displays are matte: no reflection at all.
+                    if (!colors.isIndustrial) drawRect(
                         Brush.linearGradient(
                             0f to Color.White.copy(alpha = if (colors.isDark) 0.06f else 0.10f),
                             0.38f to Color.Transparent,
@@ -113,6 +122,8 @@ fun ScreenHeader(
     /** True = playing, false = paused, null = nothing loaded. */
     playing: Boolean?,
     modifier: Modifier = Modifier,
+    /** How deep in the hierarchy this title is: deeper titles arrive from the right, like the content. */
+    depth: Int = 0,
 ) {
     val colors = PodiumTheme.colors
     val type = PodiumTheme.type
@@ -133,13 +144,24 @@ fun ScreenHeader(
                 Symbol(PodiumSymbol.ChevronLeft, colors.labelSecondary, size = 24.dp, weight = 600)
             }
         }
-        PodiumText(
-            title,
-            type.title,
-            colors.labelPrimary,
-            Modifier.align(Alignment.Center).padding(horizontal = 56.dp).semantics { heading() },
-            maxLines = 1,
-        )
+        // The title travels with the paper (D-29): forward slides it in from the right, back from the left.
+        val motion = PodiumTheme.motion
+        AnimatedContent(
+            targetState = title to depth,
+            transitionSpec = {
+                if (motion.reduced) {
+                    fadeIn(motion.fadeFast()) togetherWith fadeOut(motion.fadeFast())
+                } else {
+                    val dir = if (targetState.second >= initialState.second) 1 else -1
+                    (slideInHorizontally(motion.navigateOffset()) { dir * it / 2 } + fadeIn(motion.fadeStandard())) togetherWith
+                        (slideOutHorizontally(motion.navigateOffset()) { -dir * it / 2 } + fadeOut(motion.fadeFast()))
+                }
+            },
+            modifier = Modifier.align(Alignment.Center).padding(horizontal = 56.dp),
+            label = "headerTitle",
+        ) { (shown, _) ->
+            PodiumText(shown, type.title, colors.labelPrimary, Modifier.semantics { heading() }, maxLines = 1)
+        }
         if (playing != null) {
             Row(Modifier.align(Alignment.CenterEnd).padding(end = Spacing.l)) {
                 Symbol(

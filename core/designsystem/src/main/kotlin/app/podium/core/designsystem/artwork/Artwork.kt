@@ -108,7 +108,7 @@ fun ArtworkImage(
     modifier: Modifier = Modifier,
 ) {
     val colors = PodiumTheme.colors
-    val shape = RoundedCornerShape(artworkRadius(size))
+    val shape = RoundedCornerShape(if (colors.isIndustrial) 2.dp else artworkRadius(size))
     val art = rememberArtworkState(uri, size)
     Box(
         modifier
@@ -202,11 +202,11 @@ fun FittedArtwork(
     }
     val width by animateDpAsState(w, spring(stiffness = 500f, dampingRatio = 0.9f), label = "artWidth")
     val height by animateDpAsState(h, spring(stiffness = 500f, dampingRatio = 0.9f), label = "artHeight")
-    val shape = RoundedCornerShape(artworkRadius(minOf(width, height)) + 2.dp)
+    val shape = RoundedCornerShape(if (colors.isIndustrial) 2.dp else artworkRadius(minOf(width, height)) + 2.dp)
     Box(
         modifier
             .size(width, height)
-            .shadow(if (colors.isDark) 22.dp else 14.dp, shape, clip = false, ambientColor = Color.Black, spotColor = Color.Black)
+            .then(if (colors.isIndustrial) Modifier else Modifier.shadow(if (colors.isDark) 22.dp else 14.dp, shape, clip = false, ambientColor = Color.Black, spotColor = Color.Black))
             .clip(shape)
             .background(colors.canvasRaised)
             .artworkRim(shape),

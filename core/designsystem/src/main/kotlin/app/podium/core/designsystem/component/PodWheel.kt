@@ -1,8 +1,12 @@
 package app.podium.core.designsystem.component
 
 import android.view.ViewConfiguration
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Box
@@ -12,18 +16,23 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.CustomAccessibilityAction
@@ -39,6 +48,8 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import app.podium.core.designsystem.glass.GlassMaterial
 import app.podium.core.designsystem.glass.glass
+import app.podium.core.designsystem.shell.ShellPalette
+import app.podium.core.designsystem.shell.grain
 import app.podium.core.designsystem.symbol.PodiumSymbol
 import app.podium.core.designsystem.symbol.Symbol
 import app.podium.core.designsystem.theme.PodiumTheme
@@ -49,13 +60,6 @@ import app.podium.core.interaction.rememberPodiumHaptics
 import kotlin.math.cos
 import kotlin.math.roundToInt
 import kotlin.math.sin
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.lerp
-import app.podium.core.designsystem.shell.ShellPalette
-import app.podium.core.designsystem.shell.grain
 
 /** Wheel diameter for a window width (design-system.md §6.1): 66% of width, 232–312 dp. */
 fun wheelDiameter(windowWidth: Dp): Dp = (windowWidth * 0.66f).coerceIn(232.dp, 312.dp)
@@ -94,7 +98,14 @@ fun PodWheel(
         label = "centerScale",
     )
 
+    // Mechanical finish: the knurled band turns one detent step per click, so the wheel looks
+    // like it moved (a well-damped spring: a click, not a wobble).
+    val spin = remember { Animatable(0f) }
+    var spinTarget by remember { mutableFloatStateOf(0f) }
+    LaunchedEffect(spinTarget) { spin.animateTo(spinTarget, spring(dampingRatio = 0.9f, stiffness = 900f)) }
+
     fun emit(input: PodiumInput) {
+        if (input is PodiumInput.Rotate && solid?.matte == true) spinTarget += input.detents * DetentDegrees
         when (input) {
             is PodiumInput.Rotate -> haptics.detent()
             is PodiumInput.LongPress -> haptics.longPress()
@@ -167,9 +178,15 @@ fun PodWheel(
             Box(
                 Modifier
                     .fillMaxSize()
-                    .shadow(4.dp, CircleShape, clip = false)
+                    .then(if (solid.matte) Modifier else Modifier.shadow(4.dp, CircleShape, clip = false))
                     .clip(CircleShape)
-                    .background(Brush.verticalGradient(listOf(lerp(solid.ring, Color.Black, 0.07f), lerp(solid.ring, Color.White, 0.06f))))
+                    .background(
+                        if (solid.matte) {
+                            Brush.verticalGradient(listOf(solid.ring, solid.ring))
+                        } else {
+                            Brush.verticalGradient(listOf(lerp(solid.ring, Color.Black, 0.07f), lerp(solid.ring, Color.White, 0.06f)))
+                        },
+                    )
                     .grain { solid.grain }
                     .border(1.dp, solid.ringRim, CircleShape),
             )
@@ -179,6 +196,25 @@ fun PodWheel(
         Canvas(Modifier.fillMaxSize()) {
             val radius = size.minDimension / 2f
             val inner = radius * centerFraction
+            if (solid?.matte == true) {
+                // Knurling: fine radial ticks around the outer band; a longer one at each detent.
+                val ticks = (360f / (DetentDegrees / 2f)).toInt()
+                for (t in 0 until ticks) {
+                    val a = Math.toRadians((t * DetentDegrees / 2f + spin.value).toDouble())
+                    val long = t % 2 == 0
+                    val r0 = radius * (if (long) 0.885f else 0.915f)
+                    val r1 = radius * 0.965f
+                    val dir = Offset(kotlin.math.sin(a).toFloat(), -kotlin.math.cos(a).toFloat())
+                    drawLine(
+                        color = solid.legend.copy(alpha = if (long) 0.22f else 0.12f),
+                        start = center + dir * r0,
+                        end = center + dir * r1,
+                        strokeWidth = (if (long) 1.4f else 1f).dp.toPx(),
+                    )
+                }
+                // The band's inner edge: a machined step.
+                drawCircle(solid.ringRim, radius = radius * 0.86f, style = Stroke(width = 1.dp.toPx()))
+            }
             pressed?.takeIf { it != WheelButton.CENTER }?.let { zone ->
                 val start = when (zone) {
                     WheelButton.MENU -> -135f
@@ -261,9 +297,15 @@ fun PodWheel(
                         // A convex button in the body colour: lit from above, darker when pressed.
                         val face = if (pressed == WheelButton.CENTER) lerp(solid.center, Color.Black, 0.10f) else solid.center
                         Modifier
-                            .shadow(2.dp, CircleShape, clip = false)
+                            .then(if (solid.matte) Modifier else Modifier.shadow(2.dp, CircleShape, clip = false))
                             .clip(CircleShape)
-                            .background(Brush.verticalGradient(listOf(lerp(face, Color.White, 0.08f), lerp(face, Color.Black, 0.06f))))
+                            .background(
+                                if (solid.matte) {
+                                    Brush.verticalGradient(listOf(face, face))
+                                } else {
+                                    Brush.verticalGradient(listOf(lerp(face, Color.White, 0.08f), lerp(face, Color.Black, 0.06f)))
+                                },
+                            )
                             .grain { solid.grain }
                             .border(1.dp, solid.ringRim, CircleShape)
                     },
@@ -273,7 +315,13 @@ fun PodWheel(
                     contentDescription = "Select"
                     onClick { currentOnInput(PodiumInput.Press(WheelButton.CENTER)); true }
                 },
-        )
+        ) {
+            if (solid?.matte == true) {
+                Canvas(Modifier.fillMaxSize()) {
+                    drawCircle(solid.ringRim, radius = size.minDimension / 2f * 0.72f, style = Stroke(width = 1.dp.toPx()))
+                }
+            }
+        }
     }
 }
 
@@ -281,3 +329,6 @@ fun PodWheel(
 private fun Row2(content: @Composable () -> Unit) {
     androidx.compose.foundation.layout.Row(verticalAlignment = Alignment.CenterVertically) { content() }
 }
+
+/** One wheel detent, in degrees (WheelTuning.detentDegrees): the knurling's pitch. */
+private const val DetentDegrees = 18f

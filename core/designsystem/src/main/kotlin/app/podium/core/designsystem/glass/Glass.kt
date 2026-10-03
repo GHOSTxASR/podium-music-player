@@ -64,8 +64,9 @@ fun Modifier.glass(material: GlassMaterial, shape: Shape, pressed: Boolean = fal
 
     if (tier == GlassTier.Solid || backdrop == null) {
         val fill = if (colors.isDark) colors.canvasRaised else colors.canvasRaised.copy(alpha = 0.97f)
+        // Industrial themes are flat: no drop shadow, just the surface and its hairline.
         return this
-            .shadow(16.dp, shape, ambientColor = shadowColor, spotColor = shadowColor)
+            .then(if (colors.isIndustrial) Modifier else Modifier.shadow(16.dp, shape, ambientColor = shadowColor, spotColor = shadowColor))
             .background(if (pressed) colors.separator else fill, shape)
             .border(0.5.dp, colors.separator, shape)
     }

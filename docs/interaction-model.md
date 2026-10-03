@@ -58,8 +58,8 @@ Latency budget: detent emission → focus state change in the same frame; lens b
 |---|---|---|---|---|---|
 | `ListFocus` (Home, Music, all lists, Search results, Settings) | Move focus ±1 (accelerated in long lists); `IndexGlyph` HUD on sorted lists during fast spins | Activate: push destination / play track (queue = list context) / toggle setting | Context menu for focused item | Back | Boundary: lens squash + `boundary` haptic, no wrap |
 | `Volume` (Now Playing default) | System media volume ±1 step per *k* detents (D-16) | Enter `Scrub` | More menu | Back | VolumeBar shown while turning |
-| `Scrub` (Now Playing) | Seek ≈ 0.5 % of duration per detent (0.5–3 s), ×2/×5/×10 at 11/20/32 detents/s | Enter `Actions` | More menu | Return to `Volume` (does **not** navigate) | Auto-returns after 3 s idle |
-| `Actions` (Now Playing) | Move the focus lens across shuffle, repeat, favorite, Up Next, More | Activate the focused action | More menu | Return to `Volume` | Auto-returns after 5 s idle (iPod: Center cycles the Now Playing items) |
+| `Scrub` (Now Playing) | Seek ≈ 0.5 % of duration per detent (0.5–3 s), ×2/×5/×10 at 11/20/32 detents/s | Enter `Actions` | More menu | Return to `Volume` (does **not** navigate) | Auto-returns after 4 s idle |
+| `Actions` (Now Playing) | Move the focus lens across shuffle, repeat, favorite, Up Next, More | Activate the focused action | More menu | Return to `Volume` | Auto-returns after 6 s idle (iPod: Center cycles the Now Playing items) |
 | `Queue move` (Up Next ▸ song menu ▸ Move) | Move the lifted song among upcoming songs (preview) | Place it (`QueueManager.move`) | — | Cancel | Section follows its new neighbours, as in the queue |
 | `Flow` (Album Flow) | Move album ±1 (accelerated) | Flip cover → track list; Center again plays the focused track | Album context menu | Back (flip back first if flipped) | |
 | `Queue` (Up Next) | Move focus | Skip to focused item | Item menu: Play next, Move, Remove, Go to album | Back | |

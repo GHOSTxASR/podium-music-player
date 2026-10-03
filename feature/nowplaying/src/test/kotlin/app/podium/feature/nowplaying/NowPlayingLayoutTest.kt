@@ -44,6 +44,7 @@ import app.podium.core.interaction.InputRouter
 import app.podium.core.interaction.LocalInputRouter
 import app.podium.core.model.QueueUid
 import app.podium.core.model.TrackId
+import app.podium.player.api.FavoritesRepository
 import app.podium.player.api.NowPlayingItem
 import app.podium.player.api.PauseReason
 import app.podium.player.api.PlayIntent

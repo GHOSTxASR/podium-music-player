@@ -82,7 +82,7 @@ fun GlassMenu(
                 .padding(horizontal = 32.dp)
                 .widthIn(max = 360.dp)
                 .fillMaxWidth()
-                .glass(GlassMaterial.Regular, RoundedCornerShape(22.dp))
+                .glass(GlassMaterial.Regular, RoundedCornerShape(if (PodiumTheme.colors.isIndustrial) 3.dp else 22.dp))
                 .padding(vertical = 8.dp),
         ) {
             spec.title?.let { SectionHeader(it, Modifier.padding(bottom = 0.dp)) }
@@ -98,6 +98,7 @@ fun GlassMenu(
                     }
                 },
                 modifier = Modifier.fillMaxWidth().heightIn(max = 52.dp * spec.actions.size),
+                paper = false,
             ) { action, _, focused ->
                 MenuRow(action.label, focused, showChevron = false, enabled = action.enabled)
             }

@@ -55,7 +55,7 @@ fun PowerButton(on: Boolean, palette: ShellPalette, onToggle: () -> Unit, modifi
         Modifier.glass(GlassMaterial.Control, CircleShape, pressed = pressed)
     } else {
         Modifier
-            .shadow(3.dp, CircleShape, clip = false)
+            .then(if (palette.matte) Modifier else Modifier.shadow(3.dp, CircleShape, clip = false))
             .clip(CircleShape)
             .background(
                 Brush.verticalGradient(

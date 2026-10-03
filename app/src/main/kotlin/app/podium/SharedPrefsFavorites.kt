@@ -3,7 +3,7 @@ package app.podium
 import android.content.Context
 import androidx.core.content.edit
 import app.podium.core.model.TrackId
-import app.podium.feature.nowplaying.FavoritesRepository
+import app.podium.player.api.FavoritesRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow

@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.core.content.edit
 import app.podium.core.designsystem.shell.DeviceAppearance
 import app.podium.core.designsystem.shell.FinishPreset
+import app.podium.core.designsystem.theme.DisplayTheme
 import app.podium.feature.settings.DeviceSettingsRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -21,6 +22,9 @@ class SharedPrefsDeviceSettings(context: Context) : DeviceSettingsRepository {
                 ?: FinishPreset.GLASS,
             customArgb = prefs.getInt(KEY_CUSTOM, DeviceAppearance.DEFAULT_CUSTOM),
             grain = prefs.getFloat(KEY_GRAIN, DeviceAppearance.DEFAULT_GRAIN),
+            display = prefs.getString(KEY_DISPLAY, null)
+                ?.let { name -> DisplayTheme.entries.firstOrNull { it.name == name } }
+                ?: DisplayTheme.GLASS,
         ),
     )
     override val appearance: StateFlow<DeviceAppearance> = _appearance.asStateFlow()
@@ -37,6 +41,7 @@ class SharedPrefsDeviceSettings(context: Context) : DeviceSettingsRepository {
             putString(KEY_FINISH, appearance.preset.name)
             putInt(KEY_CUSTOM, appearance.customArgb)
             putFloat(KEY_GRAIN, appearance.grain)
+            putString(KEY_DISPLAY, appearance.display.name)
         }
     }
 
@@ -54,5 +59,6 @@ class SharedPrefsDeviceSettings(context: Context) : DeviceSettingsRepository {
         const val KEY_CUSTOM = "custom_argb"
         const val KEY_GRAIN = "grain"
         const val KEY_SOUND = "startup_sound"
+        const val KEY_DISPLAY = "display_theme"
     }
 }

@@ -5,10 +5,12 @@ import app.podium.feature.library.LibraryRepository
 import app.podium.feature.library.LibraryState
 import app.podium.feature.library.SourceAction
 import app.podium.player.api.TrackCatalog
+import app.podium.core.model.SourceId
 import app.podium.sources.api.Capability
 import app.podium.sources.api.SourceRegistry
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -29,13 +31,16 @@ class RegistryLibraryRepository(
     private val registry: SourceRegistry,
     private val catalog: TrackCatalog,
     scope: CoroutineScope,
+    /** Debug builds can narrow the library to one source for device tests (never persisted). */
+    onlySource: StateFlow<SourceId?> = MutableStateFlow(null),
 ) : LibraryRepository {
 
     private val collator = Collator.getInstance().apply { strength = Collator.PRIMARY }
 
     override val songs: StateFlow<LibraryState> = registry.connectedSources
-        .map { sources ->
-            sources.filter { it.enabled && it.capabilities.isUsable(Capability.LIBRARY) }.map { it.sourceId }
+        .combine(onlySource) { sources, only ->
+            sources.filter { it.enabled && it.capabilities.isUsable(Capability.LIBRARY) && (only == null || it.sourceId == only) }
+                .map { it.sourceId }
         }
         .distinctUntilChanged()
         .flatMapLatest { ids ->

@@ -75,10 +75,24 @@ fun deviceGlassTier(): GlassTier = when {
     else -> GlassTier.Solid
 }
 
+/**
+ * The display's visual system (D-29). Glass follows the system light/dark setting; Carbon and Bone
+ * are deliberate fixed looks — matte, monochrome, no glass anywhere on the display.
+ */
+enum class DisplayTheme(val label: String) {
+    GLASS("Glass"),
+    CARBON("Carbon"),
+    BONE("Bone"),
+    ;
+
+    val isIndustrial: Boolean get() = this != GLASS
+}
+
 @Composable
 fun PodiumTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     glassTier: GlassTier = deviceGlassTier(),
+    displayTheme: DisplayTheme = DisplayTheme.GLASS,
     content: @Composable () -> Unit,
 ) {
     val context = LocalContext.current
@@ -87,10 +101,14 @@ fun PodiumTheme(
         Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
     }
     CompositionLocalProvider(
-        LocalPodiumColors provides if (darkTheme) DarkColors else LightColors,
+        LocalPodiumColors provides when (displayTheme) {
+            DisplayTheme.GLASS -> if (darkTheme) DarkColors else LightColors
+            DisplayTheme.CARBON -> CarbonColors
+            DisplayTheme.BONE -> BoneColors
+        },
         LocalPodiumType provides DefaultType,
         LocalPodiumMotion provides PodiumMotion(reducedMotion),
-        LocalGlassTier provides glassTier,
+        LocalGlassTier provides if (displayTheme.isIndustrial) GlassTier.Solid else glassTier,
         content = content,
     )
 }

@@ -45,6 +45,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.podium.core.designsystem.component.FocusList
 import app.podium.core.designsystem.component.ListInputEffect
 import app.podium.core.designsystem.component.LocalScreenInsets
+import app.podium.core.designsystem.component.MenuPreview
 import app.podium.core.designsystem.component.MenuRow
 import app.podium.core.designsystem.component.MessageState
 import app.podium.core.designsystem.component.ProgressBar
@@ -55,6 +56,9 @@ import app.podium.core.designsystem.shell.formatHex
 import app.podium.core.designsystem.shell.palette
 import app.podium.core.designsystem.shell.parseHex
 import app.podium.core.designsystem.symbol.PodiumSymbol
+import app.podium.core.designsystem.theme.BoneColors
+import app.podium.core.designsystem.theme.CarbonColors
+import app.podium.core.designsystem.theme.DisplayTheme
 import app.podium.core.designsystem.theme.PodiumTheme
 import app.podium.core.designsystem.theme.Spacing
 import app.podium.core.designsystem.type.PodiumText
@@ -67,12 +71,13 @@ import app.podium.core.interaction.rememberFocusListState
 import app.podium.core.interaction.rememberPodiumHaptics
 import kotlin.math.roundToInt
 
-private enum class SettingsRow { Finish, CustomColor, Grain, StartupSound }
+private enum class SettingsRow { Theme, Finish, CustomColor, Grain, StartupSound }
 
 /** Settings (D-26): the device's finish and startup sound. */
 @Composable
 fun SettingsScreen(
     repository: DeviceSettingsRepository,
+    onTheme: () -> Unit,
     onFinish: () -> Unit,
     onCustomColor: () -> Unit,
     onGrain: () -> Unit,
@@ -83,9 +88,11 @@ fun SettingsScreen(
     val rows = SettingsRow.entries
     val focus = rememberFocusListState("settings")
     val activate: (Int) -> Unit = { index ->
+        val industrial = appearance.display.isIndustrial
         when (rows[index]) {
-            SettingsRow.Finish -> onFinish()
-            SettingsRow.CustomColor -> onCustomColor()
+            SettingsRow.Theme -> onTheme()
+            SettingsRow.Finish -> if (industrial) haptics.reject() else onFinish()
+            SettingsRow.CustomColor -> if (industrial) haptics.reject() else onCustomColor()
             SettingsRow.Grain -> if (appearance.isGlass) haptics.reject() else onGrain()
             SettingsRow.StartupSound -> {
                 haptics.confirm()
@@ -100,15 +107,32 @@ fun SettingsScreen(
         key = { it },
         contentPadding = LocalScreenInsets.current.listPadding(),
         onActivate = activate,
+        preview = { row ->
+            when (row) {
+                SettingsRow.Finish -> appearance.baseArgb?.let { MenuPreview.Swatch(Color(it)) } ?: MenuPreview.Instrument
+                SettingsRow.CustomColor -> MenuPreview.Swatch(Color(appearance.customArgb))
+                else -> MenuPreview.Instrument
+            }
+        },
         modifier = Modifier.fillMaxSize(),
     ) { row, _, focused ->
+        val industrial = appearance.display.isIndustrial
         when (row) {
-            SettingsRow.Finish -> MenuRow("Finish", focused, value = appearance.preset.label)
+            SettingsRow.Theme -> MenuRow("Theme", focused, value = appearance.display.label)
+            SettingsRow.Finish -> MenuRow(
+                "Finish",
+                focused,
+                value = if (industrial) "Matte black with ${appearance.display.label}" else appearance.preset.label,
+                enabled = !industrial,
+                showChevron = !industrial,
+            )
             SettingsRow.CustomColor -> MenuRow(
                 "Custom color",
                 focused,
                 value = formatHex(appearance.customArgb),
                 leadingContent = { Swatch(Color(appearance.customArgb)) },
+                enabled = !industrial,
+                showChevron = !industrial,
             )
             SettingsRow.Grain -> MenuRow(
                 "Grain",
@@ -124,10 +148,10 @@ fun SettingsScreen(
 
 /**
  * Finish picker. Turning the wheel tries each finish on the device itself; the center keeps it,
- * Menu puts the old one back. "Custom color" opens the colour editor.
+ * Menu puts the old one back (and goes back). "Custom color" opens the colour editor.
  */
 @Composable
-fun FinishScreen(repository: DeviceSettingsRepository, onDone: () -> Unit, onCustomColor: () -> Unit) {
+fun FinishScreen(repository: DeviceSettingsRepository, onCustomColor: () -> Unit) {
     val appearance by repository.appearance.collectAsStateWithLifecycle()
     val presets = FinishPreset.entries
     val focus = remember { FocusListState(initialIndex = presets.indexOf(repository.appearance.value.preset)) }
@@ -144,9 +168,9 @@ fun FinishScreen(repository: DeviceSettingsRepository, onDone: () -> Unit, onCus
         if (preset == FinishPreset.CUSTOM) {
             onCustomColor()
         } else {
+            // Choosing keeps you here with the check on your choice; Menu goes back.
             repository.setAppearance(repository.appearance.value.copy(preset = preset))
             repository.setPreview(null)
-            onDone()
         }
     }
     ListInputEffect(focus, onActivate = activate)
@@ -157,6 +181,7 @@ fun FinishScreen(repository: DeviceSettingsRepository, onDone: () -> Unit, onCus
         key = { it },
         contentPadding = LocalScreenInsets.current.listPadding(),
         onActivate = activate,
+        preview = { preset -> DeviceAppearance(preset, customArgb = appearance.customArgb).baseArgb?.let { MenuPreview.Swatch(Color(it)) } ?: MenuPreview.Instrument },
         modifier = Modifier.fillMaxSize(),
     ) { preset, _, focused ->
         val swatch = when (preset) {
@@ -174,9 +199,64 @@ fun FinishScreen(repository: DeviceSettingsRepository, onDone: () -> Unit, onCus
     }
 }
 
+/**
+ * Theme picker (D-29): Glass, or the matte instrument looks Carbon and Bone. Turning the wheel
+ * tries each one on the whole device; Center keeps it, Menu puts the old one back.
+ */
+@Composable
+fun ThemeScreen(repository: DeviceSettingsRepository) {
+    val appearance by repository.appearance.collectAsStateWithLifecycle()
+    val themes = DisplayTheme.entries
+    val focus = remember { FocusListState(initialIndex = themes.indexOf(repository.appearance.value.display)) }
+    LaunchedEffect(focus) {
+        snapshotFlow { focus.focusedIndex }.collect { index ->
+            val theme = themes.getOrNull(index) ?: return@collect
+            val current = repository.appearance.value
+            repository.setPreview(if (theme == current.display) null else current.copy(display = theme))
+        }
+    }
+    DisposableEffect(Unit) { onDispose { repository.setPreview(null) } }
+    val activate: (Int) -> Unit = { index ->
+        repository.setAppearance(repository.appearance.value.copy(display = themes[index]))
+        repository.setPreview(null)
+    }
+    ListInputEffect(focus, onActivate = activate)
+    FocusList(
+        items = themes,
+        state = focus,
+        key = { it },
+        contentPadding = LocalScreenInsets.current.listPadding(),
+        onActivate = activate,
+        preview = { theme ->
+            when (theme) {
+                DisplayTheme.GLASS -> MenuPreview.Instrument
+                DisplayTheme.CARBON -> MenuPreview.Swatch(CarbonColors.canvas)
+                DisplayTheme.BONE -> MenuPreview.Swatch(BoneColors.canvas)
+            }
+        },
+        modifier = Modifier.fillMaxSize(),
+    ) { theme, _, focused ->
+        MenuRow(
+            theme.label,
+            focused,
+            leadingContent = {
+                Swatch(
+                    when (theme) {
+                        DisplayTheme.GLASS -> null
+                        DisplayTheme.CARBON -> CarbonColors.canvas
+                        DisplayTheme.BONE -> BoneColors.canvas
+                    },
+                )
+            },
+            selected = theme == appearance.display,
+            showChevron = false,
+        )
+    }
+}
+
 /** Grain strength, adjusted with the wheel and previewed on the device as you turn. */
 @Composable
-fun GrainScreen(repository: DeviceSettingsRepository, onDone: () -> Unit) {
+fun GrainScreen(repository: DeviceSettingsRepository) {
     val colors = PodiumTheme.colors
     val type = PodiumTheme.type
     val insets = LocalScreenInsets.current
@@ -203,7 +283,6 @@ fun GrainScreen(repository: DeviceSettingsRepository, onDone: () -> Unit) {
                 repository.setAppearance(appearance.copy(grain = grain))
                 repository.setPreview(null)
                 haptics.confirm()
-                onDone()
                 true
             } else false
             else -> false
@@ -227,7 +306,7 @@ fun GrainScreen(repository: DeviceSettingsRepository, onDone: () -> Unit) {
  * the colour as it changes; the center (or the button) applies it as the Custom finish.
  */
 @Composable
-fun CustomColorScreen(repository: DeviceSettingsRepository, onDone: () -> Unit) {
+fun CustomColorScreen(repository: DeviceSettingsRepository) {
     val colors = PodiumTheme.colors
     val type = PodiumTheme.type
     val insets = LocalScreenInsets.current
@@ -247,7 +326,6 @@ fun CustomColorScreen(repository: DeviceSettingsRepository, onDone: () -> Unit) 
         repository.setPreview(null)
         haptics.confirm()
         focusManager.clearFocus()
-        onDone()
     }
     InputTargetEffect(WheelContext.VOLUME) { input ->
         when (input) {

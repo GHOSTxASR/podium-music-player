@@ -27,7 +27,13 @@ data class PodiumColors(
     val glassTint: Color,
     val glassRim: Color,
     val shadow: Color,
-)
+    /** Glass look, or the matte industrial instrument look (Carbon, Bone): D-29. */
+    val style: DisplayStyle = DisplayStyle.GLASS,
+) {
+    val isIndustrial: Boolean get() = style == DisplayStyle.INDUSTRIAL
+}
+
+enum class DisplayStyle { GLASS, INDUSTRIAL }
 
 val DarkColors = PodiumColors(
     isDark = true,
@@ -68,3 +74,51 @@ val LightColors = PodiumColors(
     glassRim = Color(0xFFFFFFFF),
     shadow = Color(0xFF000000),
 )
+
+/**
+ * Carbon (D-29): a matte black instrument display. Off-white type, muted grays, and a white
+ * indicator in place of any coloured highlight; album artwork is the only colour on screen.
+ */
+val CarbonColors = PodiumColors(
+    isDark = true,
+    canvas = Color(0xFF0A0A0A),
+    canvasRaised = Color(0xFF161615),
+    labelPrimary = Color(0xFFF2F0EB),
+    labelSecondary = Color(0xFF9B988F),
+    labelTertiary = Color(0xFF65635D),
+    separator = Color(0xFF262523),
+    highlight = Color(0xFFF2F0EB),
+    highlightText = Color(0xFFF2F0EB),
+    onHighlight = Color(0xFF0A0A0A),
+    like = Color(0xFFF2F0EB),
+    critical = Color(0xFFE07A66),
+    warning = Color(0xFFD8A647),
+    positive = Color(0xFF9CC79C),
+    glassTint = Color(0xFF000000),
+    glassRim = Color(0xFFFFFFFF),
+    shadow = Color(0xFF000000),
+    style = DisplayStyle.INDUSTRIAL,
+)
+
+/** Bone (D-29): the same instrument on a warm off-white display, with near-black type and indicator. */
+val BoneColors = PodiumColors(
+    isDark = false,
+    canvas = Color(0xFFECE8DF),
+    canvasRaised = Color(0xFFE2DDD2),
+    labelPrimary = Color(0xFF141311),
+    labelSecondary = Color(0xFF68645C),
+    labelTertiary = Color(0xFF9B968C),
+    separator = Color(0xFFD2CDC2),
+    highlight = Color(0xFF141311),
+    highlightText = Color(0xFF141311),
+    onHighlight = Color(0xFFECE8DF),
+    like = Color(0xFF141311),
+    critical = Color(0xFFAF3A2A),
+    warning = Color(0xFF875900),
+    positive = Color(0xFF2E6A39),
+    glassTint = Color(0xFFFFFFFF),
+    glassRim = Color(0xFFFFFFFF),
+    shadow = Color(0xFF000000),
+    style = DisplayStyle.INDUSTRIAL,
+)
+

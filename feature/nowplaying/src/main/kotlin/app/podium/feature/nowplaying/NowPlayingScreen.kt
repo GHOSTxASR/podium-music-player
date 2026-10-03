@@ -14,11 +14,14 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -93,6 +96,7 @@ import app.podium.core.interaction.WheelButton
 import app.podium.core.interaction.WheelContext
 import app.podium.core.interaction.rememberPodiumHaptics
 import app.podium.core.model.QualityLabel
+import app.podium.player.api.FavoritesRepository
 import app.podium.player.api.NowPlayingItem
 import app.podium.player.api.PlayIntent
 import app.podium.player.api.PlaybackController
@@ -101,8 +105,8 @@ import app.podium.player.api.PlaybackStatus
 import app.podium.player.api.RepeatMode
 import app.podium.player.api.VolumeController
 import app.podium.sources.api.ResolutionPath
-import kotlinx.coroutines.delay
 import kotlin.math.ceil
+import kotlinx.coroutines.delay
 
 /**
  * What the Wheel does on Now Playing. Center cycles through the modes as on the original
@@ -144,12 +148,12 @@ fun NowPlayingScreen(
     LaunchedEffect(lastWheelAt, mode) {
         when (mode) {
             WheelMode.Scrub -> {
-                delay(3_000)
+                delay(4_000)
                 mode = WheelMode.Volume
                 scrubTarget = null
             }
             WheelMode.Actions -> {
-                delay(5_000)
+                delay(6_000)
                 mode = WheelMode.Volume
             }
             WheelMode.Volume -> if (showVolume) {
@@ -564,10 +568,21 @@ private fun StatusSlot(p: NowPlayingParts) {
     }
 }
 
-/** The primary controls: visually dominant, no container. */
+/**
+ * The primary controls: visually dominant. Glass shows bare glyphs; Carbon and Bone show them as
+ * outlined rectangular keys, like an instrument's transport (D-29).
+ */
 @Composable
 private fun TransportRow(p: NowPlayingParts) {
     val controller = p.controller
+    if (PodiumTheme.colors.isIndustrial) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.s)) {
+            Key(PodiumSymbol.Previous, "Previous track", 26.dp, 64.dp, onClick = controller::previous)
+            Key(if (p.playing) PodiumSymbol.Pause else PodiumSymbol.Play, if (p.playing) "Pause" else "Play", 30.dp, 84.dp, onClick = controller::togglePlayPause)
+            Key(PodiumSymbol.Next, "Next track", 26.dp, 64.dp, onClick = controller::next)
+        }
+        return
+    }
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.xl)) {
         ControlButton(PodiumSymbol.Previous, "Previous track", 30.dp, 52.dp, onClick = controller::previous)
         ControlButton(
@@ -595,6 +610,10 @@ private fun ActionCluster(p: NowPlayingParts) {
 
 @Composable
 private fun ActionClusterContent(p: NowPlayingParts, slot: Dp) {
+    if (PodiumTheme.colors.isIndustrial) {
+        ActionStrip(p, slot)
+        return
+    }
     val colors = PodiumTheme.colors
     val motion = PodiumTheme.motion
     val lensVisible = p.mode == WheelMode.Actions
@@ -610,7 +629,19 @@ private fun ActionClusterContent(p: NowPlayingParts, slot: Dp) {
             .padding(horizontal = Spacing.xs),
         contentAlignment = Alignment.CenterStart,
     ) {
-        if (lensVisible) {
+        if (lensVisible && colors.isIndustrial) {
+            // Industrial: a small lit indicator under the focused action, no pill (D-29).
+            Box(
+                Modifier
+                    .offset(x = lensX)
+                    .size(slot, 40.dp)
+                    .drawBehind {
+                        val c = Offset(size.width / 2f, size.height - 4.dp.toPx())
+                        if (colors.isDark) drawCircle(colors.highlight.copy(alpha = 0.22f), radius = 6.dp.toPx(), center = c)
+                        drawCircle(colors.highlight, radius = 2.5.dp.toPx(), center = c)
+                    },
+            )
+        } else if (lensVisible) {
             Box(
                 Modifier
                     .offset(x = lensX)
@@ -645,9 +676,11 @@ private fun ActionClusterContent(p: NowPlayingParts, slot: Dp) {
                     Action.Queue -> Triple(PodiumSymbol.Queue, "Up Next", null)
                     Action.More -> Triple(PodiumSymbol.More, "More", null)
                 }
+                val focusedHere = lensVisible && Action.entries.indexOf(action) == p.actionFocus
                 val tint = when {
                     action == Action.Favorite && on == true -> colors.like
                     on == true -> colors.highlightText
+                    focusedHere && colors.isIndustrial -> colors.labelPrimary
                     else -> colors.labelSecondary
                 }
                 ControlButton(
@@ -663,6 +696,89 @@ private fun ActionClusterContent(p: NowPlayingParts, slot: Dp) {
                 )
             }
         }
+    }
+}
+
+/**
+ * The industrial action row (D-29): one hairline-outlined strip divided into cells. The Wheel's
+ * action mode lights a short bar under the focused cell — an indicator, not a highlight.
+ */
+@Composable
+private fun ActionStrip(p: NowPlayingParts, slot: Dp) {
+    val colors = PodiumTheme.colors
+    val shape = RoundedCornerShape(2.dp)
+    Row(
+        Modifier.height(40.dp).border(1.dp, colors.separator, shape),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Action.entries.forEachIndexed { i, action ->
+            if (i > 0) Box(Modifier.width(1.dp).fillMaxHeight().background(colors.separator))
+            val (symbol, label, on) = actionLook(p, action)
+            val focused = p.mode == WheelMode.Actions && i == p.actionFocus
+            Box(Modifier.size(slot, 40.dp), contentAlignment = Alignment.Center) {
+                ControlButton(
+                    symbol,
+                    label,
+                    20.dp,
+                    slot,
+                    tint = when {
+                        on == true || focused -> colors.labelPrimary
+                        else -> colors.labelSecondary
+                    },
+                    filled = action == Action.Favorite && on == true,
+                    toggled = on,
+                    height = 40.dp,
+                    onClick = { p.perform(action) },
+                )
+                if (focused) {
+                    Box(Modifier.align(Alignment.BottomCenter).padding(bottom = 4.dp).size(14.dp, 2.dp).background(colors.labelPrimary))
+                }
+            }
+        }
+    }
+}
+
+/** Glyph, label and on/off state for an action. */
+private fun actionLook(p: NowPlayingParts, action: Action): Triple<PodiumSymbol, String, Boolean?> = when (action) {
+    Action.Shuffle -> Triple(if (p.snapshot.shuffleEnabled) PodiumSymbol.ShuffleOn else PodiumSymbol.Shuffle, "Shuffle", p.snapshot.shuffleEnabled)
+    Action.Repeat -> Triple(
+        if (p.snapshot.repeatMode == RepeatMode.ONE) PodiumSymbol.RepeatOne else PodiumSymbol.Repeat,
+        when (p.snapshot.repeatMode) {
+            RepeatMode.OFF -> "Repeat"
+            RepeatMode.ALL -> "Repeat all"
+            RepeatMode.ONE -> "Repeat one"
+        },
+        p.snapshot.repeatMode != RepeatMode.OFF,
+    )
+    Action.Favorite -> Triple(PodiumSymbol.Favorite, "Favorite", p.isFavorite)
+    Action.Queue -> Triple(PodiumSymbol.Queue, "Up Next", null)
+    Action.More -> Triple(PodiumSymbol.More, "More", null)
+}
+
+/** An outlined rectangular key (industrial transport). Pressing darkens it briefly. */
+@Composable
+private fun Key(symbol: PodiumSymbol, label: String, iconSize: Dp, width: Dp, onClick: () -> Unit) {
+    val colors = PodiumTheme.colors
+    val haptics = rememberPodiumHaptics()
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val shape = RoundedCornerShape(2.dp)
+    Box(
+        Modifier
+            .size(width, 48.dp)
+            .border(1.dp, colors.separator, shape)
+            .background(if (pressed) colors.labelPrimary.copy(alpha = 0.08f) else Color.Transparent, shape)
+            .clickable(interactionSource = interaction, indication = null) {
+                haptics.press()
+                onClick()
+            }
+            .semantics {
+                role = Role.Button
+                contentDescription = label
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        Symbol(symbol, colors.labelPrimary, size = iconSize, weight = 600, filled = true)
     }
 }
 

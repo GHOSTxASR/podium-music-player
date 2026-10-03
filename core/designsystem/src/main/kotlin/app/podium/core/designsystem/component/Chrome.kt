@@ -146,7 +146,7 @@ fun MiniPlayer(
     Box(
         modifier
             .height(Spacing.miniPlayer)
-            .glass(GlassMaterial.Floating, RoundedCornerShape(28.dp))
+            .glass(GlassMaterial.Floating, RoundedCornerShape(if (colors.isIndustrial) 3.dp else 28.dp))
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onOpen)
             .semantics { contentDescription = "Now playing: $title, $subtitle. Opens Now Playing" },
     ) {
@@ -201,8 +201,18 @@ fun ProgressBar(value: () -> Float, running: Boolean, modifier: Modifier = Modif
         @Suppress("UNUSED_EXPRESSION") tick
         val barH = h.toPx()
         val y = (size.height - barH) / 2
-        val r = CornerRadius(barH / 2)
         val fraction = value().coerceIn(0f, 1f)
+        if (colors.isIndustrial) {
+            // A flat rule with a square playhead: an instrument's meter, not a pill.
+            val rule = (barH / 2).coerceAtLeast(1.5.dp.toPx())
+            val ry = (size.height - rule) / 2
+            drawRect(colors.labelPrimary.copy(alpha = 0.2f), Offset(0f, ry), Size(size.width, rule))
+            drawRect(colors.labelPrimary, Offset(0f, ry), Size(size.width * fraction, rule))
+            val head = (if (emphasized) 9 else 6).dp.toPx()
+            drawRect(colors.labelPrimary, Offset((size.width * fraction - head / 2).coerceIn(0f, size.width - head), (size.height - head) / 2), Size(head, head))
+            return@Canvas
+        }
+        val r = CornerRadius(barH / 2)
         drawRoundRect(colors.labelPrimary.copy(alpha = 0.18f), Offset(0f, y), Size(size.width, barH), r)
         drawRoundRect(colors.labelPrimary, Offset(0f, y), Size(size.width * fraction, barH), r)
         if (emphasized) drawCircle(colors.labelPrimary, radius = 6.dp.toPx(), center = Offset(size.width * fraction, size.height / 2))

@@ -10,11 +10,15 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import app.podium.core.designsystem.artwork.ArtworkImage
 import app.podium.core.designsystem.symbol.PodiumSymbol
@@ -27,6 +31,31 @@ import app.podium.core.designsystem.type.PodiumText
 @Composable
 private fun rowColor(focused: Boolean, normal: Color): Color =
     if (focused && isSolidFocus()) PodiumTheme.colors.onHighlight else normal
+
+/**
+ * Industrial rows (D-29) are lit rather than highlighted: the focused row's text is bright, the
+ * rest steps back a level. Glass rows keep their colours and rely on the lens.
+ */
+@Composable
+private fun primaryText(focused: Boolean, normal: Color): Color {
+    val colors = PodiumTheme.colors
+    return if (colors.isIndustrial) (if (focused) colors.labelPrimary else colors.labelSecondary) else rowColor(focused, normal)
+}
+
+@Composable
+private fun secondaryText(focused: Boolean, normal: Color): Color {
+    val colors = PodiumTheme.colors
+    return if (colors.isIndustrial) (if (focused) colors.labelSecondary else colors.labelTertiary) else rowColor(focused, normal)
+}
+
+/** On Carbon the focused text glows faintly, like an illuminated legend. */
+@Composable
+fun illuminated(style: TextStyle, focused: Boolean): TextStyle {
+    val colors = PodiumTheme.colors
+    return if (focused && colors.isIndustrial && colors.isDark) {
+        style.copy(shadow = Shadow(color = colors.labelPrimary.copy(alpha = 0.42f), offset = Offset.Zero, blurRadius = 18f))
+    } else style
+}
 
 /** A menu row (design-system.md §6.3): label, optional value, chevron. */
 @Composable
@@ -45,13 +74,13 @@ fun MenuRow(
 ) {
     val colors = PodiumTheme.colors
     val type = PodiumTheme.type
-    val primary = rowColor(focused, if (enabled) colors.labelPrimary else colors.labelTertiary)
-    val secondary = rowColor(focused, colors.labelSecondary)
+    val primary = if (enabled) primaryText(focused, colors.labelPrimary) else colors.labelTertiary
+    val secondary = secondaryText(focused, colors.labelSecondary)
     Row(
         modifier
             .fillMaxWidth()
             .heightIn(min = Spacing.menuRow)
-            .padding(horizontal = Spacing.gutter + Spacing.xs),
+            .padding(horizontal = LocalRowPadding.current),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (leading != null) {
@@ -61,9 +90,10 @@ fun MenuRow(
             leadingContent()
             Spacer(Modifier.width(Spacing.m))
         }
-        PodiumText(label, if (focused) type.rowFocused else type.row, primary, Modifier.weight(1f))
+        PodiumText(label, illuminated(if (focused) type.rowFocused else type.row, focused), primary, Modifier.weight(1f))
         if (value != null) {
-            PodiumText(value, type.footnote, secondary, Modifier.padding(start = Spacing.s))
+            // The label keeps its room; a long value gives way first.
+            PodiumText(value, type.footnote, secondary, Modifier.padding(start = Spacing.s).widthIn(max = 132.dp))
         }
         if (selected) {
             Spacer(Modifier.width(Spacing.s))
@@ -92,6 +122,10 @@ fun TrackRow(
     note: String? = null,
     /** The song that's playing: accent title and a playing glyph in place of [trailing]. */
     active: Boolean = false,
+    /** Custom trailing content (e.g. a drag handle), drawn after [trailing]. */
+    trailingContent: (@Composable () -> Unit)? = null,
+    /** Album track lists show the track number instead of repeating the same artwork. */
+    number: Int? = null,
 ) {
     val colors = PodiumTheme.colors
     val type = PodiumTheme.type
@@ -99,33 +133,40 @@ fun TrackRow(
         modifier
             .fillMaxWidth()
             .heightIn(min = Spacing.trackRow)
-            .padding(horizontal = Spacing.gutter + Spacing.xs, vertical = Spacing.s),
+            .padding(horizontal = LocalRowPadding.current, vertical = Spacing.s),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        ArtworkImage(artworkUri, 44.dp, fallbackText = title)
+        if (number != null) {
+            Box(Modifier.width(28.dp), contentAlignment = Alignment.CenterStart) {
+                PodiumText(number.toString(), type.caption, secondaryText(focused, colors.labelTertiary))
+            }
+        } else {
+            ArtworkImage(artworkUri, 44.dp, fallbackText = title)
+        }
         Spacer(Modifier.width(Spacing.m))
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.Center) {
             PodiumText(
                 title,
-                if (focused || active) type.rowFocused else type.row,
-                rowColor(focused, if (active) colors.highlightText else colors.labelPrimary),
+                illuminated(if (focused || active) type.rowFocused else type.row, focused),
+                if (active && !focused) colors.highlightText else primaryText(focused, colors.labelPrimary),
             )
-            PodiumText(subtitle, type.rowSecondary, rowColor(focused, colors.labelSecondary))
-            if (note != null) PodiumText(note, type.footnote, rowColor(focused, colors.labelTertiary))
+            PodiumText(subtitle, type.rowSecondary, secondaryText(focused, colors.labelSecondary))
+            if (note != null) PodiumText(note, type.footnote, secondaryText(focused, colors.labelTertiary))
         }
         if (active) {
             Spacer(Modifier.width(Spacing.s))
             Symbol(PodiumSymbol.Equalizer, rowColor(focused, colors.highlightText), size = 20.dp, weight = 600)
         } else if (trailing != null) {
-            PodiumText(trailing, type.caption, rowColor(focused, colors.labelSecondary), Modifier.padding(start = Spacing.s))
+            PodiumText(trailing, type.caption, secondaryText(focused, colors.labelSecondary), Modifier.padding(start = Spacing.s))
         }
+        trailingContent?.invoke()
     }
 }
 
 /** List section header, title case, never all caps. */
 @Composable
 fun SectionHeader(text: String, modifier: Modifier = Modifier) {
-    Box(modifier.fillMaxWidth().padding(start = Spacing.gutter + Spacing.xs, end = Spacing.gutter, top = Spacing.xl, bottom = Spacing.xs)) {
+    Box(modifier.fillMaxWidth().padding(start = LocalRowPadding.current, end = LocalRowPadding.current, top = Spacing.xl, bottom = Spacing.xs)) {
         BasicText(text, style = PodiumTheme.type.sectionHeader.copy(color = PodiumTheme.colors.labelSecondary))
     }
 }

@@ -45,6 +45,19 @@ Evidence: `research/2026-10-02-liquid-glass-and-hig.md`, `research/2026-10-02-ty
 - **Readable region** = screen − ScreenHeader − (MiniPlayer + 16dp when shown). Lists pad by `LocalScreenInsets`; content fades under the header and mini player (§5.5), inside the screen only.
 - Power: off = black screen and paused playback; on = boot (§5.8); any Wheel press also wakes it.
 
+### 1.1.1 The paper (D-29)
+Every list sits on one horizontal sheet:
+```
+| prev |  Music                  ●) |  ▒▒▒ next
+| col. |  Shuffle songs            ) |  ▒▒▒ column
+| peek |  Now Playing             )  |  ▒▒▒ (preview)
+|  9 % |  Settings              )    |   17 %
+```
+- Left 9 %: the previous column's labels, right-aligned and cut by the display edge, the one that led here aligned with the top of the list; dim and slightly soft. Root screens have none.
+- The list: a straight column; rows end where the arc is nearest; the arc (radius 1.8 × readable height, hairline, tertiary) bows out to the right between, hollow facing the list, mirroring the Wheel's right side. The selection indicator rides on the arc.
+- Right 17 %+: the focused item's next column (`MenuPreview`: cycling artwork, a sideways carousel, a swatch, or the instrument diagram), smaller, dimmer, slightly soft, running off the display edge — never a card.
+- Forward slides everything left (header title too), back slides it right; glimpses of the leaving screen fade at once, the arriving screen's fade in once settled. Overlay menus are plain lists.
+
 ### 1.2 Compact landscape (phones)
 `[ Screen (flexible) | Wheel column (D = clamp(0.78 × height, 220, 300)) ]`. Wheel on the right (left if left-handed). In Music/Albums contexts the screen shows **Album Flow**. MiniPlayer moves to the top of the wheel column as a narrower capsule.
 
@@ -210,6 +223,17 @@ Below the artwork: the artwork mirrored vertically, blurred 48dp, opacity 30% (d
 - Choosing a finish previews it live on the device as the focus moves; Center keeps it, Menu restores the old one. Custom color: type a hex code or walk the hue with the Wheel (lightness and chroma held, so a full turn returns to the start).
 - The screen is a text container, never glass; the power button is a control and is glass on the Glass finish.
 - Boot: black screen, the mark's ring sweeps closed (640 ms, emphasized decelerate), the center lands (spring), the wordmark fades in; ~1.7 s, 0.9 s static with reduced motion. The chime (`res/raw/podium_boot.ogg`, original, generated) plays as a UI sound: system-sounds volume, silent on silent/vibrate, skipped when music is playing, toggle in Settings ▸ Startup sound.
+
+### 5.9 Display themes: Glass, Carbon, Bone (D-29)
+| | Glass | Carbon | Bone |
+|---|---|---|---|
+| Display | Graphite / light, atmosphere tint | `#0A0A0A` matte | `#ECE8DF` warm off-white |
+| Type | per §2 | `#F2F0EB` / `#9B988F` / `#65635D` | `#141311` / `#68645C` / `#9B968C` |
+| Selection | stained-glass lens (D-25) | lit text + faint band + white indicator, faint glow | lit text + faint band + near-black indicator |
+| Glass | functional layer | none on the display (flat surfaces, no shadows) | none |
+| Hardware | chosen finish | matte black, knurled mechanical wheel | matte black, knurled mechanical wheel |
+| Shapes | rounded capsules | squared: 2–3 dp corners, outlined keys, segmented strips, flat rule | same as Carbon |
+Album artwork is the only colour on Carbon and Bone. The theme never changes the content's layout, only its rendering.
 
 ### 5.7 Enforcement
 Lint rule (custom detector in `build-logic`): `Modifier.blur`, `RenderEffect`, `RuntimeShader`, and `com.kyant.backdrop.*` are errors outside `:core:designsystem`. A debug overlay counts simultaneous glass surfaces; > 5 persistent surfaces logs a warning.

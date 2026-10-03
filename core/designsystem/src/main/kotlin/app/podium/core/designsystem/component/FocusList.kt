@@ -1,15 +1,26 @@
 package app.podium.core.designsystem.component
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
@@ -19,13 +30,17 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -38,12 +53,17 @@ import kotlinx.coroutines.launch
 
 /** Whether the focus lens is the solid classic bar (Solid tier): rows then draw white text. */
 @Composable
-fun isSolidFocus(): Boolean = LocalGlassTier.current == GlassTier.Solid
+fun isSolidFocus(): Boolean = LocalGlassTier.current == GlassTier.Solid && !PodiumTheme.colors.isIndustrial
 
 /**
- * A list with one focus, shown by the focus lens: a stained glass capsule that glides beneath the
- * focused row (D-25: beneath, so the text the user is reading stays crisp). Rotation moves the
- * focus; touch taps focus-and-activate; touch scrolling leaves focus where it is.
+ * A list with one focus. Rotation moves the focus; touch taps focus-and-activate; touch scrolling
+ * leaves focus where it is.
+ *
+ * By default it is laid out on the paper (D-29, [Paper]): the previous column peeks in at the left,
+ * rows bend along an arc mirroring the Wheel's right side, the selection indicator rides on that
+ * arc, and [preview] shows the focused item's next column beyond it. Overlays pass `paper = false`
+ * for a plain full-width list. Glass draws a stained capsule beneath the focused row (D-25); Carbon
+ * and Bone light the row instead.
  */
 @Composable
 fun <T> FocusList(
@@ -56,11 +76,15 @@ fun <T> FocusList(
     onLongPress: (index: Int) -> Unit = {},
     /** Rows that can't hold focus (section headers): skipped by the wheel, never under the lens. */
     focusable: (T) -> Boolean = { true },
+    /** The next column for the focused item, previewed beyond the arc. */
+    preview: (T) -> MenuPreview = { MenuPreview.None },
+    paper: Boolean = true,
     row: @Composable (item: T, index: Int, focused: Boolean) -> Unit,
 ) {
     val colors = PodiumTheme.colors
     val motion = PodiumTheme.motion
-    val solid = isSolidFocus()
+    val density = LocalDensity.current
+    val solidFocus = isSolidFocus()
     val listState = state.listState
     val activate by rememberUpdatedState(onActivate)
     val longPress by rememberUpdatedState(onLongPress)
@@ -110,45 +134,8 @@ fun <T> FocusList(
         snapshotFlow { state.focusMoves }.collectLatest { state.keepFocusedInView() }
     }
 
-    Box(modifier) {
-        Canvas(Modifier.fillMaxSize()) {
-            if (!lensVisible) return@Canvas
-            val inset = 8.dp.toPx()
-            val vInset = 3.dp.toPx()
-            val top = lensTop.value + vInset
-            val h = (lensHeight.value - vInset * 2).coerceAtLeast(0f)
-            val r = CornerRadius(14.dp.toPx())
-            val origin = Offset(inset, top)
-            val size = Size(size.width - inset * 2, h)
-            if (solid) {
-                drawRoundRect(colors.highlight, origin, size, r)
-            } else {
-                // Stained glass: translucent highlight, a soft top sheen, and a rim catching light.
-                drawRoundRect(colors.highlight.copy(alpha = if (colors.isDark) 0.30f else 0.18f), origin, size, r)
-                drawRoundRect(
-                    brush = Brush.verticalGradient(
-                        listOf(Color.White.copy(alpha = if (colors.isDark) 0.10f else 0.30f), Color.Transparent),
-                        startY = top,
-                        endY = top + h * 0.6f,
-                    ),
-                    topLeft = origin,
-                    size = size,
-                    cornerRadius = r,
-                )
-                drawRoundRect(
-                    brush = Brush.linearGradient(
-                        listOf(Color.White.copy(alpha = if (colors.isDark) 0.45f else 0.85f), Color.Transparent, Color.White.copy(alpha = 0.12f)),
-                        start = origin,
-                        end = Offset(origin.x + size.width, origin.y + size.height),
-                    ),
-                    topLeft = origin,
-                    size = size,
-                    cornerRadius = r,
-                    style = Stroke(width = 1.dp.toPx()),
-                )
-            }
-        }
-        LazyColumn(state = listState, contentPadding = contentPadding, modifier = Modifier.fillMaxSize()) {
+    val rows: @Composable (Modifier) -> Unit = { listModifier ->
+        LazyColumn(state = listState, contentPadding = contentPadding, modifier = listModifier) {
             itemsIndexed(items, key = { _, item -> key(item) }) { index, item ->
                 val focused = index == state.focusedIndex
                 Box(
@@ -172,4 +159,140 @@ fun <T> FocusList(
             }
         }
     }
+
+    if (!paper) {
+        Box(modifier) {
+            Canvas(Modifier.fillMaxSize()) {
+                if (!lensVisible) return@Canvas
+                drawLens(colors.isIndustrial, colors.isDark, colors.highlight, colors.labelPrimary, solidFocus, 0f, size.width, lensTop.value, lensHeight.value, dotX = null)
+            }
+            rows(Modifier.fillMaxSize())
+        }
+        return
+    }
+
+    BoxWithConstraints(modifier.clipToBounds()) {
+        val width = maxWidth
+        val height = maxHeight
+        val peekW = width * Paper.PeekFraction
+        val nextW = width * Paper.NextFraction
+        val listW = width - peekW - nextW - Paper.ArcGap
+        val padTop = contentPadding.calculateTopPadding()
+        val padBottom = contentPadding.calculateBottomPadding()
+        val readableH = (height - padTop - padBottom).coerceAtLeast(1.dp)
+        val readableHPx = with(density) { readableH.toPx() }
+        val padTopPx = with(density) { padTop.toPx() }
+        val arcBaseXPx = with(density) { (peekW + listW + Paper.ArcGap).toPx() }
+        fun arcXPx(yPx: Float) = arcBaseXPx - Paper.bend(yPx - padTopPx - readableHPx / 2f, readableHPx)
+
+        val decor = LocalPaperDecor.current()
+        // The previous column, peeking in from the left.
+        LocalPaperPeek.current?.let { peek ->
+            Box(Modifier.width(peekW).fillMaxHeight().clipToBounds().then(decor)) { peek(Modifier.fillMaxSize()) }
+        }
+
+        // The next column, beyond the arc, running off the display's edge.
+        val previewSize = minOf(width * 0.42f, readableH * 0.5f)
+        val focusedItem = items.getOrNull(state.focusedIndex)
+        Box(
+            Modifier
+                .offset(x = peekW + listW + Paper.ArcGap + 14.dp, y = padTop + (readableH - previewSize) / 2)
+                .size(previewSize)
+                .then(decor),
+        ) {
+            AnimatedContent(
+                targetState = focusedItem?.let(preview) ?: MenuPreview.None,
+                transitionSpec = { fadeIn(tween(if (motion.reduced) 0 else 320)) togetherWith fadeOut(tween(if (motion.reduced) 0 else 200)) },
+                label = "nextColumn",
+            ) { p -> PreviewPane(p, previewSize) }
+        }
+
+        // The arc, the lens and the indicator riding on the arc.
+        Canvas(Modifier.fillMaxSize()) {
+            val path = Path()
+            val steps = 40
+            for (i in 0..steps) {
+                val y = padTopPx + readableHPx * (i / steps.toFloat())
+                val x = arcXPx(y)
+                if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+            }
+            drawPath(path, colors.labelTertiary.copy(alpha = if (colors.isDark) 0.45f else 0.6f), style = Stroke(width = 1.dp.toPx()))
+            if (lensVisible) {
+                val centre = lensTop.value + lensHeight.value / 2f
+                val left = peekW.toPx()
+                val right = arcXPx(centre) - Paper.ArcGap.toPx() / 2f
+                drawLens(colors.isIndustrial, colors.isDark, colors.highlight, colors.labelPrimary, solidFocus, left, right, lensTop.value, lensHeight.value, dotX = arcXPx(centre))
+            }
+        }
+
+        // Rows end where the arc is nearest (its ends); the arc bows out to the right between.
+        val rowsW = listW - with(density) { Paper.bend(readableHPx / 2f, readableHPx).toDp() }
+        CompositionLocalProvider(LocalRowPadding provides 10.dp) {
+            rows(Modifier.offset(x = peekW).width(rowsW).fillMaxHeight())
+        }
+    }
 }
+
+/**
+ * The focus lens between [left] and [right]. Glass: a stained capsule (or the solid classic bar).
+ * Industrial: a barely-there band — the row is lit rather than highlighted. On the paper the
+ * indicator dot sits on the arc at [dotX].
+ */
+private fun DrawScope.drawLens(
+    industrial: Boolean,
+    dark: Boolean,
+    highlight: Color,
+    labelPrimary: Color,
+    solid: Boolean,
+    left: Float,
+    right: Float,
+    lensTop: Float,
+    lensHeight: Float,
+    dotX: Float?,
+) {
+    val inset = if (dotX == null) 8.dp.toPx() else 0f
+    val vInset = 3.dp.toPx()
+    val top = lensTop + vInset
+    val h = (lensHeight - vInset * 2).coerceAtLeast(0f)
+    val origin = Offset(left + inset, top)
+    val size = Size((right - left - inset * 2).coerceAtLeast(0f), h)
+    if (industrial) {
+        drawRect(labelPrimary.copy(alpha = if (dark) 0.045f else 0.055f), Offset(left, top), Size((right - left).coerceAtLeast(0f), h))
+        val dot = Offset(dotX ?: (left + IndicatorInsetDp.dp.toPx()), top + h / 2)
+        if (dark) drawCircle(highlight.copy(alpha = 0.22f), radius = 8.dp.toPx(), center = dot)
+        drawCircle(highlight, radius = 3.dp.toPx(), center = dot)
+        return
+    }
+    val r = CornerRadius(14.dp.toPx())
+    if (solid) {
+        drawRoundRect(highlight, origin, size, r)
+    } else {
+        // Stained glass: translucent highlight, a soft top sheen, and a rim catching light.
+        drawRoundRect(highlight.copy(alpha = if (dark) 0.30f else 0.18f), origin, size, r)
+        drawRoundRect(
+            brush = Brush.verticalGradient(
+                listOf(Color.White.copy(alpha = if (dark) 0.10f else 0.30f), Color.Transparent),
+                startY = top,
+                endY = top + h * 0.6f,
+            ),
+            topLeft = origin,
+            size = size,
+            cornerRadius = r,
+        )
+        drawRoundRect(
+            brush = Brush.linearGradient(
+                listOf(Color.White.copy(alpha = if (dark) 0.45f else 0.85f), Color.Transparent, Color.White.copy(alpha = 0.12f)),
+                start = origin,
+                end = Offset(origin.x + size.width, origin.y + size.height),
+            ),
+            topLeft = origin,
+            size = size,
+            cornerRadius = r,
+            style = Stroke(width = 1.dp.toPx()),
+        )
+    }
+    if (dotX != null) drawCircle(highlight, radius = 3.dp.toPx(), center = Offset(dotX, top + h / 2))
+}
+
+/** Where plain (non-paper) industrial lists put their indicator, from the list's leading edge. */
+private const val IndicatorInsetDp = 9

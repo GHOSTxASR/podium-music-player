@@ -1,4 +1,4 @@
-package app.podium.feature.nowplaying
+package app.podium.player.api
 
 import app.podium.core.model.TrackId
 import kotlinx.coroutines.flow.StateFlow

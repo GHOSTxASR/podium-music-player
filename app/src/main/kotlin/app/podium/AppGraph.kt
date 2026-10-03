@@ -4,6 +4,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import app.podium.core.common.Clock
+import app.podium.core.model.SourceId
 import app.podium.player.api.PlayIntent
 import app.podium.player.api.TrackCatalog
 import app.podium.player.service.BuildConfigFlags
@@ -44,7 +45,9 @@ class AppGraph(private val context: Context) {
         buildVariantSources(context).forEach { registry.register(it) }
     }
 
-    val library = RegistryLibraryRepository(registry, catalog, appScope)
+    /** Debug-only narrowing of the library to one source (see DebugCommands); null = everything. */
+    val libraryScope = MutableStateFlow<SourceId?>(null)
+    val library = RegistryLibraryRepository(registry, catalog, appScope, libraryScope)
     val artworkLoader = ResolvingArtworkLoader(artwork)
     val deviceSettings = SharedPrefsDeviceSettings(context)
     val favorites = SharedPrefsFavorites(context)

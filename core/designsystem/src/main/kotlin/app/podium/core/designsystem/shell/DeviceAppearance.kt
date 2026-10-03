@@ -3,6 +3,7 @@ package app.podium.core.designsystem.shell
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import app.podium.core.designsystem.theme.DisplayTheme
 import app.podium.core.designsystem.theme.oklchToColor
 import app.podium.core.designsystem.theme.srgbToOklab
 import kotlin.math.atan2
@@ -28,15 +29,22 @@ data class DeviceAppearance(
     val customArgb: Int = DEFAULT_CUSTOM,
     /** Grain strength, 0–1. Solid finishes only. */
     val grain: Float = DEFAULT_GRAIN,
+    /** The display's visual system. Carbon and Bone put the display in matte black hardware (D-29). */
+    val display: DisplayTheme = DisplayTheme.GLASS,
 ) {
-    val isGlass: Boolean get() = preset == FinishPreset.GLASS
+    val isGlass: Boolean get() = !display.isIndustrial && preset == FinishPreset.GLASS
 
-    /** The solid base colour, or null for Glass. */
-    val baseArgb: Int? get() = if (preset == FinishPreset.CUSTOM) customArgb else preset.baseArgb
+    /** The solid base colour, or null for Glass. Industrial themes always use matte black hardware. */
+    val baseArgb: Int? get() = when {
+        display.isIndustrial -> MATTE_BLACK
+        preset == FinishPreset.CUSTOM -> customArgb
+        else -> preset.baseArgb
+    }
 
     companion object {
         const val DEFAULT_CUSTOM = 0xFF2F6F5E.toInt()
         const val DEFAULT_GRAIN = 0.25f
+        const val MATTE_BLACK = 0xFF171717.toInt()
     }
 }
 
@@ -57,6 +65,8 @@ data class ShellPalette(
     val legend: Color,
     val pressShade: Color,
     val grain: Float,
+    /** Matte industrial hardware: flat surfaces, no sheen, no drop shadows (D-29). */
+    val matte: Boolean = false,
 )
 
 fun DeviceAppearance.palette(darkTheme: Boolean): ShellPalette {
@@ -72,6 +82,22 @@ fun DeviceAppearance.palette(darkTheme: Boolean): ShellPalette {
         pressShade = Color.Black.copy(alpha = if (darkTheme) 0.16f else 0.08f),
         grain = 0f,
     )
+    if (display.isIndustrial) {
+        // Matte black instrument hardware: a barely lighter wheel, a hairline rim, off-white legends.
+        return ShellPalette(
+            isGlass = false,
+            isLight = false,
+            bodyTop = Color(0xFF1A1A1A),
+            bodyBottom = Color(0xFF141414),
+            ring = Color(0xFF1F1F1E),
+            ringRim = Color.White.copy(alpha = 0.07f),
+            center = Color(0xFF181818),
+            legend = Color(0xFFCFCBC2),
+            pressShade = Color.White.copy(alpha = 0.05f),
+            grain = grain.coerceIn(0f, 1f),
+            matte = true,
+        )
+    }
     val (l, a, b) = srgbToOklab(base)
     val c = hypot(a, b)
     val h = Math.toDegrees(atan2(b, a))

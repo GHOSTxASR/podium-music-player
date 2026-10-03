@@ -24,19 +24,14 @@ fun GlassHost(
     content: @Composable BoxScope.() -> Unit,
     functional: @Composable BoxScope.() -> Unit,
 ) {
-    val tier = LocalGlassTier.current
-    if (tier == GlassTier.Solid) {
-        // No capture at all on the Solid tier: nothing samples it.
-        Box(modifier) {
-            Box(Modifier.matchParentSize(), content = content)
-            functional()
-        }
-        return
-    }
+    // One tree for every tier: switching between Glass and the matte themes must never rebuild
+    // the screens inside (it reset their state — e.g. the Theme picker's focus — on every preview).
+    // On the Solid tier the capture modifier is simply left off, so nothing is recorded.
+    val solid = LocalGlassTier.current == GlassTier.Solid
     val backdrop = rememberLayerBackdrop()
     Box(modifier) {
-        Box(Modifier.matchParentSize().layerBackdrop(backdrop), content = content)
-        CompositionLocalProvider(LocalGlassBackdrop provides backdrop) { functional() }
+        Box(Modifier.matchParentSize().then(if (solid) Modifier else Modifier.layerBackdrop(backdrop)), content = content)
+        CompositionLocalProvider(LocalGlassBackdrop provides if (solid) null else backdrop) { functional() }
     }
 }
 

@@ -24,7 +24,7 @@ fun DeviceBody(palette: ShellPalette, modifier: Modifier = Modifier) {
     val top by animateColorAsState(palette.bodyTop, tween(duration), label = "bodyTop")
     val bottom by animateColorAsState(palette.bodyBottom, tween(duration), label = "bodyBottom")
     val grain by animateFloatAsState(palette.grain, tween(duration), label = "bodyGrain")
-    val sheenAlpha = if (palette.isLight) 0.22f else 0.07f
+    val sheenAlpha = if (palette.matte) 0f else if (palette.isLight) 0.22f else 0.07f
     Box(
         modifier
             .drawWithCache {

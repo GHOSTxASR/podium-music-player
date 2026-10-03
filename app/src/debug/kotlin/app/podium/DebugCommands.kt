@@ -27,6 +27,9 @@ internal fun handleDebugIntent(intent: Intent?, graph: AppGraph) {
                 controller.pause()
             }
         }
+        // Show only the test tones in the library (in memory; a restart or library-all restores it).
+        "library-test-only" -> graph.libraryScope.value = SourceId("test")
+        "library-all" -> graph.libraryScope.value = null
         "pause" -> graph.playbackController.pause()
         "play" -> if (graph.playbackController.snapshot.value.intent != PlayIntent.PLAY) graph.playbackController.play()
         "next" -> graph.playbackController.next()
