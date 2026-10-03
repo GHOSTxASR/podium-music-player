@@ -174,7 +174,11 @@ fun OnlineNamePlaylistScreen(place: OnlinePlace.NamePlaylist, repository: Online
     }
     val rows = listOf("field", "done")
     val focus = rememberFocusListState("online-name")
-    LaunchedEffect(Unit) { fieldFocus.requestFocus(); focus.focus(1) }
+    val miniature = app.podium.core.designsystem.component.LocalMiniature.current
+    if (!miniature) {
+        LaunchedEffect(Unit) { fieldFocus.requestFocus(); focus.focus(1) }
+        KeyboardAwayOnLeave()
+    }
     val activate: (Int) -> Unit = { i -> if (i == 0) fieldFocus.requestFocus() else save() }
     ListInputEffect(focus, onActivate = activate)
     FocusList(

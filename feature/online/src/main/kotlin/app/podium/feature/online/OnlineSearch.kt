@@ -101,7 +101,13 @@ fun OnlineSearchScreen(repository: OnlineRepository, actions: OnlineActions, nav
             }
         }
     }
-    LaunchedEffect(Unit) { fieldFocus.requestFocus() }
+    // A miniature copy (the previous-column tile) must never take focus or call the keyboard.
+    val miniature = app.podium.core.designsystem.component.LocalMiniature.current
+    if (!miniature) {
+        // Only a fresh search calls the keyboard; coming back to results leaves the Wheel free.
+        LaunchedEffect(Unit) { if (query.isEmpty()) fieldFocus.requestFocus() }
+        KeyboardAwayOnLeave()
+    }
 
     val ready = (results as? Remote.Ready)?.value
     val rows = remember(results, songs, moreExhausted) {

@@ -213,3 +213,17 @@ fun OnlineArtistRow(artist: ArtistSummary, focused: Boolean) {
 /** Read the overlay host the screens share. */
 @Composable
 fun overlay(): OverlayHost = LocalOverlayHost.current
+
+/** Leaving a screen with a text field puts the keyboard away, so it never covers the next screen's Wheel. */
+@Composable
+fun KeyboardAwayOnLeave() {
+    val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        onDispose {
+            focusManager.clearFocus(force = true)
+            keyboard?.hide()
+        }
+    }
+}
+
