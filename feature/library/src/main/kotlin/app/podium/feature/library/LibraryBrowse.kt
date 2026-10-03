@@ -40,6 +40,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.podium.core.designsystem.artwork.ArtworkImage
+import app.podium.core.designsystem.component.DetailHeader
 import app.podium.core.designsystem.component.FocusList
 import app.podium.core.designsystem.component.ListInputEffect
 import app.podium.core.designsystem.component.LocalMiniatureFocusKey
@@ -186,26 +187,6 @@ fun AlbumScreen(
 private fun songCount(n: Int) = if (n == 1) "1 song" else "$n songs"
 
 private fun albumCount(n: Int) = if (n == 1) "1 album" else "$n albums"
-
-/** Cover, title and quiet details at the top of an album or artist page. Not focusable. */
-@Composable
-private fun DetailHeader(artworkUri: String?, title: String, subtitle: String, details: List<String>, round: Boolean = false) {
-    val colors = PodiumTheme.colors
-    val type = PodiumTheme.type
-    // Sized for the paper's column (D-30): a long title wraps at words, never mid-word.
-    Row(
-        Modifier.fillMaxWidth().padding(horizontal = LocalRowPadding.current, vertical = Spacing.m),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        ArtworkImage(artworkUri, 64.dp, fallbackText = title, round = round)
-        Spacer(Modifier.width(Spacing.m))
-        Column(Modifier.weight(1f)) {
-            PodiumText(title, type.rowFocused, colors.labelPrimary, Modifier.semantics { heading() }, maxLines = 2)
-            PodiumText(subtitle, type.rowSecondary, colors.labelSecondary)
-            details.forEach { PodiumText(it, type.footnote, colors.labelTertiary) }
-        }
-    }
-}
 
 /** Artists, A to Z. */
 @Composable

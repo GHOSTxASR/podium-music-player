@@ -76,6 +76,7 @@ private fun headerFor(origin: QueueOrigin, context: String?): String = when (ori
     QueueOrigin.PLAY_NEXT -> "Playing next"
     QueueOrigin.USER_QUEUED -> "Your queue"
     QueueOrigin.CONTEXT -> context?.let { "Continuing from $it" } ?: "Continuing"
+    QueueOrigin.RADIO -> context?.let { "From $it" } ?: "Radio"
     QueueOrigin.AUTOPLAY -> "Autoplay"
 }
 

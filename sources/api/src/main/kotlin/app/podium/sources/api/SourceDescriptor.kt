@@ -15,7 +15,15 @@ data class SourceDescriptor(
     val termsUrl: String? = null,
     /** True when resolving is cheap enough to do speculatively (prefetch next item). */
     val cheapResolve: Boolean = false,
+    /** Which of Podium's two worlds this source belongs to (D-34): music you own, or music online. */
+    val environment: MusicEnvironment = if (basis == Basis.LOCAL_DEVICE) MusicEnvironment.LOCAL else MusicEnvironment.ONLINE,
 )
+
+/**
+ * Podium's two music environments (D-34). They stay separate everywhere — libraries, likes,
+ * playlists, history — and the UI says which one a song belongs to; nothing silently crosses over.
+ */
+enum class MusicEnvironment { LOCAL, ONLINE }
 
 /** Where a source's access comes from (ADR-013, D-19). Drives labels and build policy. */
 enum class Basis {

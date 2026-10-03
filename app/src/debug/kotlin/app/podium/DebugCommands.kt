@@ -42,6 +42,9 @@ internal fun handleDebugIntent(intent: Intent?, graph: AppGraph) {
         // Show only the test tones in the library (in memory; a restart or library-all restores it).
         "library-test-only" -> graph.libraryScope.value = SourceId("test")
         "library-all" -> graph.libraryScope.value = null
+        // ONLINE as if the network were gone (local music unaffected); and back.
+        "online-offline" -> graph.audius.simulateOffline = true
+        "online-online" -> graph.audius.simulateOffline = false
         "pause" -> graph.playbackController.pause()
         "play" -> if (graph.playbackController.snapshot.value.intent != PlayIntent.PLAY) graph.playbackController.play()
         "next" -> graph.playbackController.next()

@@ -37,6 +37,8 @@ class QueueManager(
         shuffle: Boolean = false,
         seed: Long = Random.nextLong(),
         fallbackPolicy: FallbackPolicy = FallbackPolicy.EXACT_ONLY,
+        /** CONTEXT for an album, playlist or list; RADIO for a radio the listener started. */
+        origin: QueueOrigin = QueueOrigin.CONTEXT,
     ): List<QueueOp> {
         require(tracks.isNotEmpty()) { "A context needs at least one track" }
         require(startIndex in tracks.indices) { "startIndex out of range" }
@@ -45,7 +47,7 @@ class QueueManager(
         } else emptyList()
 
         val contextItems = tracks.mapIndexed { i, t ->
-            QueueItem(newUid(), t, QueueOrigin.CONTEXT, fallbackPolicy = fallbackPolicy, originalOrder = i)
+            QueueItem(newUid(), t, origin, fallbackPolicy = fallbackPolicy, originalOrder = i)
         }
         val items: List<QueueItem>
         val current: Int
@@ -81,6 +83,16 @@ class QueueManager(
         )
         checkInvariants()
         return listOf(QueueOp.ReplaceAll(items, saved.currentIndex))
+    }
+
+    /**
+     * Autoplay keeps the music going (D-34): [tracks] go at the very end, after everything the
+     * listener chose. Never starts a queue on its own.
+     */
+    fun appendAutoplay(tracks: List<Track>): List<QueueOp> {
+        if (tracks.isEmpty() || s.isEmpty) return emptyList()
+        val newItems = tracks.map { QueueItem(newUid(), it, QueueOrigin.AUTOPLAY, originalOrder = s.items.size) }
+        return insert(s.items.size, newItems)
     }
 
     /** Insert right after the current item ("Play Next"); newest first. */
@@ -184,7 +196,7 @@ class QueueManager(
         val from = s.currentIndex + 1
         val upcoming = s.upNext
         val user = upcoming.filter { it.origin == QueueOrigin.PLAY_NEXT || it.origin == QueueOrigin.USER_QUEUED }
-        val context = upcoming.filter { it.origin == QueueOrigin.CONTEXT }
+        val context = upcoming.filter { it.origin == QueueOrigin.CONTEXT || it.origin == QueueOrigin.RADIO }
         val auto = upcoming.filter { it.origin == QueueOrigin.AUTOPLAY }
         val reordered = if (enabled) {
             shuffleSeed = seed

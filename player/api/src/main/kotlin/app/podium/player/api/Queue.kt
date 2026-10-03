@@ -8,8 +8,12 @@ import app.podium.sources.api.PlaybackTarget
 import app.podium.sources.api.resolve.FallbackPolicy
 import app.podium.sources.api.resolve.Selection
 
-/** Why an item is in the queue (queue-and-autoplay.md §1). Sections appear in this order. */
-enum class QueueOrigin { PLAY_NEXT, USER_QUEUED, CONTEXT, AUTOPLAY }
+/**
+ * Why an item is in the queue (queue-and-autoplay.md §1). Sections appear in this order. RADIO
+ * items come from a radio the listener started (D-34); AUTOPLAY items from Podium keeping the
+ * music going when the queue ran out.
+ */
+enum class QueueOrigin { PLAY_NEXT, USER_QUEUED, CONTEXT, RADIO, AUTOPLAY }
 
 /**
  * One play slot. Carries everything needed to prevent an unexpected source change:

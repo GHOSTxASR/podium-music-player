@@ -20,6 +20,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         graph.playbackController.connect()
+        graph.startListening()
         handleDebugIntent(intent, graph)
         applyDebugWindowCommand(intent, this)
         setContent {

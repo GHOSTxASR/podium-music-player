@@ -17,7 +17,10 @@
 - `liked_track` has no foreign key: a favorite outlives a sync that briefly can't see the song.
 - `queue_item` is keyed by `ordinal` (slot ids aren't stable across runs; a restored queue gets fresh ones). Saving the queue inserts any of its songs missing from `track` with `in_library = 0` (never overwriting a library row), and their sources into `source_account`.
 - `track_fts` is a self-contained FTS5 table (`track_id UNINDEXED, title, artist, album`, unicode61 remove_diacritics 2, prefix 2 3) kept current by triggers; only library songs are indexed.
-- Not yet: `track_equivalence`, `track_artist`, playlists, downloads, history, search history, lyrics/artwork/metadata caches, outbox.
+- Not yet: `track_equivalence`, `track_artist`, local playlists, downloads, local history, search history, lyrics/artwork/metadata caches, outbox.
+
+### Schema v2 — ONLINE (D-34)
+Auto-migration 1 → 2 adds ONLINE's own tables, never shared with the local library's: `online_liked_track` (PK account_key + track_id; source_id, provider_id, liked_at, sync_state), `online_playlist` (id UUID, source_id, account_key, remote_playlist_id, name, created/updated) with `online_playlist_track` (autoincrement id, playlist_id FK cascade, track_id, fractional position, added_at), and `online_history` (source_id, account_key, provider_id, track_id, started_at, played_ms, duration_ms, completion). `account_key` is "" for "on this device" until a source can be signed in. Online songs' metadata is cached in `track` with `in_library = 0` (never listed locally; a library row is never overwritten). Tested by `MigrationTest` (a database built from the committed v1 schema opens on v2 with its data, and the backup is taken).
 
 ## 2. Entity overview
 

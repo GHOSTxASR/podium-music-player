@@ -46,6 +46,8 @@ value class TrackId(val value: String) {
 value class AlbumId(val value: String) {
     override fun toString(): String = value
 
+    val sourceId: SourceId get() = SourceId(value.substringBefore(TrackId.SEPARATOR))
+
     companion object {
         fun of(source: SourceId, providerKey: String) = AlbumId("${source.value}${TrackId.SEPARATOR}$providerKey")
     }
@@ -56,9 +58,24 @@ value class AlbumId(val value: String) {
 value class ArtistId(val value: String) {
     override fun toString(): String = value
 
+    val sourceId: SourceId get() = SourceId(value.substringBefore(TrackId.SEPARATOR))
+
     companion object {
         fun of(source: SourceId, providerKey: String) = ArtistId("${source.value}${TrackId.SEPARATOR}$providerKey")
     }
+}
+
+/** A playlist (or a source's album presented as one) within one source. */
+@JvmInline
+value class PlaylistId(val value: String) {
+    override fun toString(): String = value
+
+    companion object {
+        fun of(source: SourceId, providerKey: String) = PlaylistId("${source.value}${TrackId.SEPARATOR}$providerKey")
+    }
+
+    /** The source-local key (everything after the source id). */
+    val providerKey: String get() = value.substringAfter(TrackId.SEPARATOR)
 }
 
 /** One play slot in the queue. Distinct from TrackId: the same track may be queued twice. */

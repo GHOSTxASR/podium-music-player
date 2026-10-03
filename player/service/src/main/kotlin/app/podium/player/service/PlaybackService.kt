@@ -104,6 +104,7 @@ class PlaybackService : MediaLibraryService() {
                     startIndex = args.getInt(PodiumSessionCommands.ARG_START_INDEX),
                     label = args.getString(PodiumSessionCommands.ARG_CONTEXT_LABEL),
                     shuffle = args.getBoolean(PodiumSessionCommands.ARG_SHUFFLE),
+                    radio = args.getBoolean(PodiumSessionCommands.ARG_RADIO),
                 )
                 PodiumSessionCommands.PLAY_NEXT ->
                     engine.playNext(args.getStringArray(PodiumSessionCommands.ARG_TRACK_IDS).orEmpty().map(::TrackId))

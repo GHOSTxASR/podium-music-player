@@ -4,12 +4,18 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import app.podium.core.common.Clock
+import app.podium.core.common.DiskActivity
 import app.podium.core.database.DatabaseFavorites
 import app.podium.core.database.DatabaseQueueStore
 import app.podium.core.database.LibraryStore
+import app.podium.core.database.OnlineLibraryStore
 import app.podium.core.database.PodiumDatabase
+import app.podium.core.designsystem.shell.BatteryLevel
+import app.podium.core.designsystem.shell.BootCheck
 import app.podium.core.model.SourceId
+import app.podium.player.api.AutoplaySettings
 import app.podium.player.api.PlayIntent
+import app.podium.player.api.SourceRecommendationEngine
 import app.podium.player.api.TrackCatalog
 import app.podium.player.service.BuildConfigFlags
 import app.podium.player.service.MediaControllerPlaybackController
@@ -20,15 +26,15 @@ import app.podium.sources.api.SourceHealthMonitor
 import app.podium.sources.api.SourceRegistry
 import app.podium.sources.api.matching.TrackMatcher
 import app.podium.sources.api.resolve.StreamResolver
+import app.podium.sources.audius.AudiusMusicSource
 import app.podium.sources.local.LocalMusicSource
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import app.podium.core.designsystem.shell.BatteryLevel
-import app.podium.core.designsystem.shell.BootCheck
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 
@@ -53,18 +59,48 @@ class AppGraph(private val context: Context) {
 
     val localSource = LocalMusicSource(context, appScope)
 
+    /** The first online source (D-34): Audius' public catalogue, read anonymously. */
+    val audius = AudiusMusicSource("Podium/${BuildConfig.VERSION_NAME} (Android music player)", onRequest = DiskActivity::pulse)
+
     init {
         BuildConfigFlags.checkMirror = BuildConfig.DEBUG
         registry.register(localSource)
+        registry.register(audius)
         buildVariantSources(context).forEach { registry.register(it) }
     }
+
+    val environments = Environments(registry)
 
     /** Debug-only narrowing of the library to one source (see DebugCommands); null = everything. */
     val libraryScope = MutableStateFlow<SourceId?>(null)
     val library = DatabaseLibraryRepository(registry, libraryStore, catalog, appScope, libraryScope)
     val artworkLoader = ResolvingArtworkLoader(artwork)
     val deviceSettings = SharedPrefsDeviceSettings(context)
-    val favorites = DatabaseFavorites(database, appScope).also { LegacyFavorites.moveInto(context, it, appScope) }
+    /** Local favorites only (Music ▸ Favorites). */
+    val localFavorites = DatabaseFavorites(database, appScope).also { LegacyFavorites.moveInto(context, it, appScope) }
+
+    /** ONLINE's own library: liked songs, playlists, history (D-34). */
+    val onlineStore = OnlineLibraryStore(database)
+    val online = AppOnlineRepository(registry, onlineStore, catalog, appScope)
+
+    /** The heart on Now Playing: routed to local favorites or ONLINE's liked songs by the song's environment. */
+    val favorites = EnvironmentFavorites(localFavorites, online, environments, { catalog.cached(it) ?: libraryStore.track(it) }, appScope)
+
+    val recommendations = SourceRecommendationEngine(registry)
+
+    val autoplaySettings: StateFlow<AutoplaySettings> = combine(
+        deviceSettings.autoplay, deviceSettings.onlineRecommendations, deviceSettings.avoidRepeats,
+    ) { on, recs, repeats -> AutoplaySettings(on, recs, repeats) }
+        .stateIn(appScope, SharingStarted.Eagerly, AutoplaySettings())
+
+    private var listening = false
+
+    /** Start recording online listening history (once the player is connected). */
+    fun startListening() {
+        if (listening) return
+        listening = true
+        OnlineHistoryRecorder(playbackController, onlineStore, environments, catalog, libraryStore, appScope).start()
+    }
     /** The phone's battery, for the battery LED (D-33). */
     val battery: StateFlow<BatteryLevel?> = BatteryMonitor.levels(context).stateIn(appScope, SharingStarted.Eagerly, null)
 
@@ -134,6 +170,9 @@ class AppGraph(private val context: Context) {
         override val artwork = this@AppGraph.artwork
         override val clock = this@AppGraph.clock
         override val queueStore = this@AppGraph.queueStore
+        override val autoplay = this@AppGraph.autoplaySettings
+        override val recommendations = this@AppGraph.recommendations
+        override suspend fun playedSince(sinceMillis: Long) = onlineStore.playedSince(sinceMillis)
 
         override fun sessionActivity(context: Context): PendingIntent = PendingIntent.getActivity(
             context,

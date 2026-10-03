@@ -17,9 +17,17 @@ interface DeviceSettingsRepository {
     /** The Wheel's audible click. */
     val clicks: StateFlow<Boolean>
 
+    /** Autoplay (D-34): keep online music going, from the source's recommendations, avoiding repeats. */
+    val autoplay: StateFlow<Boolean>
+    val onlineRecommendations: StateFlow<Boolean>
+    val avoidRepeats: StateFlow<Boolean>
+
     fun setAppearance(appearance: DeviceAppearance)
     fun setPreview(appearance: DeviceAppearance?)
     fun setStartupSound(enabled: Boolean)
     fun setHaptics(enabled: Boolean)
     fun setClicks(enabled: Boolean)
+    fun setAutoplay(enabled: Boolean)
+    fun setOnlineRecommendations(enabled: Boolean)
+    fun setAvoidRepeats(enabled: Boolean)
 }

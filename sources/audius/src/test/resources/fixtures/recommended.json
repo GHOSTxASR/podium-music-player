@@ -1,0 +1,157 @@
+{
+ "data": [
+  {
+   "genre": "Electronic",
+   "id": "qbMN0AE",
+   "mood": "Fiery",
+   "release_date": "2026-09-29T15:54:53.803338Z",
+   "favorite_count": 29,
+   "title": "Van Snyder - Rave! Code Radio 027 - 2026-09-28",
+   "duration": 3410,
+   "is_downloadable": false,
+   "play_count": 277,
+   "album_backlink": null,
+   "isrc": null,
+   "permalink": "/vansnydermusic/van-snyder-rave-code-radio-027-2026-09-28",
+   "is_streamable": true,
+   "artwork": {
+    "150x150": "https://val017.open-audio-validator.com/content/baeaaaiqsedvygfd3ggoqx5xj6uyxpqp2lh5q4ylw57hg5ab7eiyafgzgvys6i/150x150.jpg",
+    "480x480": "https://val017.open-audio-validator.com/content/baeaaaiqsedvygfd3ggoqx5xj6uyxpqp2lh5q4ylw57hg5ab7eiyafgzgvys6i/480x480.jpg",
+    "1000x1000": "https://val017.open-audio-validator.com/content/baeaaaiqsedvygfd3ggoqx5xj6uyxpqp2lh5q4ylw57hg5ab7eiyafgzgvys6i/1000x1000.jpg",
+    "mirrors": [
+     "https://audius-content-6.figment.io",
+     "https://audius-creator-9.theblueprint.xyz",
+     "https://v.monophonic.digital"
+    ]
+   },
+   "user": {
+    "album_count": 0,
+    "follower_count": 6168,
+    "handle": "vansnydermusic",
+    "id": "k259kWP",
+    "is_verified": true,
+    "name": "Van Snyder",
+    "playlist_count": 1,
+    "profile_picture": {
+     "1000x1000": "https://val014.open-audio-validator.com/content/baeaaaiqsecz2yvleksbmwkshv5w4ii45kumdm23axxwvoew4lote3wbx6iv7m/1000x1000.jpg",
+     "150x150": "https://val014.open-audio-validator.com/content/baeaaaiqsecz2yvleksbmwkshv5w4ii45kumdm23axxwvoew4lote3wbx6iv7m/150x150.jpg",
+     "480x480": "https://val014.open-audio-validator.com/content/baeaaaiqsecz2yvleksbmwkshv5w4ii45kumdm23axxwvoew4lote3wbx6iv7m/480x480.jpg",
+     "mirrors": [
+      "https://v.monophonic.digital",
+      "https://audius.zeogrid.com",
+      "https://val017.open-audio-validator.com"
+     ]
+    },
+    "track_count": 61
+   },
+   "access": {
+    "stream": true,
+    "download": true
+   },
+   "stream_conditions": null,
+   "download_conditions": null
+  },
+  {
+   "genre": "Electronic",
+   "id": "Q40dQrw",
+   "mood": "Cool",
+   "release_date": "2026-09-22T19:49:05.325231Z",
+   "favorite_count": 45,
+   "title": "Watch",
+   "duration": 174,
+   "is_downloadable": false,
+   "play_count": 1063,
+   "album_backlink": null,
+   "isrc": null,
+   "permalink": "/sayaramusic/watch",
+   "is_streamable": true,
+   "artwork": {
+    "150x150": "https://val002.open-audio-validator.com/content/baeaaaiqsecgue6jjcm7tqyj4ygukinaguvwr5ttjwulsz2d5hj74j322dj5mi/150x150.jpg",
+    "480x480": "https://val002.open-audio-validator.com/content/baeaaaiqsecgue6jjcm7tqyj4ygukinaguvwr5ttjwulsz2d5hj74j322dj5mi/480x480.jpg",
+    "1000x1000": "https://val002.open-audio-validator.com/content/baeaaaiqsecgue6jjcm7tqyj4ygukinaguvwr5ttjwulsz2d5hj74j322dj5mi/1000x1000.jpg",
+    "mirrors": [
+     "https://audius-content-3.figment.io",
+     "https://v.monophonic.digital",
+     "https://audius-content-4.figment.io"
+    ]
+   },
+   "user": {
+    "album_count": 0,
+    "follower_count": 121,
+    "handle": "sayaramusic",
+    "id": "Wgw2Al6",
+    "is_verified": false,
+    "name": "sayara \ud83e\udd8b",
+    "playlist_count": 0,
+    "profile_picture": {
+     "1000x1000": "https://v.monophonic.digital/content/01KCPFYGNR7BYFY0X7AZ3GZWSS/1000x1000.jpg",
+     "150x150": "https://v.monophonic.digital/content/01KCPFYGNR7BYFY0X7AZ3GZWSS/150x150.jpg",
+     "480x480": "https://v.monophonic.digital/content/01KCPFYGNR7BYFY0X7AZ3GZWSS/480x480.jpg",
+     "mirrors": [
+      "https://val002.open-audio-validator.com",
+      "https://audius-figment-1-validator-18.figment.io",
+      "https://val012.open-audio-validator.com"
+     ]
+    },
+    "track_count": 3
+   },
+   "access": {
+    "stream": true,
+    "download": true
+   },
+   "stream_conditions": null,
+   "download_conditions": null
+  },
+  {
+   "genre": "Electronic",
+   "id": "NQwXON0",
+   "mood": "Fiery",
+   "release_date": "2026-09-21T18:03:02.638196Z",
+   "favorite_count": 84,
+   "title": "Van Snyder - Rave! Code Radio 025",
+   "duration": 3573,
+   "is_downloadable": false,
+   "play_count": 3704,
+   "album_backlink": null,
+   "isrc": null,
+   "permalink": "/vansnydermusic/van-snyder-rave-code-radio-025",
+   "is_streamable": true,
+   "artwork": {
+    "150x150": "https://val008.open-audio-validator.com/content/baeaaaiqsec4us4k34ga2bezfpdbxxd5xc233l6hlqzcbo6mqqzxvlop7nbkpu/150x150.jpg",
+    "480x480": "https://val008.open-audio-validator.com/content/baeaaaiqsec4us4k34ga2bezfpdbxxd5xc233l6hlqzcbo6mqqzxvlop7nbkpu/480x480.jpg",
+    "1000x1000": "https://val008.open-audio-validator.com/content/baeaaaiqsec4us4k34ga2bezfpdbxxd5xc233l6hlqzcbo6mqqzxvlop7nbkpu/1000x1000.jpg",
+    "mirrors": [
+     "https://v.monophonic.digital",
+     "https://audius-05.staked.cloud",
+     "https://audius-04.staked.cloud"
+    ]
+   },
+   "user": {
+    "album_count": 0,
+    "follower_count": 6168,
+    "handle": "vansnydermusic",
+    "id": "k259kWP",
+    "is_verified": true,
+    "name": "Van Snyder",
+    "playlist_count": 1,
+    "profile_picture": {
+     "1000x1000": "https://val014.open-audio-validator.com/content/baeaaaiqsecz2yvleksbmwkshv5w4ii45kumdm23axxwvoew4lote3wbx6iv7m/1000x1000.jpg",
+     "150x150": "https://val014.open-audio-validator.com/content/baeaaaiqsecz2yvleksbmwkshv5w4ii45kumdm23axxwvoew4lote3wbx6iv7m/150x150.jpg",
+     "480x480": "https://val014.open-audio-validator.com/content/baeaaaiqsecz2yvleksbmwkshv5w4ii45kumdm23axxwvoew4lote3wbx6iv7m/480x480.jpg",
+     "mirrors": [
+      "https://v.monophonic.digital",
+      "https://audius.zeogrid.com",
+      "https://val017.open-audio-validator.com"
+     ]
+    },
+    "track_count": 61
+   },
+   "access": {
+    "stream": true,
+    "download": true
+   },
+   "stream_conditions": null,
+   "download_conditions": null
+  }
+ ]
+}

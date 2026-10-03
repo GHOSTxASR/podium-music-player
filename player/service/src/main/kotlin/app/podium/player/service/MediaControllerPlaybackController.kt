@@ -129,7 +129,7 @@ class MediaControllerPlaybackController(
 
     override fun setShuffle(enabled: Boolean) = withController { it.shuffleModeEnabled = enabled }
 
-    override fun playContext(tracks: List<TrackId>, startIndex: Int, contextLabel: String?, shuffle: Boolean) =
+    override fun playContext(tracks: List<TrackId>, startIndex: Int, contextLabel: String?, shuffle: Boolean, radio: Boolean) =
         send(
             PodiumSessionCommands.SET_CONTEXT,
             Bundle().apply {
@@ -137,6 +137,7 @@ class MediaControllerPlaybackController(
                 putInt(PodiumSessionCommands.ARG_START_INDEX, startIndex)
                 putString(PodiumSessionCommands.ARG_CONTEXT_LABEL, contextLabel)
                 putBoolean(PodiumSessionCommands.ARG_SHUFFLE, shuffle)
+                putBoolean(PodiumSessionCommands.ARG_RADIO, radio)
             },
         )
 

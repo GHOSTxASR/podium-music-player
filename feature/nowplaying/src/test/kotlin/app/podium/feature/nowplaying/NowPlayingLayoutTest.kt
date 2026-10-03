@@ -177,7 +177,7 @@ class NowPlayingLayoutTest {
         override fun seekTo(positionMs: Long) = Unit
         override fun setRepeat(mode: RepeatMode) = Unit
         override fun setShuffle(enabled: Boolean) = Unit
-        override fun playContext(tracks: List<TrackId>, startIndex: Int, contextLabel: String?, shuffle: Boolean) = Unit
+        override fun playContext(tracks: List<TrackId>, startIndex: Int, contextLabel: String?, shuffle: Boolean, radio: Boolean) = Unit
         override fun playNext(tracks: List<TrackId>) = Unit
         override fun addToQueue(tracks: List<TrackId>) = Unit
         override fun move(uid: QueueUid, toIndex: Int) = Unit

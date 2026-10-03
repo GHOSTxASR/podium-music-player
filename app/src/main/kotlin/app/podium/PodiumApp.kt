@@ -1,6 +1,7 @@
 package app.podium
 
 import android.app.Activity
+import android.content.Intent
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedContentTransitionScope
@@ -48,6 +49,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.contentDescription
@@ -63,6 +65,7 @@ import androidx.navigation3.scene.Scene
 import androidx.navigation3.ui.LocalNavAnimatedContentScope
 import androidx.navigation3.ui.NavDisplay
 import app.podium.core.common.DiskActivity
+import app.podium.core.common.Outcome
 import app.podium.core.designsystem.artwork.BackgroundExtension
 import app.podium.core.designsystem.artwork.LocalArtworkLoader
 import app.podium.core.designsystem.artwork.rememberArtwork
@@ -119,6 +122,9 @@ import app.podium.feature.library.MusicScreen
 import app.podium.feature.library.SongsScreen
 import app.podium.feature.nowplaying.NowPlayingScreen
 import app.podium.feature.nowplaying.UpNextScreen
+import app.podium.feature.online.OnlineActions
+import app.podium.feature.online.OnlinePlace
+import app.podium.feature.online.OnlineScreen
 import app.podium.feature.settings.CustomColorScreen
 import app.podium.feature.settings.FinishScreen
 import app.podium.feature.settings.GrainScreen
@@ -128,9 +134,15 @@ import app.podium.feature.settings.ThemeScreen
 import app.podium.player.api.PlayIntent
 import app.podium.player.api.PlaybackController
 import app.podium.player.api.PlaybackSnapshot
+import app.podium.player.api.RecommendationRequest
+import app.podium.sources.api.ArtistSummary
 import app.podium.sources.api.CapabilityAction
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
@@ -158,6 +170,9 @@ sealed interface Dest {
 
     /** A level of the music-folder tree in Settings ("" is the top). */
     data class MusicFolders(val path: String) : Dest
+
+    /** A place in the ONLINE section (D-34). */
+    data class Online(val place: OnlinePlace) : Dest
 }
 
 private val fixedDests = listOf(
@@ -169,6 +184,7 @@ private fun Dest.encode(): String = when (this) {
     is Dest.Album -> "Album:${id.value}"
     is Dest.Artist -> "Artist:${id.value}"
     is Dest.MusicFolders -> "MusicFolders:$path"
+    is Dest.Online -> "Online:" + OnlinePlace.encode(place)
     else -> toString()
 }
 
@@ -176,6 +192,7 @@ private fun decodeDest(text: String): Dest? = when {
     text.startsWith("Album:") -> Dest.Album(AlbumId(text.removePrefix("Album:")))
     text.startsWith("Artist:") -> Dest.Artist(ArtistId(text.removePrefix("Artist:")))
     text.startsWith("MusicFolders:") -> Dest.MusicFolders(text.removePrefix("MusicFolders:"))
+    text.startsWith("Online:") -> OnlinePlace.decode(text.removePrefix("Online:"))?.let(Dest::Online)
     else -> fixedDests[text]
 }
 
@@ -198,6 +215,7 @@ private fun titleOf(dest: Dest, graph: AppGraph): String = when (dest) {
     Dest.UpNext -> "Up Next"
     Dest.Settings -> "Settings"
     is Dest.MusicFolders -> if (dest.path.isEmpty()) "Music folders" else dest.path.trimEnd('/').substringAfterLast('/')
+    is Dest.Online -> dest.place.title
     Dest.Theme -> "Theme"
     Dest.Finish -> "Finish"
     Dest.Grain -> "Grain"
@@ -492,7 +510,8 @@ private fun PreviousColumn(previous: Dest, current: Dest, graph: AppGraph, navig
 
 private val MiniPlayerScreens = setOf(Dest.Home, Dest.Music, Dest.Albums, Dest.Artists, Dest.Songs, Dest.Favorites)
 
-private fun Dest.showsMiniPlayer() = this in MiniPlayerScreens || this is Dest.Album || this is Dest.Artist
+private fun Dest.showsMiniPlayer() = this in MiniPlayerScreens || this is Dest.Album || this is Dest.Artist ||
+    (this is Dest.Online && place !is OnlinePlace.Search && place !is OnlinePlace.NamePlaylist)
 
 @Composable
 private fun ScreenContent(
@@ -503,6 +522,8 @@ private fun ScreenContent(
 ) {
     val controller = graph.playbackController
     val settings = graph.deviceSettings
+    val onlineSource by graph.online.source.collectAsStateWithLifecycle()
+    val onlineRecent by graph.online.recentlyPlayed.collectAsStateWithLifecycle(initialValue = emptyList())
     val play: (List<Track>, Int, String) -> Unit = { tracks, index, label ->
         controller.playContext(tracks.map { it.id }, index, label)
         navigator.showNowPlaying()
@@ -526,11 +547,13 @@ private fun ScreenContent(
                 },
                 onNowPlaying = navigator::showNowPlaying,
                 onSettings = { navigator.push(Dest.Settings) },
+                onOnline = if (onlineSource != null) ({ navigator.push(Dest.Online(OnlinePlace.Menu)) }) else null,
+                onlineArtwork = onlineRecent.mapNotNull { it.artwork?.uri }.distinct().take(10),
             )
         }
         Dest.Music -> MusicScreen(
             repository = graph.library,
-            favorites = graph.favorites,
+            favorites = graph.localFavorites,
             onCoverFlow = { navigator.push(Dest.CoverFlow) },
             onAlbums = { navigator.push(Dest.Albums) },
             onArtists = { navigator.push(Dest.Artists) },
@@ -543,14 +566,27 @@ private fun ScreenContent(
         Dest.Artists -> ArtistsScreen(graph.library, onOpen = { navigator.push(Dest.Artist(it)) })
         is Dest.Album -> AlbumScreen(graph.library, screen.id, onPlay = play, onPlayNext = playNext, onAddToQueue = addToQueue)
         is Dest.Artist -> ArtistScreen(graph.library, screen.id, onOpenAlbum = { navigator.push(Dest.Album(it)) }, onPlay = play)
-        Dest.Favorites -> FavoritesScreen(graph.library, graph.favorites, onPlay = play, onPlayNext = playNext, onAddToQueue = addToQueue)
+        Dest.Favorites -> FavoritesScreen(graph.library, graph.localFavorites, onPlay = play, onPlayNext = playNext, onAddToQueue = addToQueue)
         Dest.Songs -> SongsScreen(
             repository = graph.library,
             onPlay = { tracks, index -> play(tracks, index, "Songs") },
             onPlayNext = playNext,
             onAddToQueue = addToQueue,
         )
-        Dest.NowPlaying -> NowPlayingScreen(controller, graph.volume, graph.favorites, onUpNext = { navigator.push(Dest.UpNext) })
+        Dest.NowPlaying -> NowPlayingScreen(
+            controller,
+            graph.volume,
+            graph.favorites,
+            onUpNext = { navigator.push(Dest.UpNext) },
+            environmentOf = { id -> if (graph.environments.isOnline(id)) "Online" else null },
+        )
+        is Dest.Online -> OnlineScreen(
+            place = screen.place,
+            repository = graph.online,
+            actions = rememberOnlineActions(graph, navigator),
+            navigate = { navigator.push(Dest.Online(it)) },
+            back = { navigator.pop() },
+        )
         Dest.UpNext -> UpNextScreen(controller)
         Dest.Settings -> SettingsScreen(
             repository = settings,
@@ -785,3 +821,83 @@ private fun riseFromMiniPlayer(motion: PodiumMotion): Map<String, Any> {
         }
     } + NavDisplay.popTransitionSpec(sink) + NavDisplay.predictivePopTransitionSpec { sink() }
 }
+
+/**
+ * What ONLINE asks of the player and the system (D-34). Songs go into the catalog first, so the
+ * service can play them by id; radios start as RADIO items from the source's own recommendations.
+ */
+@Composable
+private fun rememberOnlineActions(graph: AppGraph, navigator: Navigator): OnlineActions {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    return remember(graph, navigator, context) {
+        val controller = graph.playbackController
+        object : OnlineActions {
+            private fun startRadio(seed: List<Track>, label: String) {
+                if (seed.isEmpty()) return
+                graph.catalog.remember(seed)
+                controller.playContext(seed.map { it.id }, 0, label, radio = true)
+                navigator.showNowPlaying()
+            }
+
+            override fun play(tracks: List<Track>, index: Int, label: String) {
+                if (tracks.isEmpty()) return
+                graph.catalog.remember(tracks)
+                controller.playContext(tracks.map { it.id }, index.coerceIn(0, tracks.lastIndex), label)
+                navigator.showNowPlaying()
+            }
+
+            override fun shuffle(tracks: List<Track>, label: String) {
+                if (tracks.isEmpty()) return
+                graph.catalog.remember(tracks)
+                controller.playContext(tracks.map { it.id }, tracks.indices.random(), label, shuffle = true)
+                navigator.showNowPlaying()
+            }
+
+            override fun playNext(track: Track) {
+                graph.catalog.remember(listOf(track))
+                controller.playNext(listOf(track.id))
+            }
+
+            override fun addToQueue(track: Track) {
+                graph.catalog.remember(listOf(track))
+                controller.addToQueue(listOf(track.id))
+            }
+
+            override fun startRadio(track: Track) {
+                scope.launch {
+                    val more = graph.recommendations.recommend(RecommendationRequest(listOf(track), setOf(track.id), RADIO_SIZE))
+                    startRadio(listOf(track) + more.filter { it.id != track.id }, "${track.title} radio")
+                }
+            }
+
+            override fun startArtistRadio(artist: ArtistSummary) {
+                scope.launch {
+                    val tracks = graph.recommendations.artistRadio(artist.id, artist.id.sourceId, RADIO_SIZE, emptySet())
+                    startRadio(tracks, "${artist.name} radio")
+                }
+            }
+
+            override fun startGenreRadio(genre: String) {
+                scope.launch {
+                    val tracks = (graph.online.genre(genre, 0, RADIO_SIZE) as? Outcome.Success)?.value.orEmpty().shuffled()
+                    startRadio(tracks, "$genre radio")
+                }
+            }
+
+            override fun share(track: Track) {
+                val link = track.source.providerUri ?: return
+                val send = Intent(Intent.ACTION_SEND).setType("text/plain")
+                    .putExtra(Intent.EXTRA_TEXT, "${track.title} by ${track.artistDisplay}\n$link")
+                context.startActivity(Intent.createChooser(send, "Share ${track.title}").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            }
+
+            override val nowPlaying: StateFlow<Track?> = controller.snapshot
+                .map { snap -> snap.item?.trackId?.takeIf { graph.environments.isOnline(it) }?.let { graph.catalog.cached(it) } }
+                .stateIn(scope, SharingStarted.Eagerly, null)
+        }
+    }
+}
+
+private const val RADIO_SIZE = 30
+

@@ -337,6 +337,12 @@ Debug builds show the evidence in Song info; decisions persist in `track_equival
 ## 11. Recommendations & autoplay integration
 `AutoplayEngine` (queue-and-autoplay.md) asks the registry for `RecommendationFacet`s of enabled sources; results are normalized `Track`s, de-duplicated via `RecordingKey`/matcher, filtered by availability/capabilities. Library signals (playlists, history, likes) remain source-neutral.
 
+### 11.1 Online (D-34, implemented)
+- `SourceDescriptor.environment` (`MusicEnvironment.LOCAL` / `ONLINE`, defaulting from `Basis`) places every source in one of Podium's two worlds. Features branch on environment and capabilities — never on provider identity.
+- `DiscoveryFacet` (shelves with a first page, `shelf(id, offset, limit)`, `genres()`, `genre(name, offset, limit)`), `RecommendationFacet` (`related(seeds, limit, exclude)`, `artistRadio`, `relatedArtists`), `CatalogFacet.playlist(id)`, paged `SearchQuery(offset, kinds)` and `SearchResults.playlists`, `PlaylistSummary`/`PlaylistDetail`, `PlaylistId` in `core:model`.
+- `player:api`: `RecommendationEngine` (provider-neutral; `SourceRecommendationEngine` asks only the seeds' own source), `AutoplayEngine` (when and what to append), `AutoplaySettings`, `RecommendationStrategy`. `QueueOrigin.RADIO`.
+- First online source: `sources:audius` (`AudiusMusicSource`, pure Kotlin, HttpURLConnection + kotlinx.serialization); adapter-private data (genre, artist id) rides in `SourceRef.providerData`.
+
 ## 12. UI independence — what the UI may ask
 | UI need | Ask | Never |
 |---|---|---|

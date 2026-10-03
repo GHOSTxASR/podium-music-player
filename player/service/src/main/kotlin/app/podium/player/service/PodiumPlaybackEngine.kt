@@ -23,10 +23,13 @@ import app.podium.core.common.Outcome
 import app.podium.core.common.PodiumError
 import app.podium.core.model.QueueUid
 import app.podium.core.model.TrackId
+import app.podium.player.api.AutoplayEngine
 import app.podium.player.api.PlayContext
 import app.podium.player.api.QueueItemResolver
 import app.podium.player.api.QueueManager
 import app.podium.player.api.QueueOp
+import app.podium.player.api.QueueOrigin
+import app.podium.player.api.RecommendationRequest
 import app.podium.player.api.RepeatMode
 import app.podium.player.api.persistedShape
 import app.podium.sources.api.PlaybackTarget
@@ -43,6 +46,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChangedBy
 import kotlinx.coroutines.flow.drop
@@ -74,6 +78,11 @@ class PodiumPlaybackEngine(
     private val itemResolver = QueueItemResolver(queue, deps.resolver)
     private val inFlight = ConcurrentHashMap<QueueUid, Deferred<ResolveOutcome>>()
     private var consecutiveErrors = 0
+
+    // Declared before init: the watchers started there run immediately (main dispatcher).
+    private val autoplay = AutoplayEngine()
+    private var autoplayJob: Job? = null
+    private var positionJob: Job? = null
     private var skipJob: Job? = null
 
     /** Invoked whenever session extras (current resolution, errors) change. */
@@ -129,11 +138,44 @@ class PodiumPlaybackEngine(
         })
         restoreSavedQueue()
         saveQueueChanges()
+        keepOnlineMusicGoing()
+    }
+
+    // --- Autoplay (D-34) -------------------------------------------------------------------------------
+
+    /**
+     * When an online song is playing and the queue is about to run out, ask that song's source for
+     * more (never another source, never local music) and append what passes the autoplay rules.
+     */
+    private fun keepOnlineMusicGoing() {
+        val engine = deps.recommendations ?: return
+        scope.launch {
+            combine(queue.state, deps.autoplay) { state, _ -> state }
+                .collect { state ->
+                    // Always the latest settings, even if the queue changed first.
+                    val settings = deps.autoplay.value
+                    if (autoplayJob?.isActive == true || !autoplay.needsMore(state, settings)) return@collect
+                    val current = state.current?.track ?: return@collect
+                    val environment = deps.registry.get(current.source.sourceId)?.descriptor?.environment
+                    if (environment != app.podium.sources.api.MusicEnvironment.ONLINE) return@collect
+                    autoplayJob = scope.launch {
+                        val recent = if (settings.avoidRepeats) deps.playedSince(deps.clock.nowMillis() - RECENT_WINDOW_MS) else emptySet()
+                        val request = RecommendationRequest(autoplay.seeds(state), autoplay.exclusions(state, recent, settings), AutoplayEngine.BATCH * 2)
+                        val candidates = runCatching { engine.recommend(request) }.onFailure { Log.w(TAG, "autoplay failed", it) }.getOrDefault(emptyList())
+                        val latest = queue.state.value
+                        val picked = autoplay.pick(candidates, latest, recent, settings)
+                        if (picked.isNotEmpty() && latest.current?.track?.id == current.id) {
+                            deps.catalog.remember(picked)
+                            apply(queue.appendAutoplay(picked))
+                            Log.d(TAG, "autoplay added ${picked.size}")
+                        }
+                    }
+                }
+        }
     }
 
     // --- Across runs (D-31) ------------------------------------------------------------------------
 
-    private var positionJob: Job? = null
 
     /**
      * Bring back the queue from the last run, paused where it stopped. The player isn't prepared,
@@ -190,11 +232,11 @@ class PodiumPlaybackEngine(
 
     // --- Commands ----------------------------------------------------------------------------------
 
-    suspend fun playContext(trackIds: List<TrackId>, startIndex: Int, label: String?, shuffle: Boolean): Boolean {
+    suspend fun playContext(trackIds: List<TrackId>, startIndex: Int, label: String?, shuffle: Boolean, radio: Boolean = false): Boolean {
         val tracks = trackIds.mapNotNull { (deps.catalog.get(it) as? Outcome.Success)?.value }
         if (tracks.isEmpty()) return false
         val start = startIndex.coerceIn(0, tracks.lastIndex)
-        apply(queue.setContext(tracks, start, label?.let(::PlayContext), shuffle))
+        apply(queue.setContext(tracks, start, label?.let(::PlayContext), shuffle, origin = if (radio) QueueOrigin.RADIO else QueueOrigin.CONTEXT))
         player.shuffleModeEnabled = false
         player.prepare()
         player.play()
@@ -389,6 +431,7 @@ class PodiumPlaybackEngine(
         private const val MAX_CONSECUTIVE_ERRORS = 3
         private const val SAVE_DEBOUNCE_MS = 750L
         private const val POSITION_SAVE_INTERVAL_MS = 10_000L
+        private const val RECENT_WINDOW_MS = 6 * 60 * 60 * 1000L
     }
 }
 

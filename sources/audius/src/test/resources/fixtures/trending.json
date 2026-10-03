@@ -1,0 +1,159 @@
+{
+ "data": [
+  {
+   "genre": "Dubstep",
+   "id": "xkQaGx",
+   "mood": "Empowering",
+   "release_date": "2026-09-26T23:00:27.713635Z",
+   "favorite_count": 56,
+   "title": "iLLPeTiLL - Wonky/Deep/Body Buzz Bass Mix/Mashup",
+   "duration": 417,
+   "is_downloadable": false,
+   "play_count": 1241,
+   "album_backlink": null,
+   "isrc": null,
+   "permalink": "/iLLPeTiLL/illpetill-wonkydeepbody-buzz-bass-mixmashup",
+   "is_streamable": true,
+   "artwork": {
+    "150x150": "https://audius-content-7.figment.io/content/baeaaaiqseb63nabs3axmmm6rqcojlq2vf5p5zmmkgzrheomegezbmbkx2jhq6/150x150.jpg",
+    "480x480": "https://audius-content-7.figment.io/content/baeaaaiqseb63nabs3axmmm6rqcojlq2vf5p5zmmkgzrheomegezbmbkx2jhq6/480x480.jpg",
+    "1000x1000": "https://audius-content-7.figment.io/content/baeaaaiqseb63nabs3axmmm6rqcojlq2vf5p5zmmkgzrheomegezbmbkx2jhq6/1000x1000.jpg",
+    "mirrors": [
+     "https://audius-content-6.figment.io",
+     "https://v.monophonic.digital",
+     "https://audius-content-5.figment.io"
+    ]
+   },
+   "user": {
+    "album_count": 0,
+    "follower_count": 593,
+    "handle": "iLLPeTiLL",
+    "id": "O5lQz",
+    "is_verified": true,
+    "name": "@iLLPeTiLL",
+    "playlist_count": 0,
+    "profile_picture": {
+     "1000x1000": "https://audius-content-9.figment.io/content/baeaaaiqseb7bvkecmpxxz3xbgt6vefpyx7ikvui5t65vpngwq2jnfgghiosi6/1000x1000.jpg",
+     "150x150": "https://audius-content-9.figment.io/content/baeaaaiqseb7bvkecmpxxz3xbgt6vefpyx7ikvui5t65vpngwq2jnfgghiosi6/150x150.jpg",
+     "480x480": "https://audius-content-9.figment.io/content/baeaaaiqseb7bvkecmpxxz3xbgt6vefpyx7ikvui5t65vpngwq2jnfgghiosi6/480x480.jpg",
+     "mirrors": [
+      "https://audius-creator-12.theblueprint.xyz",
+      "https://v.monophonic.digital",
+      "https://audius-content-12.figment.io"
+     ]
+    },
+    "track_count": 45
+   },
+   "access": {
+    "stream": true,
+    "download": true
+   },
+   "stream_conditions": null,
+   "download_conditions": null
+  },
+  {
+   "genre": "Dance Pop",
+   "id": "VPobj2y",
+   "mood": "Upbeat",
+   "release_date": "2026-09-26T19:13:05.824373Z",
+   "favorite_count": 27,
+   "title": "Aleks Syntek - Tu Necesitas (Oliverio Luja\u0301n Edit)",
+   "duration": 247,
+   "is_downloadable": true,
+   "play_count": 207,
+   "album_backlink": null,
+   "isrc": null,
+   "permalink": "/oliveriolujan/aleks-syntek-tu-necesitas-oliverio-luja\u0301n-edit",
+   "is_streamable": true,
+   "artwork": {
+    "150x150": "https://validator.stuffisup.com/content/baeaaaiqseaqxc2ywqcwpn6bpkgmqgseznxu3lwhhmt56noyu2qmlvxyk4vltw/150x150.jpg",
+    "480x480": "https://validator.stuffisup.com/content/baeaaaiqseaqxc2ywqcwpn6bpkgmqgseznxu3lwhhmt56noyu2qmlvxyk4vltw/480x480.jpg",
+    "1000x1000": "https://validator.stuffisup.com/content/baeaaaiqseaqxc2ywqcwpn6bpkgmqgseznxu3lwhhmt56noyu2qmlvxyk4vltw/1000x1000.jpg",
+    "mirrors": [
+     "https://audius-03.staked.cloud",
+     "https://audius-creator-10.theblueprint.xyz",
+     "https://v.monophonic.digital"
+    ]
+   },
+   "user": {
+    "album_count": 0,
+    "follower_count": 3440,
+    "handle": "oliveriolujan",
+    "id": "z9GEZ",
+    "is_verified": true,
+    "name": "Oliveriolujan",
+    "playlist_count": 0,
+    "profile_picture": {
+     "1000x1000": "https://audius-creator-15.theblueprint.xyz/content/baeaaaiqsecmpto5qvxlcvlwmd7dqha33gj3dvy6q3yhs66ugxmqdyludacjby/1000x1000.jpg",
+     "150x150": "https://audius-creator-15.theblueprint.xyz/content/baeaaaiqsecmpto5qvxlcvlwmd7dqha33gj3dvy6q3yhs66ugxmqdyludacjby/150x150.jpg",
+     "480x480": "https://audius-creator-15.theblueprint.xyz/content/baeaaaiqsecmpto5qvxlcvlwmd7dqha33gj3dvy6q3yhs66ugxmqdyludacjby/480x480.jpg",
+     "mirrors": [
+      "https://v.monophonic.digital",
+      "https://audius-creator-4.theblueprint.xyz",
+      "https://validator.soundmaxx.xyz"
+     ]
+    },
+    "track_count": 73
+   },
+   "access": {
+    "stream": true,
+    "download": false
+   },
+   "stream_conditions": null,
+   "download_conditions": {
+    "follow_user_id": 755263
+   }
+  },
+  {
+   "genre": "House",
+   "id": "5K1PJRg",
+   "mood": "Cool",
+   "release_date": "2026-09-29T19:31:40.152648Z",
+   "favorite_count": 29,
+   "title": "Aleks Syntek - De Noche En La Ciudad (MuchoRitmo Edit)",
+   "duration": 261,
+   "is_downloadable": true,
+   "play_count": 156,
+   "album_backlink": null,
+   "isrc": null,
+   "permalink": "/Emiilo/aleks-syntek-de-noche-en-la-ciudad-muchoritmo-edit",
+   "is_streamable": true,
+   "artwork": {
+    "150x150": "https://audius-02.staked.cloud/content/baeaaaiqseadfjqawryewr73t53nhm2zrjvh4xxxvwkrpmk23fk45lqevtpuye/150x150.jpg",
+    "480x480": "https://audius-02.staked.cloud/content/baeaaaiqseadfjqawryewr73t53nhm2zrjvh4xxxvwkrpmk23fk45lqevtpuye/480x480.jpg",
+    "1000x1000": "https://audius-02.staked.cloud/content/baeaaaiqseadfjqawryewr73t53nhm2zrjvh4xxxvwkrpmk23fk45lqevtpuye/1000x1000.jpg",
+    "mirrors": [
+     "https://v.monophonic.digital",
+     "https://val005.open-audio-validator.com",
+     "https://val003.open-audio-validator.com"
+    ]
+   },
+   "user": {
+    "album_count": 1,
+    "follower_count": 310,
+    "handle": "Emiilo",
+    "id": "q5yXM",
+    "is_verified": true,
+    "name": "MuchoRitmo",
+    "playlist_count": 0,
+    "profile_picture": {
+     "1000x1000": "https://v.monophonic.digital/content/01JQSFEW7RKA7N3FPFHRD5JBYM/1000x1000.jpg",
+     "150x150": "https://v.monophonic.digital/content/01JQSFEW7RKA7N3FPFHRD5JBYM/150x150.jpg",
+     "480x480": "https://v.monophonic.digital/content/01JQSFEW7RKA7N3FPFHRD5JBYM/480x480.jpg",
+     "mirrors": [
+      "https://audius-creator-5.theblueprint.xyz",
+      "https://audius-content-8.figment.io",
+      "https://audius-creator-10.theblueprint.xyz"
+     ]
+    },
+    "track_count": 12
+   },
+   "access": {
+    "stream": true,
+    "download": true
+   },
+   "stream_conditions": null,
+   "download_conditions": null
+  }
+ ]
+}

@@ -20,6 +20,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import app.podium.core.designsystem.artwork.ArtworkImage
@@ -193,4 +195,24 @@ fun formatDuration(ms: Long?): String? {
 @Composable
 private fun Modifier.scrollsWhenFocused(focused: Boolean): Modifier =
     if (focused && !PodiumTheme.motion.reduced) basicMarquee(initialDelayMillis = 900, repeatDelayMillis = 1_800) else this
+
+/** Cover, title and quiet details at the top of an album, artist or playlist page. Not focusable. */
+@Composable
+fun DetailHeader(artworkUri: String?, title: String, subtitle: String, details: List<String>, round: Boolean = false) {
+    val colors = PodiumTheme.colors
+    val type = PodiumTheme.type
+    // Sized for the paper's column (D-30): a long title wraps at words, never mid-word.
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = LocalRowPadding.current, vertical = Spacing.m),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        ArtworkImage(artworkUri, 64.dp, fallbackText = title, round = round)
+        Spacer(Modifier.width(Spacing.m))
+        Column(Modifier.weight(1f)) {
+            PodiumText(title, type.rowFocused, colors.labelPrimary, Modifier.semantics { heading() }, maxLines = 2)
+            PodiumText(subtitle, type.rowSecondary, colors.labelSecondary)
+            details.forEach { PodiumText(it, type.footnote, colors.labelTertiary) }
+        }
+    }
+}
 

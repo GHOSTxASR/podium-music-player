@@ -20,6 +20,7 @@ object PodiumSessionCommands {
     const val ARG_START_INDEX = "startIndex"
     const val ARG_CONTEXT_LABEL = "contextLabel"
     const val ARG_SHUFFLE = "shuffle"
+    const val ARG_RADIO = "radio"
     const val ARG_UID = "uid"
     const val ARG_UIDS = "uids"
     const val ARG_TO_INDEX = "toIndex"

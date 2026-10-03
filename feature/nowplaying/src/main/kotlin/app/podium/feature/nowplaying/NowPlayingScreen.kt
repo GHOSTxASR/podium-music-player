@@ -96,6 +96,7 @@ import app.podium.core.interaction.WheelButton
 import app.podium.core.interaction.WheelContext
 import app.podium.core.interaction.rememberPodiumHaptics
 import app.podium.core.model.QualityLabel
+import app.podium.core.model.TrackId
 import app.podium.player.api.FavoritesRepository
 import app.podium.player.api.NowPlayingItem
 import app.podium.player.api.PlayIntent
@@ -127,6 +128,8 @@ fun NowPlayingScreen(
     volume: VolumeController,
     favorites: FavoritesRepository,
     onUpNext: () -> Unit,
+    /** A quiet word on where the song belongs ("Online"), or null for the local library (D-34). */
+    environmentOf: (TrackId) -> String? = { null },
 ) {
     val snapshot by controller.snapshot.collectAsStateWithLifecycle()
     val queue by controller.queue.collectAsStateWithLifecycle()
@@ -284,6 +287,7 @@ fun NowPlayingScreen(
         scrubTarget = scrubTarget,
         controller = controller,
         perform = perform,
+        environment = environmentOf(item.trackId),
     )
     // The cluster's glass refracts the artwork's environment, so the environment is the captured layer.
     GlassHost(
@@ -314,6 +318,7 @@ private class NowPlayingParts(
     val scrubTarget: Long?,
     val controller: PlaybackController,
     val perform: (Action) -> Unit,
+    val environment: String? = null,
 )
 
 @Composable
@@ -551,7 +556,7 @@ private fun StatusSlot(p: NowPlayingParts) {
         p.item.resolutionPath != null && p.item.resolutionPath != ResolutionPath.OWN_SOURCE ->
             p.item.servedByDisplayName?.let { "Playing from $it" }
         p.snapshot.quality.codecMismatch -> p.snapshot.quality.sourceClaimed?.let(QualityLabel::format)?.let { "Source reported $it" }
-        else -> null
+        else -> p.environment
     }
     Column(Modifier.fillMaxWidth().height(34.dp), verticalArrangement = Arrangement.Center) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {

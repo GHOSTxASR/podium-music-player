@@ -41,6 +41,28 @@ class SharedPrefsDeviceSettings(context: Context) : DeviceSettingsRepository {
     private val _clicks = MutableStateFlow(prefs.getBoolean(KEY_CLICKS, false))
     override val clicks: StateFlow<Boolean> = _clicks.asStateFlow()
 
+    private val _autoplay = MutableStateFlow(prefs.getBoolean(KEY_AUTOPLAY, true))
+    override val autoplay: StateFlow<Boolean> = _autoplay.asStateFlow()
+    private val _recommendations = MutableStateFlow(prefs.getBoolean(KEY_RECOMMENDATIONS, true))
+    override val onlineRecommendations: StateFlow<Boolean> = _recommendations.asStateFlow()
+    private val _avoidRepeats = MutableStateFlow(prefs.getBoolean(KEY_AVOID_REPEATS, true))
+    override val avoidRepeats: StateFlow<Boolean> = _avoidRepeats.asStateFlow()
+
+    override fun setAutoplay(enabled: Boolean) {
+        _autoplay.value = enabled
+        prefs.edit { putBoolean(KEY_AUTOPLAY, enabled) }
+    }
+
+    override fun setOnlineRecommendations(enabled: Boolean) {
+        _recommendations.value = enabled
+        prefs.edit { putBoolean(KEY_RECOMMENDATIONS, enabled) }
+    }
+
+    override fun setAvoidRepeats(enabled: Boolean) {
+        _avoidRepeats.value = enabled
+        prefs.edit { putBoolean(KEY_AVOID_REPEATS, enabled) }
+    }
+
     override fun setHaptics(enabled: Boolean) {
         _haptics.value = enabled
         prefs.edit { putBoolean(KEY_HAPTICS, enabled) }
@@ -78,5 +100,8 @@ class SharedPrefsDeviceSettings(context: Context) : DeviceSettingsRepository {
         const val KEY_DISPLAY = "display_theme"
         const val KEY_HAPTICS = "haptics"
         const val KEY_CLICKS = "clicks"
+        const val KEY_AUTOPLAY = "autoplay"
+        const val KEY_RECOMMENDATIONS = "online_recommendations"
+        const val KEY_AVOID_REPEATS = "avoid_repeats"
     }
 }

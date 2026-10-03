@@ -4,8 +4,11 @@ import app.podium.core.common.Outcome
 import app.podium.core.model.AlbumId
 import app.podium.core.model.ArtistId
 import app.podium.core.model.ArtworkRef
+import app.podium.core.common.PodiumError
+import app.podium.core.model.PlaylistId
 import app.podium.core.model.SourceRef
 import app.podium.core.model.Track
+import app.podium.core.model.TrackId
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 
@@ -15,7 +18,35 @@ interface CatalogFacet {
     suspend fun track(ref: SourceRef): Outcome<Track>
     suspend fun album(id: AlbumId): Outcome<AlbumDetail>
     suspend fun artist(id: ArtistId): Outcome<ArtistDetail>
+
+    /** A playlist and its songs, for sources that have playlists. */
+    suspend fun playlist(id: PlaylistId): Outcome<PlaylistDetail> = Outcome.Failure(PodiumError.NotFound("playlist"))
 }
+
+/**
+ * The lists a source curates for browsing (D-34): charts, new and underground music, popular
+ * playlists, genres. Each shelf comes with its first page; [shelf] pages further on request.
+ */
+interface DiscoveryFacet {
+    suspend fun shelves(): Outcome<List<Shelf>>
+    suspend fun shelf(id: String, offset: Int, limit: Int): Outcome<ShelfPage>
+
+    /** Genres to explore, most popular first. */
+    suspend fun genres(): Outcome<List<String>>
+
+    /** Music in one genre, as the source ranks it. */
+    suspend fun genre(name: String, offset: Int, limit: Int): Outcome<List<Track>>
+}
+
+/** One curated list. A shelf holds songs or playlists. */
+data class Shelf(
+    val id: String,
+    val title: String,
+    val tracks: List<Track> = emptyList(),
+    val playlists: List<PlaylistSummary> = emptyList(),
+)
+
+data class ShelfPage(val tracks: List<Track> = emptyList(), val playlists: List<PlaylistSummary> = emptyList())
 
 /** The user's own collection at a source (enumerable). */
 interface LibraryFacet {
@@ -49,8 +80,18 @@ interface LyricsFacet {
     suspend fun lyrics(track: Track): Outcome<String?>
 }
 
+/**
+ * What the source itself recommends (D-34): songs like some songs, an artist's radio, related
+ * artists. Podium never invents recommendations when a source provides them.
+ */
 interface RecommendationFacet {
-    suspend fun related(seeds: List<Track>, limit: Int): Outcome<List<Track>>
+    /** Songs in the spirit of [seeds] (most relevant first), never any in [exclude]. */
+    suspend fun related(seeds: List<Track>, limit: Int, exclude: Set<TrackId> = emptySet()): Outcome<List<Track>>
+
+    /** An artist's radio: their music mixed with related artists'. */
+    suspend fun artistRadio(artist: ArtistId, limit: Int, exclude: Set<TrackId> = emptySet()): Outcome<List<Track>>
+
+    suspend fun relatedArtists(artist: ArtistId, limit: Int): Outcome<List<ArtistSummary>>
 }
 
 interface DownloadFacet {
@@ -70,12 +111,21 @@ sealed interface AuthState {
     data class Rejected(val reason: String) : AuthState
 }
 
-data class SearchQuery(val text: String, val limit: Int = 25)
+/** What to search for; [offset] pages through results without loading the whole catalogue. */
+data class SearchQuery(
+    val text: String,
+    val limit: Int = 25,
+    val offset: Int = 0,
+    val kinds: Set<SearchKind> = SearchKind.entries.toSet(),
+)
+
+enum class SearchKind { TRACKS, ARTISTS, ALBUMS, PLAYLISTS }
 
 data class SearchResults(
     val tracks: List<Track> = emptyList(),
     val albums: List<AlbumSummary> = emptyList(),
     val artists: List<ArtistSummary> = emptyList(),
+    val playlists: List<PlaylistSummary> = emptyList(),
 ) {
     companion object {
         val Empty = SearchResults()
@@ -101,4 +151,22 @@ data class ArtistSummary(
 
 data class AlbumDetail(val summary: AlbumSummary, val tracks: List<Track>)
 
-data class ArtistDetail(val summary: ArtistSummary, val albums: List<AlbumSummary>, val tracks: List<Track>)
+data class ArtistDetail(
+    val summary: ArtistSummary,
+    val albums: List<AlbumSummary>,
+    val tracks: List<Track>,
+    val playlists: List<PlaylistSummary> = emptyList(),
+)
+
+/** A playlist (or an album a source presents as a playlist). */
+data class PlaylistSummary(
+    val id: PlaylistId,
+    val title: String,
+    val ownerName: String,
+    val artwork: ArtworkRef? = null,
+    val trackCount: Int? = null,
+    val isAlbum: Boolean = false,
+    val year: Int? = null,
+)
+
+data class PlaylistDetail(val summary: PlaylistSummary, val tracks: List<Track>)

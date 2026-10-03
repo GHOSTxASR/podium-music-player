@@ -65,6 +65,9 @@ fun HomeScreen(
     onShuffleSongs: () -> Unit,
     onNowPlaying: () -> Unit,
     onSettings: () -> Unit,
+    /** ONLINE (D-34), when an online source is connected; [onlineArtwork] previews it. */
+    onOnline: (() -> Unit)? = null,
+    onlineArtwork: List<String> = emptyList(),
 ) {
     val songs by repository.songs.collectAsStateWithLifecycle()
     val tracks = (songs as? LibraryState.Ready)?.tracks.orEmpty()
@@ -72,6 +75,7 @@ fun HomeScreen(
     val shuffled = remember(art) { art.shuffled() }
     val entries = buildList {
         add(MenuEntry("Music", MenuPreview.Artwork(art), onMusic))
+        if (onOnline != null) add(MenuEntry("Online", if (onlineArtwork.isEmpty()) MenuPreview.None else MenuPreview.Carousel(onlineArtwork), onOnline))
         add(MenuEntry("Shuffle songs", MenuPreview.Carousel(shuffled), onShuffleSongs, chevron = false))
         if (nowPlayingActive) add(MenuEntry("Now Playing", MenuPreview.Artwork(listOfNotNull(nowPlayingArtwork)), onNowPlaying))
         add(MenuEntry("Settings", MenuPreview.Instrument, onSettings))

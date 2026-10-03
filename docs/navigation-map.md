@@ -29,6 +29,23 @@ Home
 Global entry points from anywhere: Search (title-bar button, `/`), Now Playing (mini player, Home item, title-bar indicator), Home (long-press Menu).
 ```
 
+**Implemented (2026-10-03):** Home ▸ Music · **Online** · Shuffle songs · Now Playing · Settings. ONLINE (D-34) is its own tree on the same paper — `Dest.Online(OnlinePlace)`:
+
+```
+Online
+├── Home ─► shelves (Trending this week, Underground, Popular playlists, Trending this month)
+│           + Recently played, Your liked songs, Your playlists ─► songs / playlists (paged)
+├── Explore ─► genres ─► genre (Genre radio, songs)
+├── Search ─► results (Songs + More songs, Artists, Albums, Playlists) ─► artist / album / playlist / [play]
+├── Liked songs ─► (Shuffle) songs
+├── Playlists ─► New playlist (name) · playlist ─► Play, Shuffle, Rename, Delete, songs (hold: move, remove)
+├── Radio ─► from what's playing · from songs played · genre radios
+└── History ─► (Clear history) songs, newest first
+Artist ─► Radio, Play popular songs, Popular, Albums and EPs, Playlists, Related artists
+Album/playlist ─► Play, Shuffle, Add all to a playlist, songs
+```
+Only rows the online source supports are shown (Search needs SEARCH, Home/Explore need BROWSE, Radio needs RECOMMENDATIONS).
+
 Home order (iPod-like, most-used first): Music, Playlists, Liked Songs, Downloads, Recently Played, Search, Settings, Shuffle Songs, Now Playing. Focus restores to the last used item.
 
 ## 2. Keys

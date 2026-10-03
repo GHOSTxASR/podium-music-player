@@ -37,6 +37,8 @@ dependencies {
     implementation(project(":player:api"))
     implementation(project(":player:service"))
     implementation(project(":feature:library"))
+    implementation(project(":feature:online"))
+    implementation(project(":sources:audius"))
     implementation(project(":feature:nowplaying"))
     implementation(project(":feature:settings"))
     // Deterministic generated test tones: debug builds only, never shipped.

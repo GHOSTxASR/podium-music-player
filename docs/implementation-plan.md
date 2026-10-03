@@ -11,7 +11,9 @@
 | S1 contracts · Phase 3 design system · S3 Media3 · S2 local source · Phase 4 slice | ✅ 2026-10-02/03 |
 | UI evolution (device shell, Now Playing, Carbon/Bone, the paper) | ✅ 2026-10-03 — D-26 … D-30 |
 | S2b library database (Room 3: library cache, favorites, saved queue, FTS5) | ✅ 2026-10-03 — D-31 |
-| Next | Boot sequence & music folders, then Online (Audius) — D-32, D-33 |
+| Boot self-test, click sound, music folders; indicator lights | ✅ 2026-10-03 — D-32, D-33 |
+| Online O1–O8 (contracts, Audius, ONLINE database, navigation, playback, autoplay, radio, device tests) | ✅ 2026-10-03 — D-34 (S7 Audius brought forward by the user) |
+| Next | Awaiting the user: YouTube (D-20) / Spotify (D-21) decisions; Audius sign-in needs an API key |
 
 ## Revised order
 

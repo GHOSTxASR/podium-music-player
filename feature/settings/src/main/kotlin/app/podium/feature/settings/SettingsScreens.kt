@@ -72,7 +72,7 @@ import app.podium.core.interaction.rememberFocusListState
 import app.podium.core.interaction.rememberPodiumHaptics
 import kotlin.math.roundToInt
 
-private enum class SettingsRow { Theme, Finish, CustomColor, Grain, MusicFolders, Haptics, Clicks, StartupSound }
+private enum class SettingsRow { Theme, Finish, CustomColor, Grain, MusicFolders, Autoplay, Recommendations, AvoidRepeats, Haptics, Clicks, StartupSound }
 
 /** Settings (D-26, D-32): the device's look, which folders hold its music, and how it answers touch. */
 @Composable
@@ -89,6 +89,9 @@ fun SettingsScreen(
     val startupSound by repository.startupSound.collectAsStateWithLifecycle()
     val hapticsOn by repository.haptics.collectAsStateWithLifecycle()
     val clicksOn by repository.clicks.collectAsStateWithLifecycle()
+    val autoplayOn by repository.autoplay.collectAsStateWithLifecycle()
+    val recommendationsOn by repository.onlineRecommendations.collectAsStateWithLifecycle()
+    val avoidRepeatsOn by repository.avoidRepeats.collectAsStateWithLifecycle()
     val folderList by folders.folders.collectAsStateWithLifecycle()
     val selection by folders.selection.collectAsStateWithLifecycle()
     val haptics = rememberPodiumHaptics()
@@ -102,6 +105,18 @@ fun SettingsScreen(
             SettingsRow.CustomColor -> if (industrial) haptics.reject() else onCustomColor()
             SettingsRow.Grain -> if (appearance.isGlass) haptics.reject() else onGrain()
             SettingsRow.MusicFolders -> onMusicFolders()
+            SettingsRow.Autoplay -> {
+                haptics.confirm()
+                repository.setAutoplay(!autoplayOn)
+            }
+            SettingsRow.Recommendations -> if (!autoplayOn) haptics.reject() else {
+                haptics.confirm()
+                repository.setOnlineRecommendations(!recommendationsOn)
+            }
+            SettingsRow.AvoidRepeats -> if (!autoplayOn) haptics.reject() else {
+                haptics.confirm()
+                repository.setAvoidRepeats(!avoidRepeatsOn)
+            }
             SettingsRow.Haptics -> {
                 repository.setHaptics(!hapticsOn)
                 haptics.confirm()
@@ -166,6 +181,9 @@ fun SettingsScreen(
                     else -> "${songsIncluded(folderList.orEmpty(), selection)} songs"
                 },
             )
+            SettingsRow.Autoplay -> MenuRow("Autoplay", focused, value = if (autoplayOn) "On" else "Off", showChevron = false)
+            SettingsRow.Recommendations -> MenuRow("Online recommendations", focused, value = if (recommendationsOn) "On" else "Off", enabled = autoplayOn, showChevron = false)
+            SettingsRow.AvoidRepeats -> MenuRow("Avoid repeats", focused, value = if (avoidRepeatsOn) "On" else "Off", enabled = autoplayOn, showChevron = false)
             SettingsRow.Haptics -> MenuRow("Haptics", focused, value = if (hapticsOn) "On" else "Off", showChevron = false)
             SettingsRow.Clicks -> MenuRow("Click sound", focused, value = if (clicksOn) "On" else "Off", showChevron = false)
             SettingsRow.StartupSound -> MenuRow("Startup sound", focused, value = if (startupSound) "On" else "Off", showChevron = false)

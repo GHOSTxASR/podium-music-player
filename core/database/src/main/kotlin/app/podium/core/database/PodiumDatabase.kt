@@ -1,6 +1,7 @@
 package app.podium.core.database
 
 import android.content.Context
+import androidx.room3.AutoMigration
 import androidx.room3.Database
 import androidx.room3.Room
 import androidx.room3.RoomDatabase
@@ -20,17 +21,24 @@ import java.io.File
         LikedTrackEntity::class,
         QueueStateEntity::class,
         QueueItemEntity::class,
+        OnlineLikedTrackEntity::class,
+        OnlinePlaylistEntity::class,
+        OnlinePlaylistTrackEntity::class,
+        OnlineHistoryEntity::class,
     ],
     version = PodiumDatabase.VERSION,
     exportSchema = true,
+    // v2 (D-34) only adds the ONLINE tables.
+    autoMigrations = [AutoMigration(from = 1, to = 2)],
 )
 abstract class PodiumDatabase : RoomDatabase() {
     abstract fun library(): LibraryDao
     abstract fun likes(): LikeDao
     abstract fun queue(): QueueDao
+    abstract fun online(): OnlineDao
 
     companion object {
-        const val VERSION = 1
+        const val VERSION = 2
         const val FILE_NAME = "podium.db"
 
         /**

@@ -21,6 +21,9 @@ interface MusicSource {
     val artwork: ArtworkFacet? get() = null
     val lyrics: LyricsFacet? get() = null
     val recommendations: RecommendationFacet? get() = null
+
+    /** Curated lists for browsing: charts, new music, genres (D-34). */
+    val discovery: DiscoveryFacet? get() = null
     val downloads: DownloadFacet? get() = null
     val auth: AuthFacet? get() = null
 

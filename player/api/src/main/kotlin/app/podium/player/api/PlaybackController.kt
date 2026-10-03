@@ -26,8 +26,11 @@ interface PlaybackController {
     fun setRepeat(mode: RepeatMode)
     fun setShuffle(enabled: Boolean)
 
-    /** Play [tracks] as a context starting at [startIndex]. Tracks must be known to the TrackCatalog. */
-    fun playContext(tracks: List<TrackId>, startIndex: Int, contextLabel: String?, shuffle: Boolean = false)
+    /**
+     * Play [tracks] as a context starting at [startIndex]. Tracks must be known to the TrackCatalog.
+     * [radio] marks a radio the listener started (D-34): its songs are RADIO items, not a context.
+     */
+    fun playContext(tracks: List<TrackId>, startIndex: Int, contextLabel: String?, shuffle: Boolean = false, radio: Boolean = false)
     fun playNext(tracks: List<TrackId>)
     fun addToQueue(tracks: List<TrackId>)
     fun move(uid: QueueUid, toIndex: Int)
