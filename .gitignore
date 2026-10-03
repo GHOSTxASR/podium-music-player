@@ -33,3 +33,6 @@ Thumbs.db
 .kotlin/
 *.log
 /screenshots-local/
+
+# IDE (Eclipse/VS Code Java) build output
+bin/
