@@ -156,7 +156,7 @@ questions only the phone can answer (A-1, U1–U6) and the 28 steps, is
 
 ## 21. Test count
 
-`./gradlew test`: **486 tests, 0 failures, 0 errors, 0 skipped** (JVM unit tests and Robolectric
+`./gradlew test`: **492 tests, 0 failures, 0 errors, 0 skipped** (JVM unit tests and Robolectric
 tests; there are no instrumented `androidTest` suites).
 
 | Module | Tests |
@@ -165,9 +165,9 @@ tests; there are no instrumented `androidTest` suites).
 | player:api | 54 |
 | core:database | 45 |
 | sources:youtubemusic | 41 |
-| core:designsystem | 41 |
+| core:designsystem | 43 |
 | feature:nowplaying | 23 |
-| app | 20 |
+| app | 24 |
 | core:lyrics | 27 |
 | core:interaction | 19 |
 | player:service | 12 |
@@ -221,7 +221,10 @@ tests; there are no instrumented `androidTest` suites).
 | `b82bc14` | feat(glitter): the glitter catches the light as the phone tilts |
 | `0f3922e` | feat(keyboard): the Wheel becomes a keyboard |
 | `f3a77a1` | build: update verified debug APK artifact |
-| (next) | docs: final report for the third pass |
+| `f034e1c` | docs: final report for the third pass |
+| `d11134c` | fix(ui): long titles ease into their scroll; music access is asked for |
+| `6de8915` | build: update verified debug APK artifact |
+| (next) | docs: final report for the fourth pass |
 
 ## 25. GitHub branch
 
@@ -250,10 +253,10 @@ export ANDROID_HOME=/path/to/android-sdk   # or sdk.dir in local.properties
 | Build type | debug |
 | applicationId | `app.podium.debug` |
 | versionName / versionCode | 0.1.0 / 1 |
-| Size | 52,197,115 bytes |
-| SHA-256 | `7b1490dc64832310321220a5dc9dd7e79664fcad828caa3da9b010c4827a2a12` |
+| Size | 52,205,051 bytes |
+| SHA-256 | `c8a0f440a8675d1861217fae26cd27101c45a3c26acb56fc69e616c155623fcf` |
 | Signature | Android debug certificate (SHA-256 `e68e65c9…0d4e11`, APK Signature Scheme v2), verified with `apksigner` |
-| Built from | `0f3922e` (later commits change only documentation and the artifact) |
+| Built from | `d11134c` (later commits change only documentation and the artifact) |
 | Secret scan of the APK | clean (no API keys, OAuth tokens, private keys, session cookies, keystores, databases, test fixtures, local paths) |
 | Installed on a device | **no** |
 | Smoke test on a device | **no** (rendered-UI tests only) |
@@ -263,13 +266,13 @@ export ANDROID_HOME=/path/to/android-sdk   # or sdk.dir in local.properties
 ```
 APK STATUS:        BUILT
 APK PATH:          artifacts/apk/podium-debug.apk
-APK SIZE:          52,197,115 bytes (49.8 MiB)
+APK SIZE:          52,205,051 bytes (49.8 MiB)
 BUILD TASK:        ./gradlew :app:assembleDebug
 BUILD TYPE:        debug
 VERSION NAME:      0.1.0
 VERSION CODE:      1
-COMMIT:            f3a77a1 (artifact commit; built from code at 0f3922e; earlier artifacts 992ad0a, 10028f5 superseded)
-BRANCH:            ccr-fcca9ac9-6juw47 (verified on GitHub: blob c6f8788e, 52,197,115 bytes, matches the build)
+COMMIT:            6de8915 (artifact commit; built from code at d11134c; earlier artifacts 992ad0a, 10028f5, f3a77a1 superseded)
+BRANCH:            ccr-fcca9ac9-6juw47 (verified on GitHub: blob f774f6be, 52,205,051 bytes, matches the build)
 DEVICE INSTALL:    NOT AVAILABLE (no device reachable from the build container)
 DEVICE SMOKE TEST: NOT RUN
 ```
@@ -279,7 +282,7 @@ DEVICE SMOKE TEST: NOT RUN
 | Criterion | Status |
 |---|---|
 | Build | PASS |
-| Unit tests | PASS (486/486) |
+| Unit tests | PASS (492/492) |
 | Integration tests | PASS for Robolectric/JVM integration tests; no instrumented suite exists |
 | Device build | PASS (debug APK built, signed, inspected); not installed |
 | Offline playback / regression | automated PASS; not verified on device |
@@ -321,3 +324,11 @@ DEVICE SMOKE TEST: NOT RUN
   - Found while testing: Back would have left Search instead of closing the keyboard, because its handler was registered before the navigation's. It is now registered when the keyboard opens.
   - Found while testing: Delete would have kept repeating with a finger slid off the key. It now stops.
 - Device steps: `docs/testing/UI_DEVICE_ACCEPTANCE.md` §3.14–3.16, §4, §5 and §2 (tilt). **None were run on a device.**
+
+## Fourth pass (list-top jump, music access)
+
+- **Text sat centred, then jumped to the side (D-46):** found by rendering the whole app frame by frame (new `AppShellTest`). Music's first row was the long "Allow access to music on this phone": focused, its clipped text sat mid-lens until the marquee started at full speed. Now the label is "Allow music access" (fits), and long focused titles rest 1.4 s and then ease into their scroll (`ScrollingTitleTest`). Album, artist and song lists no longer flash a centred "No albums yet" before the first sync.
+- **No permission screen (D-47):** Podium now asks once when it first switches on, offers "Allow music access" on Home, and opens its system settings page once Android stops asking (`PermissionAsksTest`).
+- **In-app YouTube Music playback, BitChord-style:** not implemented. It needs the stream-unlock layer ADR-013 and the source matrix (§3, Y3) rule out; that direction was also refused earlier in this session. The permitted options (the official embedded player, Y2; a quieter hand-off to the official app; a user-owned server source) are put to the user to choose.
+- **Device test:** not possible from this session. The phone is attached to the user's computer; this session runs in a cloud container with no route to it (`adb devices` lists nothing). Steps: `docs/testing/UI_DEVICE_ACCEPTANCE.md` §1.7 and §6.
+
