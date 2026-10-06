@@ -15,6 +15,7 @@ import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import kotlin.math.abs
+import kotlin.math.roundToInt
 
 /**
  * The single focus of a list (interaction-model.md §1, §5). Rotation moves it, touch scrolling
@@ -124,6 +125,39 @@ class FocusListState(initialIndex: Int = 0, val listState: LazyListState = LazyL
             jumped || abs(delta) > item.size * 1.5f -> listState.scrollBy(delta)
             else -> listState.animateScrollBy(delta, glide)
         }
+    }
+
+    /**
+     * The paper ([FocusScroll.CENTRE]), one frame of it: scroll so the lens at [position] — a
+     * fractional row index while it slides from row to row — sits at the middle of the readable
+     * region. The list follows the lens itself rather than running a scroll animation of its own,
+     * so however fast the Wheel turns the two can't drift apart: mid-list the lens holds still and
+     * only the rows move; near an end the list stops (it clamps) and the lens travels on to the real
+     * top or bottom. Called from the lens's animation frame, before layout, so rows and lens are
+     * drawn from the same scroll.
+     *
+     * @return false when nothing the lens could sit on is laid out (see [centreLens]).
+     */
+    fun centreLensNow(position: Float): Boolean {
+        val info = listState.layoutInfo
+        val rows = info.visibleItemsInfo
+        val lens = FocusGeometry.lens(position, focusedIndex) { i ->
+            rows.firstOrNull { it.index == i }?.let { FocusGeometry.Row(it.offset, it.size) }
+        } ?: return false
+        val readable = info.viewportEndOffset - info.afterContentPadding
+        if (readable <= 0) return true
+        val delta = lens.first + lens.second / 2f - readable / 2f
+        if (abs(delta) >= 0.5f) listState.dispatchRawDelta(delta)
+        return true
+    }
+
+    /** [centreLensNow], first bringing the lens's row in when it isn't laid out (a jump far along the list). */
+    suspend fun centreLens(position: Float) {
+        if (centreLensNow(position)) return
+        val count = listState.layoutInfo.totalItemsCount
+        if (count == 0) return
+        listState.scrollToItem(position.roundToInt().coerceIn(0, count - 1))
+        centreLensNow(position)
     }
 
     companion object {

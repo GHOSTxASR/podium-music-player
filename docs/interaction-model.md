@@ -117,7 +117,7 @@ The focus is derived only from what the list measured — the readable region (t
 | The list fits | starts at the top of the readable region; no scrolling | same |
 | Fast spin outruns the list | jump (`scrollToItem`), then place | same |
 
-- **The lens** sits on the focused row and slides between rows in content space, so it is glued to the rows while the list scrolls; it is clipped to the readable region and never clamped to a band. Reduced motion: it jumps; a move of more than three rows jumps.
+- **The lens** sits on the focused row and slides between rows in content space, so it is glued to the rows while the list scrolls; it is clipped to the readable region and never clamped to a band. Reduced motion: it jumps; a move of more than three rows jumps. On the paper the list is scrolled from the lens's own animation frames, so a fast spin never leaves the indicator chasing the rows: it holds at the middle and the list moves under it.
 - **The ends** fade and soften only where the list continues beyond them (`FocusGeometry.endStrength`), ramping in over the first row of hidden content.
 - **Touch:** unchanged (§5). A tap focuses a row, which then rides to the middle like any other focus move.
 - Tests: `FocusGeometryTest` (pure), `FocusListGeometryTest` (Robolectric, 1/2/3/5/10/50 rows, first/middle/last and back, Carbon/Bone/Glass, phone and small screens, long titles; asserts the focused row is fully inside the readable region, no row is clipped, flush ends and the centred middle).

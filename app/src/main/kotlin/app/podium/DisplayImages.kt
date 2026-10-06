@@ -4,6 +4,8 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Matrix
+import android.media.ExifInterface
 import android.net.Uri
 import android.util.Log
 import androidx.compose.ui.graphics.asImageBitmap
@@ -66,19 +68,48 @@ class DisplayImages(private val context: Context, private val scope: CoroutineSc
 
     private fun decode(uri: Uri): DisplayImage? = try {
         val resolver = context.contentResolver
+        // The size first. With inJustDecodeBounds the decoder always answers null and only fills in
+        // the bounds — that null is not a failure (taking it for one made every picture "Unavailable").
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) } ?: return null
+        val probe = resolver.openInputStream(uri) ?: return null
+        probe.use { BitmapFactory.decodeStream(it, null, bounds) }
         if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
         val longest = maxOf(bounds.outWidth, bounds.outHeight)
         var sample = 1
         while (longest / (sample * 2) >= MAX_EDGE_PX) sample *= 2
         val options = BitmapFactory.Options().apply { inSampleSize = sample }
-        val bitmap = resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, options) } ?: return null
+        val decoded = resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, options) } ?: return null
+        val bitmap = upright(decoded, orientationOf(uri))
         DisplayImage(bitmap.asImageBitmap(), averageLuminance(bitmap))
     } catch (e: Exception) {
         // Deleted, moved, access revoked, not a picture: the display shows the solid colour.
         Log.i(TAG, "Background picture unavailable (${e.javaClass.simpleName})")
         null
+    }
+
+    /** The photo's EXIF orientation (camera pictures are often stored sideways with a tag saying so). */
+    private fun orientationOf(uri: Uri): Int = runCatching {
+        context.contentResolver.openInputStream(uri)?.use {
+            ExifInterface(it).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
+        }
+    }.getOrNull() ?: ExifInterface.ORIENTATION_NORMAL
+
+    /** [bitmap] turned the way [orientation] says it was taken. */
+    private fun upright(bitmap: Bitmap, orientation: Int): Bitmap {
+        val matrix = Matrix()
+        when (orientation) {
+            ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> matrix.setScale(-1f, 1f)
+            ExifInterface.ORIENTATION_ROTATE_180 -> matrix.setRotate(180f)
+            ExifInterface.ORIENTATION_FLIP_VERTICAL -> matrix.setScale(1f, -1f)
+            ExifInterface.ORIENTATION_TRANSPOSE -> { matrix.setRotate(90f); matrix.postScale(-1f, 1f) }
+            ExifInterface.ORIENTATION_ROTATE_90 -> matrix.setRotate(90f)
+            ExifInterface.ORIENTATION_TRANSVERSE -> { matrix.setRotate(-90f); matrix.postScale(-1f, 1f) }
+            ExifInterface.ORIENTATION_ROTATE_270 -> matrix.setRotate(-90f)
+            else -> return bitmap
+        }
+        val turned = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+        if (turned !== bitmap) bitmap.recycle()
+        return turned
     }
 
     private fun averageLuminance(bitmap: Bitmap): Float {

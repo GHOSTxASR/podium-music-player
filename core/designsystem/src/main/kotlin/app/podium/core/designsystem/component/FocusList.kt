@@ -27,7 +27,6 @@ import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -39,7 +38,6 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -58,6 +56,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import app.podium.core.designsystem.glass.GlassTier
 import app.podium.core.designsystem.glass.LocalGlassTier
@@ -125,26 +124,32 @@ fun <T> FocusList(
 
     // The lens's place as a fractional row index: it slides from row to row in content space, so
     // it stays glued to the rows while the list scrolls under it. Reduced motion: it jumps.
+    // On the paper the list is scrolled from the lens's own animation frames (centreLensNow), so
+    // the two are one motion: a newer move retargets the lens (keeping its speed) and the list
+    // simply follows — nothing can fall behind or jump ahead however fast the Wheel turns.
     val lensPosition = remember { Animatable(state.focusedIndex.toFloat()) }
-    LaunchedEffect(state) {
+    LaunchedEffect(state, paper) {
         var lastMoves = state.focusMoves
         snapshotFlow { state.focusMoves to state.focusedIndex }.collectLatest { (moves, index) ->
             val target = index.toFloat()
             val byInput = moves != lastMoves
             lastMoves = moves
             if (byInput && !motion.reduced && kotlin.math.abs(lensPosition.value - target) <= MaxLensSlideRows) {
-                lensPosition.animateTo(target, motion.focus())
+                if (paper) state.centreLens(lensPosition.value)
+                lensPosition.animateTo(target, motion.focus()) { if (paper) state.centreLensNow(value) }
             } else {
                 lensPosition.snapTo(target)
+                if (paper) state.centreLens(target)
             }
         }
     }
-    // Keep the focused row where the geometry wants it; a newer move cancels an unfinished scroll.
-    // The glide uses the lens's spring, so on the paper the two move as one and the lens holds still.
-    val scroll = if (paper) FocusScroll.CENTRE else FocusScroll.EDGE
-    LaunchedEffect(state, scroll) {
-        snapshotFlow { state.focusMoves }.collectLatest {
-            state.keepFocusedInView(scroll, if (motion.reduced) snap() else motion.focus())
+    // Plain lists keep the focused row in view with their own short glide; a newer move cancels an
+    // unfinished one.
+    if (!paper) {
+        LaunchedEffect(state) {
+            snapshotFlow { state.focusMoves }.collectLatest {
+                state.keepFocusedInView(FocusScroll.EDGE, if (motion.reduced) snap() else motion.focus())
+            }
         }
     }
 
@@ -261,11 +266,15 @@ fun <T> FocusList(
         // list continues beyond — fading, shrinking a little and softening: a drum, not a sheet.
         // The focused row stays crisp.
         val along: Modifier.(Int) -> Modifier = { index ->
-            graphicsLayer {
+            offset {
+                val info = listState.layoutInfo
+                val item = info.visibleItemsInfo.firstOrNull { it.index == index } ?: return@offset IntOffset.Zero
+                val y = (info.beforeContentPadding + item.offset + item.size / 2f).toDp()
+                IntOffset(-g.bend(y - g.centreY).roundToPx(), 0)
+            }.graphicsLayer {
                 val info = listState.layoutInfo
                 val item = info.visibleItemsInfo.firstOrNull { it.index == index } ?: return@graphicsLayer
                 val y = (info.beforeContentPadding + item.offset + item.size / 2f).toDp()
-                translationX = -g.bend(y - g.centreY).toPx()
                 val (top, bottom) = ends
                 val d = g.depth(y) * (if (y < g.centreY) top else bottom)
                 val focusedRow = index == state.focusedIndex
@@ -288,15 +297,21 @@ fun <T> FocusList(
             // The previous column, live, at middle-left: a tile like the next column's at the right,
             // mirrored off the left edge, showing that screen zoomed to its list. Above the list, so
             // a tap on it reaches it (the list's bounds reach left under it to let rows bend).
+            // Its edges dissolve into the display rather than ending on a line: it feathers out at
+            // the right, top and bottom (and at the left too when the box sits wholly on the display),
+            // so the corners melt as well.
             LocalPaperPeek.current?.let { peek ->
-                val corner = previewCorner()
                 Box(
                     Modifier
                         .offset(x = g.leftBoxX, y = g.boxTop)
                         .size(g.boxHeight)
                         .then(decor)
                         .distant()
-                        .clip(RoundedCornerShape(corner))
+                        .feathered(
+                            left = if (g.leftBoxX > 0.dp) PeekFeather else 0.dp,
+                            right = PeekFeather,
+                            vertical = PeekFeather * 0.8f,
+                        )
                         .background(colors.canvasRaised),
                 ) {
                     Box(
@@ -344,6 +359,9 @@ private val RowFadeBeyond = 24.dp
 
 /** Room left of the furthest-bent row for the focused text's glow. */
 private val RowGlowRoom = 8.dp
+
+/** How far into the previous column's box its edges fade out. */
+private val PeekFeather = 22.dp
 
 /** A focus move further than this (a jump, not a step) moves the lens at once. */
 private const val MaxLensSlideRows = 3f

@@ -28,8 +28,12 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.Dp
@@ -224,4 +228,37 @@ internal fun Modifier.distant(): Modifier {
 
 @Composable
 internal fun previewCorner(): Dp = if (PodiumTheme.colors.isIndustrial) 2.dp else 6.dp
+
+/**
+ * Fades the content out toward its edges, over [left] and [right] at the sides and [vertical] at
+ * the top and bottom, with an eased falloff so no line shows where a fade begins. The two fades
+ * multiply, so the corners round off softly. Clips to the bounds.
+ */
+internal fun Modifier.feathered(left: Dp, right: Dp, vertical: Dp): Modifier =
+    graphicsLayer {
+        compositingStrategy = CompositingStrategy.Offscreen
+        clip = true
+    }.drawWithContent {
+        drawContent()
+        val w = size.width
+        val h = size.height
+        if (w <= 0f || h <= 0f) return@drawWithContent
+        drawRect(Brush.horizontalGradient(*fadeStops(left.toPx() / w, right.toPx() / w)), blendMode = BlendMode.DstIn)
+        drawRect(Brush.verticalGradient(*fadeStops(vertical.toPx() / h, vertical.toPx() / h)), blendMode = BlendMode.DstIn)
+    }
+
+/** Mask stops: clear at both ends, opaque between, easing in over [start] and out over [end] (fractions of the length). */
+private fun fadeStops(start: Float, end: Float): Array<Pair<Float, Color>> {
+    val s = start.coerceIn(0f, 0.5f)
+    val e = end.coerceIn(0f, 0.5f)
+    fun ease(t: Float) = t * t * (3f - 2f * t)
+    val stops = ArrayList<Pair<Float, Color>>()
+    if (s > 0f) for (i in 0..FadeSteps) stops += s * i / FadeSteps to Color.Black.copy(alpha = ease(i / FadeSteps.toFloat()))
+    else stops += 0f to Color.Black
+    if (e > 0f) for (i in FadeSteps downTo 0) stops += 1f - e * i / FadeSteps to Color.Black.copy(alpha = ease(i / FadeSteps.toFloat()))
+    else stops += 1f to Color.Black
+    return stops.toTypedArray()
+}
+
+private const val FadeSteps = 6
 
