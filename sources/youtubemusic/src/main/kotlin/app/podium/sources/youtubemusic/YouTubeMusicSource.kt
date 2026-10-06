@@ -147,7 +147,7 @@ class YouTubeMusicSource internal constructor(
     private fun capabilitiesFor(state: AuthState, app: CapabilityState): SourceCapabilities {
         val signedIn = state is AuthState.SignedIn
         val signIn = CapabilityState(
-            if (state is AuthState.Expired) CapabilityStatus.REQUIRES_SIGN_IN else CapabilityStatus.REQUIRES_SIGN_IN,
+            CapabilityStatus.REQUIRES_SIGN_IN,
             if (state is AuthState.Expired) "Your YouTube Music sign-in expired" else "Sign in to YouTube Music",
             CapabilityAction.SignIn("Sign in"),
         )

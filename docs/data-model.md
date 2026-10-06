@@ -32,6 +32,13 @@ Auto-migration 3 → 4 adds `track_equivalence` (see §3), nothing else. Only tw
 
 `STRONG`/`POSSIBLE` decisions aren't stored. Pairs, not groups: EXACT isn't transitive (a ±2 s window on each side is 4 s across), so a group would assert matches the matcher never made. With a handful of sources, a song has at most a few pairs. Tested by `MigrationTest` (v3 with likes, a listen with `served_by` and a queue opens on v4 intact; `bak-v3` is taken) and `DatabaseEquivalenceStoreTest`.
 
+
+### Schema v5 — media kind; one online service (D-38)
+- `track.media_kind TEXT NOT NULL DEFAULT 'SONG'` (`SONG`, `MUSIC_VIDEO`, `VIDEO`, `EPISODE`): a video found online is never silently a song. AutoMigration 4 → 5, additive; every existing row reads `SONG`.
+- The content hash of existing songs is unchanged: the kind is folded into the hash only for non-songs (`TrackMapping`, the inverse of 31 mod 2³² removes it), so v4 rows don't look modified.
+- Account-scoped online operations (`OnlineDao.deleteLikes/likeAll/likeCount/deletePlaylists`, `OnlineLibraryStore.replaceLikes/forgetAccount`): the online tables were already keyed by account; YouTube Music's account key is `ytm-<sha-256 prefix>` — never a name or e-mail. Signing out deletes that account's likes, playlists and observed history.
+- Tested by `MigrationTest` (v4 → v5 with data) and `SchemaV5Test` (4). Schema JSON `core/database/schemas/…/5.json` committed.
+
 ## 2. Entity overview
 
 ```

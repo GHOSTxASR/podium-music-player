@@ -1,6 +1,6 @@
 # YouTube Music Transition
 
-**Date:** 2026-10-06 · **Status:** proposal (analysis only; no code changed) · **Baseline:** `main` at `6f0e6af` (O11 `7798c59` + database-backup fix)
+**Date:** 2026-10-06 · **Status:** proposal, now implemented — see *Execution outcome* at the end and `YOUTUBE_MUSIC_ARCHITECTURE.md` · **Baseline:** `main` at `6f0e6af` (O11 `7798c59` + database-backup fix)
 **Inputs:** the code at that commit; [decision-log.md](../decision-log.md) (D-13, D-17–D-21, D-34–D-37); [MUSIC_SOURCE_ARCHITECTURE.md](MUSIC_SOURCE_ARCHITECTURE.md); [PLAYBACK_TARGETS.md](PLAYBACK_TARGETS.md); [SOURCE_CAPABILITY_MATRIX.md](SOURCE_CAPABILITY_MATRIX.md); [research/YOUTUBE_SOURCE_INVESTIGATION.md](../research/YOUTUBE_SOURCE_INVESTIGATION.md) (2026-10-04); [research/BITCHORD_ARCHITECTURE_REVIEW.md](../research/BITCHORD_ARCHITECTURE_REVIEW.md) (2026-10-02); BitChord's public README, v1.8 release notes (2026-10-05) and repository metadata.
 
 **Hygiene (ADR-014).** BitChord is a reference, not a base. Its source files weren't opened for this document because the next phase implements Podium's source layer, and ADR-014 rule 2 keeps BitChord's source closed while doing that. Statements about BitChord internals come from the two hygiene-compliant reviews above, which studied its source in prose. Nothing here reproduces code, constants, request shapes or client identities.
@@ -706,3 +706,27 @@ Legend:
 > 5. **Report** results in the transition document's §13.4/§13.5 and the ADR draft.
 >
 > **Hard rules.** No stream extraction or protection bypass of any kind. No GPL code. No InnerTube player calls. No change to Offline, the database, Audius or OpenSubsonic, and no merged product code. STOP after the report.
+
+---
+
+## Execution outcome (2026-10-06)
+
+The staged plan above (Y0 spikes, then Y1…) was superseded the same day by the user's direction to
+implement the whole transition at once (D-38). What was built, against this proposal:
+
+| Proposal | Outcome |
+|---|---|
+| §7 target architecture: one ONLINE `MusicSource`, rendered by the existing Online UI | built: `sources:youtubemusic`; Online menus Home, Search, Library, Radio, History |
+| §8 account options | A2 (the listener's web session from Google's own sign-in page) chosen and built, sealed at rest; the "not before an explicit decision" item in answer 8 was decided by D-38 |
+| §13.4 P2 delegated playback | built (`player:remote`, `OwnerAwarePlaybackController`); U1–U6 still need the phone |
+| §13.5 P1 embedded player | not built (P2 + P0 cover playback; P1 needs a visible video) |
+| §13.6 P0 hand-off | built (fallback and start path) |
+| §15 database | v5 additive (`track.media_kind`); account-scoped online operations |
+| §6 REMOVE list | Audius, OpenSubsonic, configured sources, multi-source aggregation removed; credentials of retired servers deleted at startup; cleartext off again |
+| §6 KEEP list | kept; Offline untouched (all Offline tests pass) |
+| Y0 "decisions to record" | D-38 |
+| Y0 P2 spike on the phone | not possible from the build container; replaced by runtime handling of each unknown and a debug probe (`remote-probe`) |
+
+`research/YOUTUBE_SOURCE_INVESTIGATION.md`, cited above, is not in this repository (it was never
+committed); the evidence for the implementation is in `research/YOUTUBE_MUSIC_IMPLEMENTATION_NOTES.md`.
+

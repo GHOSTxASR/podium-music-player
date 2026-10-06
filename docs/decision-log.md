@@ -261,6 +261,17 @@ Every significant decision, newest at the bottom. Major ones have an ADR in `adr
   - Self-signed certificates aren't supported.
   - Device acceptance and the security audit are recorded in `testing-strategy.md` §4.1 and `security.md` §8.
 
+### D-38 · YouTube Music is ONLINE: unofficial catalogue, the listener's own session, playback in the official app
+- **Context:** user direction (2026-10-06, "execution mission"): make Online a working YouTube Music experience — search, home, albums, artists, playlists, library, likes, history, radio, account — with legitimate playback only, while Offline stays intact; retire Audius/OpenSubsonic and the multi-source machinery carefully. This is the D-20 answer: Y1 (unofficial catalogue) approved, playback by delegation; Y3 stays forbidden (ADR-013).
+- **Decision:**
+  - **One online service.** `sources:youtubemusic` (pure JVM) is the only ONLINE source; `sources:audius`, `sources:subsonic`, configured sources and `MultiSourceCatalog` are removed; stored credentials of retired servers are deleted at startup (`RetiredSources`). The online UI stays provider-free.
+  - **Catalogue** from the music web client's browsing endpoints (`search`, `browse`, `next`; never `player`), `Basis.UNOFFICIAL_API`, page config read at runtime, parsers that fail soft. Signed out it's DEGRADED ("Sign in for the full catalogue").
+  - **Account (A2):** the service's own sign-in page in a locked-down WebView; only the session cookies are kept, sealed by the Keystore credential store; the database sees only a hashed account key. Expiry is detected and reported; sign-out wipes the account's online data.
+  - **Playback (P2, P0):** the official YouTube Music app plays under the listener's account. Podium starts it through its media session (`playFromUri`) or by opening the song's link, then controls and mirrors it through Android's media-session interface (notification-listener access, no notification handling). `OwnerAwarePlaybackController` owns the LOCAL/REMOTE split: hard cuts, the local queue preserved, remote songs never in the local queue. "After choosing a song: Stay here / Show YouTube Music."
+  - **Model:** `MediaKind` on tracks (schema v5, additive); `AccountLibraryFacet`, `AuthFacet.webSignIn`, `RemoteContext`, `RemotePlayback` in the provider-neutral APIs.
+- **Options considered:** OAuth (no YouTube Music library scope); the official embedded player P1 (needs a visible video, no background); Podium-owned audio (forbidden); keeping Audius/OpenSubsonic alongside (user direction: one service).
+- **Tradeoffs / limits:** unofficial basis; a web session gives Podium the account's YouTube Music session (necessary for the library, stated to the listener); embedded-WebView sign-in may be refused by Google; P2 depends on what the app's session exposes (U1–U6); device acceptance pending. Spec: `architecture/YOUTUBE_MUSIC_ARCHITECTURE.md`; evidence: `research/YOUTUBE_MUSIC_IMPLEMENTATION_NOTES.md`; device plan: `testing/YOUTUBE_MUSIC_DEVICE_ACCEPTANCE.md`.
+
 ### D-39 · Lyrics: LRCLIB by metadata, one line on the whole display
 - **Context:** user direction (2026-10-06, "secondary polish mission"): Now Playing ▸ Lyrics, synced when possible, plain without fake timing, a full-screen canvas that alternates light and dark per line, large justified type that never clips, browsing with the Wheel. D-11 already required consent for online lyrics.
 - **Decision:**

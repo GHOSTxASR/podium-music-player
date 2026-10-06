@@ -78,3 +78,24 @@ Scope: the OpenSubsonic source, configured sources, credentials, the network pol
 | Backup | `allowBackup="false"`; a device-to-device copy of `credentials.xml` can't be opened without this phone's Keystore key | OK (documented) |
 | Exceptions | Transport and API errors reduced to class names; ExoPlayer's own error logs carried no URLs in the device run | OK |
 | Breaker | **Fixed:** failures while a breaker was already open lengthened its backoff per call (to 10 min after a short outage) | Fixed |
+
+## 9. YouTube Music, lyrics and appearance audit (2026-10-06)
+Scope: `sources:youtubemusic`, `player:remote`, the sign-in WebView, the online repository, lyrics, the display background picture, and the repository itself. Evidence: code review, unit and Robolectric tests, a secret scan of the tree and its full git history, the merged manifest. **Not** verified on a device (no device reachable from the build container).
+
+| Area | Finding | Result |
+|---|---|---|
+| Google credentials | Sign-in happens on Google's own page in a WebView; Podium never sees the password or second factor; it keeps only session cookies | OK (design) |
+| Session at rest | `{session, account name, account key}` sealed by `KeystoreCredentialStore` (AES-256-GCM, Keystore key); never in the database or plaintext prefs; `WebSession.toString` prints a count | OK |
+| Session in transit | https only, host allow-list, no redirects; cookies and SAPISIDHASH sent only to music.youtube.com | OK |
+| Expiry / revocation | a refused account call (401/403, `logged_in = 0`) deletes the session and shows "sign-in expired"; sign-out wipes the account's online rows, then the session | OK (tests) |
+| Account isolation | online rows keyed by `ytm-<sha-256 prefix>`; likes cache per account with a write counter against stale refreshes | OK (tests) |
+| WebView | JavaScript (required by the page) but no file/content access, no mixed content, no geolocation, no new windows, safe browsing, SSL errors cancel, navigation allow-list, all web state wiped before and after; **`FLAG_SECURE` added in this audit** | Fixed |
+| Logs | no URLs, headers, cookies, account names or song titles in logs; transport exceptions reduced to class names; debug `remote-probe` prints shapes and counts | OK |
+| Exported components | `MainActivity` (launcher; debug commands only in debug builds — release has a no-op); `PlaybackService` (media library service: other apps get read-only commands, custom commands only for Podium's own package); `MediaSessionAccessService` (guarded by `BIND_NOTIFICATION_LISTENER_SERVICE`, handles no notifications); `WebSignInActivity` not exported | OK |
+| Cleartext | `usesCleartextTraffic=false` again (the LAN exception left with OpenSubsonic) | OK |
+| Backup | `allowBackup=false` | OK |
+| Lyrics | title, artist, album and length sent to LRCLIB only after consent (D-11); https only; bounded answers; cache keys are hashes | OK |
+| Background picture | system photo picker, no storage permission; only the URI is stored; persisted read access released when replaced; an unreadable picture falls back silently (log: exception class only) | OK |
+| Repository | no API keys, tokens, cookies, signing keys, local paths with secrets, personal data or databases in the tree or history; test values are invented (`sapi-secret/123`) | OK |
+| Remaining risks | the unofficial basis (D-19) can change without notice; a WebView session grants Podium the account's YouTube Music session (necessary for the library — documented to the listener: "You sign in on the service's own page. Podium never sees your password."); debug builds accept debug intents from any app on the device | Accepted |
+

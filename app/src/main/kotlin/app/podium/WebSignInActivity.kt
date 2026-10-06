@@ -6,6 +6,7 @@ import android.content.Intent
 import android.net.Uri
 import android.net.http.SslError
 import android.os.Bundle
+import android.view.WindowManager
 import android.webkit.CookieManager
 import android.webkit.SslErrorHandler
 import android.webkit.WebResourceRequest
@@ -62,6 +63,8 @@ class WebSignInActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // The account's page: kept out of screenshots, screen recordings and the recents thumbnail.
+        window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
         val graph = (application as PodiumApplication).graph
         val source = intent.getStringExtra(EXTRA_SOURCE)?.let { graph.registry.get(SourceId(it)) }
         val flow = source?.auth?.webSignIn

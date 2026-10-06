@@ -10,6 +10,10 @@ Foundation written 2026-10-02 (Phases 0–2 and source research S0). Read in thi
    - [architecture/PLAYBACK_TARGETS.md](architecture/PLAYBACK_TARGETS.md) — direct streams vs remote providers vs embedded players
    - [architecture/SOURCE_CAPABILITY_MATRIX.md](architecture/SOURCE_CAPABILITY_MATRIX.md) — what each provider officially allows, and Podium's positions
    - [architecture/YOUTUBE_MUSIC_TRANSITION.md](architecture/YOUTUBE_MUSIC_TRANSITION.md) — proposal: replacing Online with YouTube Music while Offline stays frozen (2026-10-06)
+   - [architecture/YOUTUBE_MUSIC_ARCHITECTURE.md](architecture/YOUTUBE_MUSIC_ARCHITECTURE.md) — YouTube Music as built: catalogue, account, delegated playback, owner-aware controller (D-38)
+   - [research/YOUTUBE_MUSIC_IMPLEMENTATION_NOTES.md](research/YOUTUBE_MUSIC_IMPLEMENTATION_NOTES.md) — what was observed live, what is assumed, what needs the phone
+   - [testing/YOUTUBE_MUSIC_DEVICE_ACCEPTANCE.md](testing/YOUTUBE_MUSIC_DEVICE_ACCEPTANCE.md) — the device run (not yet performed)
+   - [implementation/YOUTUBE_MUSIC_FINAL_REPORT.md](implementation/YOUTUBE_MUSIC_FINAL_REPORT.md) — final report: what was built, tests, limits, build and APK
    - [architecture/LYRICS_ARCHITECTURE.md](architecture/LYRICS_ARCHITECTURE.md) — lyrics provider, matching, LRC sync, cache, the full-screen lyric
    - [architecture/PODIUM_CUSTOMIZATION.md](architecture/PODIUM_CUSTOMIZATION.md) — body glitter, display fonts, the Custom theme, backgrounds, contrast, persistence
    - [testing/UI_DEVICE_ACCEPTANCE.md](testing/UI_DEVICE_ACCEPTANCE.md) — on-device steps for focus geometry, customization and lyrics
