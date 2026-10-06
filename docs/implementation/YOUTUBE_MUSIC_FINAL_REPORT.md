@@ -156,7 +156,7 @@ questions only the phone can answer (A-1, U1–U6) and the 28 steps, is
 
 ## 21. Test count
 
-`./gradlew test`: **461 tests, 0 failures, 0 errors, 0 skipped** (JVM unit tests and Robolectric
+`./gradlew test`: **486 tests, 0 failures, 0 errors, 0 skipped** (JVM unit tests and Robolectric
 tests; there are no instrumented `androidTest` suites).
 
 | Module | Tests |
@@ -165,10 +165,10 @@ tests; there are no instrumented `androidTest` suites).
 | player:api | 54 |
 | core:database | 45 |
 | sources:youtubemusic | 41 |
-| core:designsystem | 25 |
-| feature:nowplaying | 21 |
+| core:designsystem | 41 |
+| feature:nowplaying | 23 |
 | app | 20 |
-| core:lyrics | 20 |
+| core:lyrics | 27 |
 | core:interaction | 19 |
 | player:service | 12 |
 | core:model | 10 |
@@ -187,7 +187,7 @@ tests; there are no instrumented `androidTest` suites).
 - Unofficial basis: response shapes can change; parsers fail soft.
 - No playlist editing, no downloads, no service lyrics; remote queue is read-only.
 - Lyrics: LRCLIB's community lyrics need a licensing review before any public release.
-- The debug APK is 50.4 MB (unminified debug code), above GitHub's 50 MB recommendation.
+- The debug APK is 52.2 MB (unminified debug code), above GitHub's 50 MB recommendation.
 
 ## 23. Future work
 
@@ -215,7 +215,13 @@ tests; there are no instrumented `androidTest` suites).
 | `1ed91b7` | docs: record the APK commit in the final report |
 | `ae65bf2` | fix(settings): row labels keep their room; Appearance fits the narrow paper |
 | `10028f5` | build: update verified debug APK artifact |
-| (next) | docs: final report for the updated APK |
+| `c21ac53` | docs: final report for the updated APK |
+| `923abdd` | feat(lyrics): words appear as they are sung |
+| `e40439b` | feat(ui): a loading screen wherever content loads |
+| `b82bc14` | feat(glitter): the glitter catches the light as the phone tilts |
+| `0f3922e` | feat(keyboard): the Wheel becomes a keyboard |
+| `f3a77a1` | build: update verified debug APK artifact |
+| (next) | docs: final report for the third pass |
 
 ## 25. GitHub branch
 
@@ -244,11 +250,11 @@ export ANDROID_HOME=/path/to/android-sdk   # or sdk.dir in local.properties
 | Build type | debug |
 | applicationId | `app.podium.debug` |
 | versionName / versionCode | 0.1.0 / 1 |
-| Size | 50,374,931 bytes |
-| SHA-256 | `e551e02c99489baf82889656b5aab1ba93fc83e5b60db15b0b6036d7c9f69b34` |
-| Signature | Android debug certificate (SHA-256 `e68e65c9…0d4e11`), verified with `apksigner` |
-| Built from | `ae65bf2` (later commits change only documentation and the artifact) |
-| Secret scan of the APK | clean (no API keys, OAuth tokens, private keys, session cookies, test fixtures) |
+| Size | 52,197,115 bytes |
+| SHA-256 | `7b1490dc64832310321220a5dc9dd7e79664fcad828caa3da9b010c4827a2a12` |
+| Signature | Android debug certificate (SHA-256 `e68e65c9…0d4e11`, APK Signature Scheme v2), verified with `apksigner` |
+| Built from | `0f3922e` (later commits change only documentation and the artifact) |
+| Secret scan of the APK | clean (no API keys, OAuth tokens, private keys, session cookies, keystores, databases, test fixtures, local paths) |
 | Installed on a device | **no** |
 | Smoke test on a device | **no** (rendered-UI tests only) |
 
@@ -257,13 +263,13 @@ export ANDROID_HOME=/path/to/android-sdk   # or sdk.dir in local.properties
 ```
 APK STATUS:        BUILT
 APK PATH:          artifacts/apk/podium-debug.apk
-APK SIZE:          50,374,931 bytes (48.0 MiB)
+APK SIZE:          52,197,115 bytes (49.8 MiB)
 BUILD TASK:        ./gradlew :app:assembleDebug
 BUILD TYPE:        debug
 VERSION NAME:      0.1.0
 VERSION CODE:      1
-COMMIT:            10028f5 (artifact commit; built from code at ae65bf2; first artifact 992ad0a superseded)
-BRANCH:            ccr-fcca9ac9-6juw47 (verified on origin: blob size and SHA-256 match)
+COMMIT:            f3a77a1 (artifact commit; built from code at 0f3922e; earlier artifacts 992ad0a, 10028f5 superseded)
+BRANCH:            ccr-fcca9ac9-6juw47 (verified on GitHub: blob c6f8788e, 52,197,115 bytes, matches the build)
 DEVICE INSTALL:    NOT AVAILABLE (no device reachable from the build container)
 DEVICE SMOKE TEST: NOT RUN
 ```
@@ -273,7 +279,7 @@ DEVICE SMOKE TEST: NOT RUN
 | Criterion | Status |
 |---|---|
 | Build | PASS |
-| Unit tests | PASS (461/461) |
+| Unit tests | PASS (486/486) |
 | Integration tests | PASS for Robolectric/JVM integration tests; no instrumented suite exists |
 | Device build | PASS (debug APK built, signed, inspected); not installed |
 | Offline playback / regression | automated PASS; not verified on device |
@@ -305,3 +311,13 @@ DEVICE SMOKE TEST: NOT RUN
   one line on the whole display alternating light and dark, Wheel browsing, seek-to-line only when
   the player can seek, honest states. Docs: `LYRICS_ARCHITECTURE.md`.
 - Device steps for all three: `docs/testing/UI_DEVICE_ACCEPTANCE.md` (not run).
+
+## Third pass (words, loading, tilt glitter, keyboard)
+
+- **Lyrics word by word (D-42):** synced lines now fill in as they're sung. Real word times come from enhanced-LRC stamps or LRCLIB's `lyricsfile`. Otherwise words are paced inside the line's real window by syllables; the first word is always on the line's time. Words fade in at their places in the fixed justified layout. Tests: `WordTimingTest`, the provider's `lyricsfile` case, and two `LyricsScreenTest` frames (words arriving, a line half sung).
+- **Loading (D-43):** one loading screen, Podium's stepping pinwheel and a word, wherever content loads (online pages, library, local library), with a "Searching" row in Search. Nothing shows for the first 150 ms. Test: `LoadingScreenTest`.
+- **Glitter that follows the tilt (D-44):** the gravity sensor (accelerometer fallback), remapped to screen rotation, moves a soft light across the body opposite to the tilt. Flakes in three facing groups catch and lose it, and the best-facing group flares. New settings: Glitter glow and Follow tilt, beside Glitter amount. The sensor listens only while resumed. Tests: `GlitterTiltTest`, and `CustomizationScreenshotTest.glitterFollowsTilt`, which checks the light moves left when tilted right and right when tilted left.
+- **The Wheel becomes a keyboard (D-45):** focusing a text field (Search, a hex colour) turns the Wheel into Podium's keyboard; the close key, Back or leaving the screen turns it back. Settings ▸ Keyboard chooses Podium or Phone. In landscape the phone's keyboard is used. Tests: `KeyboardEditorTest`, and `WheelKeyboardTest` (Steel, Carbon, Glass), which types "Hi 5" with the keys, closes, and reopens with a tap.
+  - Found while testing: Back would have left Search instead of closing the keyboard, because its handler was registered before the navigation's. It is now registered when the keyboard opens.
+  - Found while testing: Delete would have kept repeating with a finger slid off the key. It now stops.
+- Device steps: `docs/testing/UI_DEVICE_ACCEPTANCE.md` §3.14–3.16, §4, §5 and §2 (tilt). **None were run on a device.**
