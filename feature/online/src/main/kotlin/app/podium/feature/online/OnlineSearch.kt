@@ -227,6 +227,7 @@ private fun failureText(error: PodiumError) = when (error) {
     PodiumError.Offline -> "You're offline. Music on this phone still plays."
     is PodiumError.RateLimited -> "Too many requests. Wait a moment and type again."
     is PodiumError.NotFound -> "Turn on an online source in Settings to search."
+    is PodiumError.AuthRequired -> "Sign in to your online source in Settings, then search again."
     else -> "Couldn't reach online music. Check your connection."
 }
 

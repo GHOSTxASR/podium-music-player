@@ -66,6 +66,7 @@ fun OnlineMessage(error: PodiumError?) {
         is PodiumError.RateLimited -> "Too many requests" to "Wait a moment, then go back and try again."
         is PodiumError.NotFound -> "This isn't available" to "It may have been removed. Go back and pick something else."
         is PodiumError.PolicyDisabled -> "This isn't available right now" to "Its online source is turned off. Turn it on in Settings, Online sources."
+        is PodiumError.AuthRequired -> "Sign in to continue" to "This source needs you to sign in again. Go to Settings, Online sources."
         null -> "No online source" to "Turn on an online source in Settings. Music on this phone still plays."
         else -> "Couldn't reach online music" to "Check your connection, then go back and try again."
     }

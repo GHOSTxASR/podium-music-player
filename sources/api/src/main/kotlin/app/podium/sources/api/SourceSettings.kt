@@ -54,6 +54,13 @@ class SourceSettings(
         store.save(current)
     }
 
+    /** A source was removed for good: drop the choices kept about it. */
+    @Synchronized
+    fun forget(id: SourceId) {
+        current = current.copy(enabled = current.enabled - id, priority = current.priority - id)
+        store.save(current)
+    }
+
     /**
      * Move [id] to position [toIndex] among [peers] (e.g. the online sources, as Settings lists them).
      * Sources outside [peers] keep their places: the peers are reordered within the slots they hold.

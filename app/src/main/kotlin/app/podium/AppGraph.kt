@@ -26,6 +26,7 @@ import app.podium.sources.api.ArtworkResolver
 import app.podium.sources.api.SourceHealthMonitor
 import app.podium.sources.api.MusicEnvironment
 import app.podium.sources.api.SourceRegistry
+import app.podium.sources.api.ConfiguredSources
 import app.podium.sources.api.SourceSettings
 import app.podium.sources.api.aggregate.MultiSourceCatalog
 import app.podium.sources.api.aggregate.SourceFanOut
@@ -34,6 +35,7 @@ import app.podium.sources.api.matching.TrackMatcher
 import app.podium.sources.api.resolve.StreamResolver
 import app.podium.sources.audius.AudiusMusicSource
 import app.podium.sources.local.LocalMusicSource
+import app.podium.sources.subsonic.SubsonicSourceFactory
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -76,16 +78,29 @@ class AppGraph(private val context: Context) {
     val localSource = LocalMusicSource(context, appScope)
 
     /** The first online source (D-34): Audius' public catalogue, read anonymously. */
-    val audius = AudiusMusicSource("Podium/${BuildConfig.VERSION_NAME} (Android music player)", onRequest = DiskActivity::pulse)
+    val audius = AudiusMusicSource(USER_AGENT, onRequest = DiskActivity::pulse)
 
     /** Which sources are on and in what order (D-35): stored, applied once every source is registered. */
     val sourceSettings = SourceSettings(registry, SharedPrefsSourcePreferences(context))
+
+    /** Secrets for sources the listener signs in to (D-37): sealed with a Keystore key, never logged. */
+    val credentials = KeystoreCredentialStore(context)
+
+    /** Sources the listener adds (D-37), e.g. their own music server; restored before settings apply. */
+    val configuredSources = ConfiguredSources(
+        registry,
+        sourceSettings,
+        SharedPrefsSourceProfiles(context),
+        credentials,
+        factories = listOf(SubsonicSourceFactory(USER_AGENT)),
+    )
 
     init {
         BuildConfigFlags.checkMirror = BuildConfig.DEBUG
         registry.register(localSource)
         registry.register(audius)
         buildVariantSources(context).forEach { registry.register(it) }
+        configuredSources.restore()
         sourceSettings.apply()
     }
 
@@ -106,7 +121,7 @@ class AppGraph(private val context: Context) {
     val online = AppOnlineRepository(registry, onlineCatalog, onlineStore, catalog, appScope, grouper)
 
     /** Settings ▸ Online sources. */
-    val onlineSources = RegistryOnlineSourceSettings(registry, sourceSettings, appScope)
+    val onlineSources = RegistryOnlineSourceSettings(registry, sourceSettings, configuredSources, health, appScope)
 
     /** The heart on Now Playing: routed to local favorites or ONLINE's liked songs by the song's environment. */
     val favorites = EnvironmentFavorites(localFavorites, online, environments, { catalog.cached(it) ?: libraryStore.track(it) }, appScope)
@@ -210,3 +225,5 @@ class AppGraph(private val context: Context) {
 }
 
 enum class Power { OFF, BOOTING, ON }
+
+private val USER_AGENT = "Podium/${BuildConfig.VERSION_NAME} (Android music player)"

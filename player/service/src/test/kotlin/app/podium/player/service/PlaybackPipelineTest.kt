@@ -33,6 +33,7 @@ import org.robolectric.Shadows.shadowOf
 import java.time.Duration
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -150,6 +151,26 @@ class PlaybackPipelineTest {
         TestPlayerRunHelper.run(engine.player).untilState(Player.STATE_READY)
         assertEquals("Tuning Fork", engine.queue.state.value.current?.track?.title)
         assertTrue(health.canAttempt(primary.descriptor.id), "bad media is per item, the source stays usable")
+    }
+
+    @Test
+    fun `a source that stops serving loses its pins, except the playing item's`() {
+        play("Tuning Fork", "Major Triad", "Minor Turn")
+        TestPlayerRunHelper.run(engine.player).untilState(Player.STATE_READY)
+        val looper = shadowOf(Looper.getMainLooper())
+        var waited = 0
+        while (engine.queue.state.value.items[1].selection == null && waited++ < 100) {
+            Thread.sleep(20)
+            looper.idle()
+        }
+        assertNotNull(engine.queue.state.value.items[1].selection, "the next item is resolved ahead")
+
+        // Turned off (as signing out or removing it would): its pinned URLs may carry its sign-in.
+        registry.setEnabled(primary.descriptor.id, false)
+        looper.idle()
+        val items = engine.queue.state.value.items
+        assertNotNull(items[0].selection, "the playing item keeps its pin: never another source mid-track")
+        assertNull(items[1].selection, "what it would have served next resolves afresh")
     }
 
     @Test
