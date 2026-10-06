@@ -154,6 +154,48 @@ class MigrationTest {
         assertTrue(File(file.parentFile, "${file.name}.bak-v3").isFile, "the v3 file was copied aside before migrating")
     }
 
+    @Test
+    fun `a v4 database opens on v5 with the library, favorites, queue and online rows intact`() = runTest {
+        val file = context.getDatabasePath(PodiumDatabase.FILE_NAME)
+        file.delete()
+        val local = TrackMapping.toEntity(song("Coastline"), inLibrary = true, now = 1)
+        val audius = app.podium.core.model.SourceId("audius")
+        val online = TrackMapping.toEntity(song("Signal", source = audius, key = "123"), inLibrary = false, now = 1)
+        createFromSchema(file, 4) { c ->
+            c.execSQL("INSERT INTO source_account (id, display_name, last_sync_at) VALUES ('local', 'This phone', 1)")
+            c.execSQL("INSERT INTO source_account (id, display_name, last_sync_at) VALUES ('audius', 'audius', NULL)")
+            insertTrack(c, local, inLibrary = true)
+            insertTrack(c, online, inLibrary = false)
+            c.execSQL("INSERT INTO liked_track (track_id, liked_at, sync_state) VALUES ('local|coastline', 5, 'LOCAL_ONLY')")
+            c.execSQL("INSERT INTO online_liked_track (account_key, track_id, source_id, provider_id, liked_at, sync_state) VALUES ('', 'audius|123', 'audius', '123', 7, 'LOCAL_ONLY')")
+            c.execSQL("INSERT INTO queue_state (id, current_index, position_ms, repeat_mode, shuffle_enabled, context_label, updated_at) VALUES (1, 0, 4200, 'ALL', 1, 'Woodland', 9)")
+            c.execSQL("INSERT INTO queue_item (ordinal, original_ordinal, track_id, origin) VALUES (0, 0, 'local|coastline', 'CONTEXT')")
+        }
+
+        val db = PodiumDatabase.create(context)
+        try {
+            val library = LibraryStore(db)
+            val coastline = library.track(TrackId("local|coastline"))!!
+            assertEquals("Coastline", coastline.title)
+            assertEquals(app.podium.core.model.MediaKind.SONG, coastline.kind, "existing rows are songs")
+            assertEquals(listOf("local|coastline"), db.likes().likedIds().first())
+            val queue = DatabaseQueueStore(db).load()!!
+            assertEquals(4200, queue.positionMs)
+            assertEquals(app.podium.player.api.RepeatMode.ALL, queue.repeatMode)
+            assertTrue(queue.shuffleEnabled)
+            assertEquals(setOf(TrackId("audius|123")), OnlineLibraryStore(db).likedIds().first())
+            // The library row's content hash is what v5 computes for it: an upgrade rewrites nothing.
+            assertEquals(local.contentHash, TrackMapping.contentHash(TrackMapping.toEntity(coastline, inLibrary = true, now = 2)))
+            // The new column keeps a video a video.
+            val video = song("Live at the Hall", source = app.podium.core.model.SourceId("ytmusic"), key = "abcdefghijk").copy(kind = app.podium.core.model.MediaKind.VIDEO)
+            OnlineLibraryStore(db).setLiked(video, true, account = "ytm-1")
+            assertEquals(app.podium.core.model.MediaKind.VIDEO, OnlineLibraryStore(db).likedTracks("ytm-1").first().single().kind)
+        } finally {
+            db.close()
+        }
+        assertTrue(File(file.parentFile, "${file.name}.bak-v4").isFile, "the v4 file was copied aside before migrating")
+    }
+
     private fun insertTrack(c: androidx.sqlite.SQLiteConnection, song: TrackEntity, inLibrary: Boolean) {
         c.prepare(
             "INSERT INTO track (id, source_id, source_track_id, title, title_sort, artist_display, artist_id, artists_json, album_id, " +

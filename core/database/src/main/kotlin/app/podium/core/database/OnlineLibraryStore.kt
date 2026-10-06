@@ -49,6 +49,38 @@ class OnlineLibraryStore(
         }
     }
 
+    /**
+     * The account's likes as the account itself reports them, newest first: replaces what was kept
+     * for [account] (YOUTUBE_MUSIC_ARCHITECTURE §7, "the account is authoritative").
+     */
+    suspend fun replaceLikes(account: String, tracks: List<Track>) {
+        remember(tracks)
+        val at = now()
+        db.withWriteTransaction {
+            dao.deleteLikes(account)
+            dao.likeAll(
+                tracks.distinctBy { it.id }.mapIndexed { i, t ->
+                    OnlineLikedTrackEntity(account, t.id.value, t.source.sourceId.value, t.source.providerKey, at - i, syncState = "SYNCED")
+                },
+            )
+        }
+    }
+
+    /**
+     * Everything kept for one account — likes, playlists, history — goes (sign-out). Other accounts'
+     * rows, the device's own online rows and the local library are untouched.
+     */
+    suspend fun forgetAccount(account: String) {
+        require(account != DEVICE) { "the device's own online library isn't an account" }
+        db.withWriteTransaction {
+            dao.deleteLikes(account)
+            dao.deletePlaylists(account)
+            dao.clearHistory(account)
+        }
+    }
+
+    suspend fun likeCount(account: String = DEVICE): Int = dao.likeCount(account)
+
     // --- Playlists ----------------------------------------------------------------------------------------
 
     fun playlists(account: String = DEVICE): Flow<List<OnlinePlaylistInfo>> =

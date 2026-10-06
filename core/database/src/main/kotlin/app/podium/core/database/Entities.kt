@@ -80,6 +80,11 @@ data class TrackEntity(
     /** Hash of everything above, so a sync rewrites only rows that changed. */
     @ColumnInfo(name = "content_hash") val contentHash: Int,
     @ColumnInfo(name = "updated_at") val updatedAt: Long,
+    /**
+     * Schema v5: song, music video, video or episode (core.model.MediaKind). Must stay the last
+     * property: [TrackMapping.contentHash] relies on it to keep songs' hashes as they were in v4.
+     */
+    @ColumnInfo(name = "media_kind", defaultValue = "SONG") val mediaKind: String = "SONG",
 )
 
 /** Derived from the songs at sync time; owned by one source, rebuilt with it. */

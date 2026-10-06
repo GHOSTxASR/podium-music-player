@@ -35,6 +35,15 @@ interface OnlineDao {
     @Query("DELETE FROM online_liked_track WHERE account_key = :account AND track_id = :trackId")
     suspend fun unlike(account: String, trackId: String)
 
+    @Query("DELETE FROM online_liked_track WHERE account_key = :account")
+    suspend fun deleteLikes(account: String)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun likeAll(likes: List<OnlineLikedTrackEntity>)
+
+    @Query("SELECT COUNT(*) FROM online_liked_track WHERE account_key = :account")
+    suspend fun likeCount(account: String): Int
+
     // --- Playlists -----------------------------------------------------------------------------------
 
     @Query(
@@ -70,6 +79,9 @@ interface OnlineDao {
 
     @Query("DELETE FROM online_playlist WHERE id = :id")
     suspend fun deletePlaylist(id: String)
+
+    @Query("DELETE FROM online_playlist WHERE account_key = :account")
+    suspend fun deletePlaylists(account: String)
 
     @Insert
     suspend fun insertEntries(entries: List<OnlinePlaylistTrackEntity>)

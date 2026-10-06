@@ -11,6 +11,7 @@ import app.podium.core.model.Availability
 import app.podium.core.model.Codec
 import app.podium.core.model.Explicitness
 import app.podium.core.model.LibraryGrouping
+import app.podium.core.model.MediaKind
 import app.podium.core.model.PartialDate
 import app.podium.core.model.PlaybackRoute
 import app.podium.core.model.RecordingIdentifiers
@@ -70,12 +71,28 @@ internal object TrackMapping {
             removedAt = null,
             contentHash = 0,
             updatedAt = now,
+            mediaKind = track.kind.name,
         )
         return base.copy(contentHash = contentHash(base))
     }
 
-    /** Everything that describes the song (not bookkeeping), so an unchanged song isn't rewritten. */
-    fun contentHash(e: TrackEntity): Int = e.copy(inLibrary = true, removedAt = null, contentHash = 0, updatedAt = 0).hashCode()
+    /**
+     * Everything that describes the song (not bookkeeping), so an unchanged song isn't rewritten.
+     *
+     * Schema v5 appended `media_kind` as the entity's last property, which turns the data-class hash
+     * `h` of the v4 fields into `31 * h + kind.hashCode()`. For songs — every library row — the v4
+     * hash is recovered by undoing that last step (31 is odd, so it has an inverse modulo 2^32), so an
+     * upgraded library is never rewritten just because the column appeared.
+     */
+    fun contentHash(e: TrackEntity): Int {
+        val h = e.copy(inLibrary = true, removedAt = null, contentHash = 0, updatedAt = 0).hashCode()
+        return if (e.mediaKind == SONG) (h - SONG.hashCode()) * INVERSE_OF_31 else h
+    }
+
+    private const val SONG = "SONG"
+
+    /** 31 × 0xBDEF7BDF ≡ 1 (mod 2^32). */
+    private const val INVERSE_OF_31 = 0xBDEF7BDF.toInt()
 
     fun toTrack(e: TrackEntity): Track {
         val source = SourceId(e.sourceId)
@@ -99,6 +116,7 @@ internal object TrackMapping {
             advertisedQualities = e.qualitiesJson?.let { json.decodeFromString(ListSerializer(QualityDto.serializer()), it).map(QualityDto::toQuality) }.orEmpty(),
             availability = decodeAvailability(e.availability),
             routes = e.routes.split(',').filter { it.isNotEmpty() }.mapNotNull { runCatching { PlaybackRoute.valueOf(it) }.getOrNull() }.toSet(),
+            kind = runCatching { MediaKind.valueOf(e.mediaKind) }.getOrDefault(MediaKind.SONG),
         )
     }
 
