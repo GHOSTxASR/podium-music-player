@@ -10,4 +10,5 @@ android {
 dependencies {
     api(project(":core:interaction"))
     implementation(libs.backdrop)
+    implementation(libs.androidx.lifecycle.runtime.compose)
 }

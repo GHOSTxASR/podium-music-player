@@ -20,7 +20,12 @@ import app.podium.core.designsystem.theme.PodiumTheme
  * device.
  */
 @Composable
-fun DeviceBody(palette: ShellPalette, modifier: Modifier = Modifier) {
+fun DeviceBody(
+    palette: ShellPalette,
+    modifier: Modifier = Modifier,
+    /** Fixes the glitter's tilt (previews and tests have no motion sensors); null follows the phone. */
+    glitterTilt: Offset? = null,
+) {
     val duration = if (PodiumTheme.motion.reduced) 0 else 420
     val top by animateColorAsState(palette.bodyTop, tween(duration), label = "bodyTop")
     val bottom by animateColorAsState(palette.bodyBottom, tween(duration), label = "bodyBottom")
@@ -42,6 +47,6 @@ fun DeviceBody(palette: ShellPalette, modifier: Modifier = Modifier) {
                 }
             }
             .grain { grain }
-            .glitter(palette.glitter, palette.glitterLight, palette.glitterDark),
+            .glitter(palette.glitter, palette.glitterLight, palette.glitterDark, glitterTilt),
     )
 }

@@ -49,9 +49,12 @@ On the device:
 | # | Step | Expect |
 |---|---|---|
 | 2.1 | Fresh install, or upgrade from the previous build | the device looks exactly as before |
-| 2.2 | Settings ▸ Appearance ▸ Device body ▸ Glitter: On (Steel gray) | fine specks in the body, no sparkle, the Wheel clean; nothing moves |
-| 2.3 | Turn amount / density / size / opacity up and down | the body updates as the Wheel turns; Center keeps; Menu restores |
-| 2.4 | Glitter animation: Subtle; watch 30 s; then lock the phone for a minute | a very slow glint; no jank in lists; battery and GPU use are unchanged in Android's GPU profiler bars (stays well under the frame budget) |
+| 2.2 | Settings ▸ Appearance ▸ Device body ▸ Glitter: On (Steel gray) | fine specks in the body, gently glowing in the middle; the Wheel clean |
+| 2.3 | Tilt the phone right, then left, slowly; then the top away and back | the glow slides left, then right; down, then back; different specks catch and lose the light; no jumps |
+| 2.3a | Hold the phone still at your usual angle for 10 s | the glow settles in the middle; nothing moves |
+| 2.3b | Glitter glow to 0 %, then 100 %; Glitter amount up and down | 0 %: even flakes, no moving light; 100 %: strong glow and flare under the light; amount changes how many flakes catch it |
+| 2.3c | Follow tilt: Off | the light stays in the middle whatever the tilt |
+| 2.4 | Glitter on, tilt for a minute; then leave the phone still; then lock it | smooth lists while tilting; GPU bars well under the frame budget; no redraws while still (Profile GPU rendering); sensor stops when locked (`adb shell dumpsys sensorservice` shows no Podium listener) |
 | 2.5 | Virtual display ▸ Font: turn through all six | the whole display restyles live; rows stay aligned; nothing clipped; the Wheel's MENU unchanged |
 | 2.6 | Pixel and Mono with long titles, CJK, Cyrillic and Greek titles | uncovered strings in Inter, whole; nothing clipped |
 | 2.7 | Theme ▸ Custom; Background color: walk the hue all the way round | text readable at every colour |

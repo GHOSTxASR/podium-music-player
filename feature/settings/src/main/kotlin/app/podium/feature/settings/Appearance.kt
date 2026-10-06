@@ -58,6 +58,7 @@ import kotlin.math.roundToInt
 enum class AppearanceLevel(val label: String, val step: Float) {
     Grain("Grain", 0.04f),
     GlitterAmount("Glitter amount", 0.05f),
+    GlitterGlow("Glitter glow", 0.05f),
     GlitterDensity("Glitter density", 0.05f),
     GlitterSize("Glitter size", 0.05f),
     GlitterOpacity("Glitter opacity", 0.05f),
@@ -67,6 +68,7 @@ enum class AppearanceLevel(val label: String, val step: Float) {
     fun read(a: DeviceAppearance): Float = when (this) {
         Grain -> a.grain
         GlitterAmount -> a.glitter.amount
+        GlitterGlow -> a.glitter.glow
         GlitterDensity -> a.glitter.density
         GlitterSize -> a.glitter.size
         GlitterOpacity -> a.glitter.opacity
@@ -78,6 +80,7 @@ enum class AppearanceLevel(val label: String, val step: Float) {
         return when (this) {
             Grain -> a.copy(grain = v)
             GlitterAmount -> a.copy(glitter = a.glitter.copy(amount = v))
+            GlitterGlow -> a.copy(glitter = a.glitter.copy(glow = v))
             GlitterDensity -> a.copy(glitter = a.glitter.copy(density = v))
             GlitterSize -> a.copy(glitter = a.glitter.copy(size = v))
             GlitterOpacity -> a.copy(glitter = a.glitter.copy(opacity = v))
@@ -88,7 +91,7 @@ enum class AppearanceLevel(val label: String, val step: Float) {
     /** Why this level can't be adjusted right now (title, next step), or null when it can. */
     fun unavailable(a: DeviceAppearance): Pair<String, String>? = when (this) {
         Grain -> if (a.isGlass) "Grain needs a solid finish" to "Choose a finish other than Glass, then come back here." else null
-        GlitterAmount, GlitterDensity, GlitterSize, GlitterOpacity -> when {
+        GlitterAmount, GlitterGlow, GlitterDensity, GlitterSize, GlitterOpacity -> when {
             a.isGlass -> "Glitter needs a solid finish" to "Choose a finish other than Glass, then come back here."
             !a.glitter.enabled -> "Glitter is off" to "Turn Glitter on in Device body, then come back here."
             else -> null
@@ -140,7 +143,7 @@ fun AppearanceScreen(repository: DeviceSettingsRepository, onDeviceBody: () -> U
     }
 }
 
-private enum class BodyRow { Finish, CustomColor, Grain, Glitter, GlitterAmount, GlitterDensity, GlitterSize, GlitterOpacity, GlitterAnimation }
+private enum class BodyRow { Finish, CustomColor, Grain, Glitter, GlitterAmount, GlitterGlow, GlitterTilt, GlitterDensity, GlitterSize, GlitterOpacity }
 
 /** Settings ▸ Appearance ▸ Device body: finish, grain and glitter. */
 @Composable
@@ -168,12 +171,13 @@ fun DeviceBodyScreen(
                 repository.setAppearance(appearance.copy(glitter = appearance.glitter.copy(enabled = !appearance.glitter.enabled)))
             }
             BodyRow.GlitterAmount -> level(AppearanceLevel.GlitterAmount)
+            BodyRow.GlitterGlow -> level(AppearanceLevel.GlitterGlow)
             BodyRow.GlitterDensity -> level(AppearanceLevel.GlitterDensity)
             BodyRow.GlitterSize -> level(AppearanceLevel.GlitterSize)
             BodyRow.GlitterOpacity -> level(AppearanceLevel.GlitterOpacity)
-            BodyRow.GlitterAnimation -> if (!glitterOn) haptics.reject() else {
+            BodyRow.GlitterTilt -> if (!glitterOn) haptics.reject() else {
                 haptics.confirm()
-                repository.setAppearance(appearance.copy(glitter = appearance.glitter.copy(animated = !appearance.glitter.animated)))
+                repository.setAppearance(appearance.copy(glitter = appearance.glitter.copy(tilt = !appearance.glitter.tilt)))
             }
         }
     }
@@ -218,16 +222,12 @@ fun DeviceBodyScreen(
                 showChevron = false,
             )
             BodyRow.GlitterAmount -> MenuRow("Glitter amount", focused, value = percent(appearance.glitter.amount), enabled = glitterOn, showChevron = glitterOn)
+            BodyRow.GlitterGlow -> MenuRow("Glitter glow", focused, value = percent(appearance.glitter.glow), enabled = glitterOn, showChevron = glitterOn)
+            // The light on the flakes follows the phone's tilt (motion sensors), or stays put.
+            BodyRow.GlitterTilt -> MenuRow("Follow tilt", focused, value = if (appearance.glitter.tilt) "On" else "Off", enabled = glitterOn, showChevron = false)
             BodyRow.GlitterDensity -> MenuRow("Glitter density", focused, value = percent(appearance.glitter.density), enabled = glitterOn, showChevron = glitterOn)
             BodyRow.GlitterSize -> MenuRow("Glitter size", focused, value = percent(appearance.glitter.size), enabled = glitterOn, showChevron = glitterOn)
             BodyRow.GlitterOpacity -> MenuRow("Glitter opacity", focused, value = percent(appearance.glitter.opacity), enabled = glitterOn, showChevron = glitterOn)
-            BodyRow.GlitterAnimation -> MenuRow(
-                "Glitter animation",
-                focused,
-                value = if (appearance.glitter.animated) "Subtle" else "Off",
-                enabled = glitterOn,
-                showChevron = false,
-            )
         }
     }
 }

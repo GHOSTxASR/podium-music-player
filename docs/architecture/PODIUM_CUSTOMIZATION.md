@@ -109,19 +109,32 @@ font or a colour on its own.
 - **What it is:** fine reflective flakes embedded in the body's material, like metal-flake paint
   seen up close. Most flakes face away from the light (darker specks in the body's own colour, a
   little deeper); some catch it (lighter, less saturated — silvery on dark bodies). No stars, no
-  sparkle, no motion by default.
+  sparkle on top.
+- **It follows the phone (D-44).** A soft light sits over the body. Held level, it rests in the
+  middle and the flakes glow gently there. Tilting the phone moves it the other way — tilt right,
+  the glow slides left; tilt the top away, it slides down — and turns different flakes towards it:
+  lit flakes face one of three ways, each group brightening as the tilt faces it to the light and
+  fading as it turns away, while the best-facing flakes flare where the light falls. Roll is
+  absolute (level is straight); pitch is measured against the angle you usually hold the phone at,
+  which the light adapts to over a few seconds.
 - **Settings** (Device body): Glitter Off/On; Glitter amount (the share of flakes catching the
-  light), density (flakes per area), size (≈ 0.4–1.4 dp), opacity; Glitter animation Off/Subtle.
-  Defaults when turned on: amount 40 %, density 35 %, size 30 %, opacity 50 %, animation off.
-  Solid finishes only (Glass has no material to hold flakes); the matte black hardware of Carbon,
-  Bone and Custom gets silver flakes.
+  light); Glitter glow (how strongly the flakes glow where the light falls; 0 is flat, even light);
+  Follow tilt On/Off (motion sensors); Glitter density, size and opacity. Defaults when turned on:
+  amount 40 %, glow 60 %, follow tilt on, density 35 %, size 30 %, opacity 50 %. Solid finishes only
+  (Glass has no material to hold flakes); the matte black hardware of Carbon, Bone and Custom gets
+  silver flakes.
+- **Sensors:** the gravity sensor (the accelerometer, smoothed more, where there's no gravity
+  sensor) at game rate, registered only between the activity's resume and pause and only while
+  glitter is on, glow is above zero, Follow tilt is on and reduced motion is off. Readings are
+  remapped to the screen's rotation and lightly smoothed (`TiltFilter`, pure and tested). The body
+  is redrawn only when the tilt moves by more than a small step — a phone lying still draws nothing.
+  No sensor: the light stays in the middle.
 - **Rendering:** `GlitterField` places flakes in a 512 px tile, seeded, so the pattern never changes
-  between launches; it is rasterised once per setting (two white alpha tiles, quantised to 5 %
-  steps, three cached) and drawn as two repeated-shader rects tinted with the body's colours.
-  Static glitter costs two tiled draws when the body redraws; there is no per-frame work.
-- **Subtle animation:** a soft diagonal glint crosses the lit flakes over 14 s, as if the device were
-  tilted under a lamp. It updates about 12 times a second, only redraws the body, suspends while no
-  frames are drawn (screen off, app in the background), and is off with reduced motion.
+  between launches; it is rasterised once per setting into four white alpha tiles (three facing
+  groups of lit flakes, and the dull flakes), cached, and drawn as repeated-shader rects tinted with
+  the body's colours: the dull specks, each lit group through a radial light mask, one additive
+  flare for the best-facing group, and a faint glaze. Eight cheap draws per redraw; none per frame
+  while still.
 - The Wheel and buttons never glitter (separate pieces).
 
 ## 7. Persistence
@@ -142,8 +155,9 @@ Settings
     │   ├── Custom color ▸ (hex or Wheel hue walk)
     │   ├── Grain ▸ (level)
     │   ├── Glitter (Off / On)
-    │   ├── Glitter amount ▸   Glitter density ▸   Glitter size ▸   Glitter opacity ▸ (levels)
-    │   └── Glitter animation (Off / Subtle)
+    │   ├── Glitter amount ▸   Glitter glow ▸ (levels)
+    │   ├── Follow tilt (On / Off)
+    │   └── Glitter density ▸   Glitter size ▸   Glitter opacity ▸ (levels)
     └── Virtual display
         ├── Theme ▸ (Glass, Carbon, Bone, Custom)
         ├── Font ▸ (Classic, Clean, Industrial, Mono, Pixel, Condensed)

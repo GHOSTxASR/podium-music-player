@@ -27,7 +27,7 @@ class DeviceSettingsPersistenceTest {
             preset = FinishPreset.BURGUNDY,
             grain = 0.4f,
             display = DisplayTheme.CUSTOM,
-            glitter = Glitter(enabled = true, amount = 0.6f, density = 0.7f, size = 0.2f, opacity = 0.35f, animated = true),
+            glitter = Glitter(enabled = true, amount = 0.6f, density = 0.7f, size = 0.2f, opacity = 0.35f, glow = 0.8f, tilt = false),
             screen = VirtualDisplay(
                 font = DisplayFont.PIXEL,
                 background = DisplayBackground.IMAGE,

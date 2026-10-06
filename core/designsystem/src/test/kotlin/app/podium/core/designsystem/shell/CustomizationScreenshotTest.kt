@@ -130,6 +130,37 @@ class CustomizationScreenshotTest {
     }
 
     @Test
+    fun glitterFollowsTilt() {
+        RuntimeEnvironment.setQualifiers("w411dp-h891dp-port-420dpi")
+        var tilt by mutableStateOf(androidx.compose.ui.geometry.Offset.Zero)
+        val body = DeviceAppearance(FinishPreset.STEEL_GRAY, glitter = Glitter(enabled = true, density = 0.6f, amount = 0.5f, glow = 1f))
+        compose.setContent {
+            PodiumTheme(darkTheme = true) {
+                DeviceBody(body.palette(true), Modifier.fillMaxSize(), glitterTilt = tilt)
+            }
+        }
+        val shots = mutableMapOf<String, Bitmap>()
+        for ((name, t) in listOf("level" to androidx.compose.ui.geometry.Offset.Zero, "tilt-right" to androidx.compose.ui.geometry.Offset(-0.8f, 0f), "tilt-left" to androidx.compose.ui.geometry.Offset(0.8f, 0f))) {
+            tilt = t
+            shots[name] = shot("glitter-$name")
+        }
+        // Tilted right, the light (and the brightest flakes) moves left: the left half outshines the right.
+        fun brightness(b: Bitmap, left: Boolean): Double {
+            var sum = 0.0
+            val x0 = if (left) 0 else b.width / 2
+            for (y in 0 until b.height step 4) for (x in x0 until x0 + b.width / 2 step 4) {
+                val c = b.getPixel(x, y)
+                sum += ((c shr 16) and 0xFF) + ((c shr 8) and 0xFF) + (c and 0xFF)
+            }
+            return sum
+        }
+        val right = shots.getValue("tilt-right")
+        assertTrue(brightness(right, left = true) > brightness(right, left = false), "light moves left when tilted right")
+        val left = shots.getValue("tilt-left")
+        assertTrue(brightness(left, left = false) > brightness(left, left = true), "light moves right when tilted left")
+    }
+
+    @Test
     fun everyDisplayFont() {
         setUp()
         for (font in DisplayFont.entries) {

@@ -36,7 +36,8 @@ class SharedPrefsDeviceSettings(context: Context) : DeviceSettingsRepository {
                 density = prefs.getFloat(KEY_GLITTER_DENSITY, Glitter.DEFAULT_DENSITY).coerceIn(0f, 1f),
                 size = prefs.getFloat(KEY_GLITTER_SIZE, Glitter.DEFAULT_SIZE).coerceIn(0f, 1f),
                 opacity = prefs.getFloat(KEY_GLITTER_OPACITY, Glitter.DEFAULT_OPACITY).coerceIn(0f, 1f),
-                animated = prefs.getBoolean(KEY_GLITTER_ANIMATED, false),
+                glow = prefs.getFloat(KEY_GLITTER_GLOW, Glitter.DEFAULT_GLOW).coerceIn(0f, 1f),
+                tilt = prefs.getBoolean(KEY_GLITTER_TILT, true),
             ),
             screen = VirtualDisplay(
                 font = enumOf(prefs.getString(KEY_DISPLAY_FONT, null), DisplayFont.CLASSIC),
@@ -123,7 +124,9 @@ class SharedPrefsDeviceSettings(context: Context) : DeviceSettingsRepository {
                 putFloat(KEY_GLITTER_DENSITY, density)
                 putFloat(KEY_GLITTER_SIZE, size)
                 putFloat(KEY_GLITTER_OPACITY, opacity)
-                putBoolean(KEY_GLITTER_ANIMATED, animated)
+                putFloat(KEY_GLITTER_GLOW, glow)
+                putBoolean(KEY_GLITTER_TILT, tilt)
+                remove(KEY_GLITTER_ANIMATED) // replaced by tilt (D-44)
             }
             with(appearance.screen) {
                 putString(KEY_DISPLAY_FONT, font.name)
@@ -165,6 +168,8 @@ class SharedPrefsDeviceSettings(context: Context) : DeviceSettingsRepository {
         const val KEY_GLITTER_SIZE = "glitter_size"
         const val KEY_GLITTER_OPACITY = "glitter_opacity"
         const val KEY_GLITTER_ANIMATED = "glitter_animated"
+        const val KEY_GLITTER_GLOW = "glitter_glow"
+        const val KEY_GLITTER_TILT = "glitter_tilt"
         const val KEY_DISPLAY_FONT = "display_font"
         const val KEY_DISPLAY_BACKGROUND = "display_background"
         const val KEY_DISPLAY_SOLID = "display_solid"
