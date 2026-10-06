@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import app.podium.core.common.Clock
 import app.podium.core.common.DiskActivity
+import app.podium.core.database.DatabaseEquivalenceStore
 import app.podium.core.database.DatabaseFavorites
 import app.podium.core.database.DatabaseQueueStore
 import app.podium.core.database.LibraryStore
@@ -29,7 +30,6 @@ import app.podium.sources.api.SourceSettings
 import app.podium.sources.api.aggregate.MultiSourceCatalog
 import app.podium.sources.api.aggregate.SourceFanOut
 import app.podium.sources.api.aggregate.TrackGrouper
-import app.podium.sources.api.resolve.InMemoryEquivalenceStore
 import app.podium.sources.api.matching.TrackMatcher
 import app.podium.sources.api.resolve.StreamResolver
 import app.podium.sources.audius.AudiusMusicSource
@@ -43,6 +43,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 
 /**
  * The composition root (ADR-009): every long-lived object is built here, once. Nothing below this
@@ -55,11 +56,18 @@ class AppGraph(private val context: Context) {
     val health = SourceHealthMonitor(clock)
     val registry = SourceRegistry(health)
     val matcher = TrackMatcher()
-    /** Which copies on different sources are the same recording (D-35): learnt from searches, used to play a twin. */
-    val equivalence = InMemoryEquivalenceStore()
-    val resolver = StreamResolver(registry, health, matcher, clock, equivalence = equivalence)
     /** The library database (ADR-004, D-31): library cache, favorites, the saved queue. */
     val database = PodiumDatabase.create(context)
+
+    /**
+     * Which copies on different sources are the same recording (D-35, D-36): EXACT matches learnt from
+     * searches and the listener's "not the same song", kept across restarts; used to play a twin.
+     */
+    val equivalence = DatabaseEquivalenceStore(database, appScope).also { store -> appScope.launch { store.load() } }
+    val resolver = StreamResolver(registry, health, matcher, clock, equivalence = equivalence)
+
+    /** Groups copies into one song at EXACT only, never a pair the listener rejected (D-35, D-36). */
+    private val grouper = TrackGrouper(matcher, equivalence::isRejected)
     val libraryStore = LibraryStore(database)
     val catalog = TrackCatalog(registry) { id -> libraryStore.track(id) }
     val queueStore = DatabaseQueueStore(database)
@@ -94,8 +102,8 @@ class AppGraph(private val context: Context) {
     /** ONLINE's own library: liked songs, playlists, history (D-34). */
     val onlineStore = OnlineLibraryStore(database)
     /** Every enabled online source as one catalogue (D-35). */
-    val onlineCatalog = MultiSourceCatalog(registry, MusicEnvironment.ONLINE, SourceFanOut(health), TrackGrouper(matcher), equivalence)
-    val online = AppOnlineRepository(registry, onlineCatalog, onlineStore, catalog, appScope, TrackGrouper(matcher))
+    val onlineCatalog = MultiSourceCatalog(registry, MusicEnvironment.ONLINE, SourceFanOut(health), grouper, equivalence)
+    val online = AppOnlineRepository(registry, onlineCatalog, onlineStore, catalog, appScope, grouper)
 
     /** Settings ▸ Online sources. */
     val onlineSources = RegistryOnlineSourceSettings(registry, sourceSettings, appScope)

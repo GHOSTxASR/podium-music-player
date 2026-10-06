@@ -87,11 +87,12 @@ data class NowPlayingItem(
     val durationMs: Long?,
     val indexInQueue: Int,
     val queueSize: Int,
-    /** Display name of the source actually serving the audio. */
+    /**
+     * Provenance, for history, logs and diagnostics — never shown in normal Now Playing (D-36):
+     * the source actually serving the audio (its display name and id) and how it was reached.
+     */
     val servedByDisplayName: String?,
-    /** How it was reached; non-OWN_SOURCE paths are surfaced to the user. */
     val resolutionPath: ResolutionPath?,
-    /** The source actually serving the audio — for history, never for display (D-35). */
     val servedBy: SourceId? = null,
 )
 

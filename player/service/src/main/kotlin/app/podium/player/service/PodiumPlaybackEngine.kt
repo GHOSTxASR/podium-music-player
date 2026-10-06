@@ -82,7 +82,10 @@ class PodiumPlaybackEngine(
     // Declared before init: the watchers started there run immediately (main dispatcher).
     private val autoplay = AutoplayEngine(
         // Suggestions may come from any source of the current song's environment, never another (D-34, D-35).
-        sameEnvironment = { a, b -> deps.registry.get(a)?.descriptor?.environment == deps.registry.get(b)?.descriptor?.environment },
+        sameEnvironment = { a, b ->
+            val environment = deps.registry.get(a)?.descriptor?.environment
+            environment != null && environment == deps.registry.get(b)?.descriptor?.environment
+        },
         equivalents = { deps.equivalence?.exactEquivalents(it).orEmpty() },
     )
     private var autoplayJob: Job? = null

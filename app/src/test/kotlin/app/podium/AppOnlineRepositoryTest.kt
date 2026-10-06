@@ -66,11 +66,42 @@ class AppOnlineRepositoryTest {
         registry.register(b)
     }
 
+    /** As the app wires it: the grouper never joins a pair the listener rejected. */
+    private val grouper = TrackGrouper(rejected = equivalence::isRejected)
+
     private val repository = AppOnlineRepository(
         registry,
-        MultiSourceCatalog(registry, MusicEnvironment.ONLINE, SourceFanOut(health, 2_000), TrackGrouper(), equivalence),
-        store, catalog, scope,
+        MultiSourceCatalog(registry, MusicEnvironment.ONLINE, SourceFanOut(health, 2_000), grouper, equivalence),
+        store, catalog, scope, grouper,
     )
+
+    @Test
+    fun `two copies the listener said differ are shown as two songs`() = run {
+        val onA = a.tracks.first { it.title == "Song Shared" }
+        val onB = b.tracks.first { it.title == "Song Shared" }
+        equivalence.reject(onA, onB)
+        val results = (repository.search("Song Shared", 0, 20).last() as Outcome.Success).value
+        assertEquals(listOf(onA.id, onB.id), results.tracks.map { it.id })
+        assertTrue(equivalence.exactEquivalents(onA).isEmpty())
+    }
+
+    @Test
+    fun `turning a source off keeps its likes, listens and playlist entries intact`() = run {
+        val fromA = a.tracks.first()
+        val fromB = b.tracks.first()
+        repository.setLiked(fromA, true)
+        repository.setLiked(fromB, true)
+        store.record(fromB, startedAt = 1, playedMs = 60_000)
+        val playlist = repository.createPlaylist("Mixed", listOf(fromA, fromB))
+        repository.likedIds.first { it.size == 2 }
+
+        SourceSettings(registry, InMemorySourcePreferencesStore()).setEnabled(b.sourceId, false)
+
+        assertEquals(setOf(fromA.id, fromB.id), repository.likedTracks.first { it.size == 2 }.map { it.id }.toSet())
+        assertEquals(fromB.id, repository.recentlyPlayed.first { it.isNotEmpty() }.single().id)
+        assertEquals(listOf(fromA.id, fromB.id), repository.playlist(playlist).first { it != null }!!.entries.map { it.track.id })
+        assertEquals(b.sourceId, store.listens().single().sourceId.let(::SourceId))
+    }
 
     @After
     fun close() {

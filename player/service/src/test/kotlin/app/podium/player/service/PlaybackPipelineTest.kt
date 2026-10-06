@@ -102,6 +102,18 @@ class PlaybackPipelineTest {
     }
 
     @Test
+    fun `the session keeps who serves the song, for history and diagnostics`() {
+        var extras: android.os.Bundle? = null
+        engine.onExtrasChanged = { extras = it }
+        play("Missing Master")
+        TestPlayerRunHelper.run(engine.player).untilState(Player.STATE_READY)
+        val published = assertNotNull(extras)
+        assertEquals(mirror.descriptor.id.value, published.getString(PodiumExtras.SERVED_BY_ID))
+        assertEquals(mirror.descriptor.displayName, published.getString(PodiumExtras.SERVED_BY))
+        assertEquals(ResolutionPath.EXACT_FALLBACK.name, published.getString(PodiumExtras.RESOLUTION_PATH))
+    }
+
+    @Test
     fun `an exact copy from another source is chosen before playback starts`() {
         play("Missing Master")
         TestPlayerRunHelper.run(engine.player).untilState(Player.STATE_READY)

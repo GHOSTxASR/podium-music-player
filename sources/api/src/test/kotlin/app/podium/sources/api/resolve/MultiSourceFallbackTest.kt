@@ -140,6 +140,93 @@ class MultiSourceFallbackTest {
     }
 
     @Test
+    fun `the preferred source plays when it has the song, even if another has it too`() = runTest {
+        knowTwins()
+        val outcome = assertIs<ResolveOutcome.Resolved>(resolver.resolve(ResolveRequest(onA)))
+        assertEquals(a.sourceId, outcome.selection.servedBy)
+        assertEquals(ResolutionPath.OWN_SOURCE, outcome.selection.path)
+        assertEquals(0, b.resolveCalls)
+    }
+
+    @Test
+    fun `a source that takes too long counts as failed and the next copy plays`() = runTest {
+        val quick = StreamResolver(registry, health, TrackMatcher(), clock, equivalence = equivalence, sourceTimeoutMillis = 1_000)
+        a.resolveBehavior = Behavior.Hang()
+        knowTwins()
+        val outcome = assertIs<ResolveOutcome.Resolved>(quick.resolve(ResolveRequest(onA)))
+        assertEquals(b.sourceId, outcome.selection.servedBy)
+        assertIs<SourceHealth.Degraded>(health.health(a.sourceId), "a timeout is a failure")
+        assertEquals(1_000, testScheduler.currentTime)
+    }
+
+    @Test
+    fun `a source that chokes on its own answer counts as failed and the next copy plays`() = runTest {
+        a.resolveBehavior = Behavior.Malformed
+        knowTwins()
+        val outcome = assertIs<ResolveOutcome.Resolved>(resolver.resolve(ResolveRequest(onA)))
+        assertEquals(b.sourceId, outcome.selection.servedBy)
+        assertIs<SourceHealth.Degraded>(health.health(a.sourceId))
+    }
+
+    @Test
+    fun `when every source misses, it's a miss and nobody's health suffers`() = runTest {
+        a.resolveBehavior = Behavior.Miss
+        b.resolveBehavior = Behavior.Miss
+        knowTwins()
+        assertIs<ResolveOutcome.Miss>(resolver.resolve(ResolveRequest(onA)))
+        assertEquals(SourceHealth.Healthy, health.health(a.sourceId))
+        assertEquals(SourceHealth.Healthy, health.health(b.sourceId))
+    }
+
+    @Test
+    fun `when every source fails, it's a failure`() = runTest {
+        a.resolveBehavior = Behavior.Fail(PodiumError.Network())
+        b.resolveBehavior = Behavior.Fail(PodiumError.Server(500))
+        knowTwins()
+        assertIs<ResolveOutcome.Failed>(resolver.resolve(ResolveRequest(onA)))
+        assertIs<SourceHealth.Degraded>(health.health(a.sourceId))
+        assertIs<SourceHealth.Degraded>(health.health(b.sourceId))
+    }
+
+    @Test
+    fun `a broken search counts against the source, an empty one doesn't`() = runTest {
+        a.resolveBehavior = Behavior.Miss
+        b.searchBehavior = Behavior.Malformed
+        resolver.resolve(ResolveRequest(onA))
+        assertIs<SourceHealth.Degraded>(health.health(b.sourceId))
+        health.reset(b.sourceId)
+        b.searchBehavior = Behavior.Miss
+        resolver.resolve(ResolveRequest(onA))
+        assertEquals(SourceHealth.Healthy, health.health(b.sourceId))
+    }
+
+    @Test
+    fun `a source recovers after its breaker opens, waits and passes one probe`() = runTest {
+        a.resolveBehavior = Behavior.Fail(PodiumError.Network())
+        repeat(3) { resolver.resolve(ResolveRequest(onA)) }
+        assertIs<SourceHealth.Unreachable>(health.health(a.sourceId))
+        clock.advanceBy(31_000)
+        assertIs<SourceHealth.Probing>(health.health(a.sourceId))
+        a.resolveBehavior = Behavior.Answer
+        val outcome = assertIs<ResolveOutcome.Resolved>(resolver.resolve(ResolveRequest(onA)))
+        assertEquals(a.sourceId, outcome.selection.servedBy)
+        assertEquals(SourceHealth.Healthy, health.health(a.sourceId))
+    }
+
+    @Test
+    fun `a known twin outlives its source being turned off and back on, and priority changes`() = runTest {
+        a.unstreamable += onA.id
+        knowTwins()
+        registry.setEnabled(b.sourceId, false)
+        assertIs<ResolveOutcome.Miss>(resolver.resolve(ResolveRequest(onA)), "a disabled source is skipped")
+        registry.setEnabled(b.sourceId, true)
+        registry.setPriority(listOf(b.sourceId, a.sourceId))
+        val outcome = assertIs<ResolveOutcome.Resolved>(resolver.resolve(ResolveRequest(onA)))
+        assertEquals(b.sourceId, outcome.selection.servedBy)
+        assertEquals(0, b.searchCalls, "still known, no search needed")
+    }
+
+    @Test
     fun `a pinned copy is never swapped for another source's`() = runTest {
         val first = assertIs<ResolveOutcome.Resolved>(resolver.resolve(ResolveRequest(onA)))
         knowTwins()

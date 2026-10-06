@@ -137,6 +137,21 @@ class TrackGrouperTest {
     }
 
     @Test
+    fun `a pair the listener rejected is never one row, and never re-linked`() {
+        val onA = track("Song Shared", "Band", source = "a", key = "1")
+        val onB = track("Song Shared", "Band", source = "b", key = "2")
+        val store = InMemoryEquivalenceStore()
+        store.reject(onA, onB)
+        val rows = TrackGrouper(rejected = store::isRejected).group(listOf(ranked(a, onA), ranked(b, onB)))
+        assertEquals(2, rows.size)
+        // Even an EXACT decision offered later doesn't bring it back.
+        store.put(onA, onB, app.podium.sources.api.matching.MatchResult(MatchTier.EXACT, 0.95f, emptyList()))
+        assertTrue(store.exactEquivalents(onA).isEmpty())
+        assertEquals(MatchTier.NO_MATCH, store.get(onA, onB)?.tier)
+        assertEquals(2, TrackGrouper(rejected = store::isRejected).distinctRecordings(listOf(onA, onB)).size)
+    }
+
+    @Test
     fun `distinct recordings keeps the first copy of each song`() {
         val onA = track("Song Shared", "Band", source = "a", key = "1")
         val onB = track("Song Shared", "Band", source = "b", key = "2")

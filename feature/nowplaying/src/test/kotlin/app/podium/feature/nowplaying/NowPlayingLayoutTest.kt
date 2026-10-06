@@ -43,7 +43,9 @@ import app.podium.core.designsystem.theme.PodiumTheme
 import app.podium.core.interaction.InputRouter
 import app.podium.core.interaction.LocalInputRouter
 import app.podium.core.model.QueueUid
+import app.podium.core.model.SourceId
 import app.podium.core.model.TrackId
+import app.podium.sources.api.ResolutionPath
 import app.podium.player.api.FavoritesRepository
 import app.podium.player.api.NowPlayingItem
 import app.podium.player.api.PauseReason
@@ -63,6 +65,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.GraphicsMode
 import java.io.File
+import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
@@ -95,9 +98,12 @@ class NowPlayingLayoutTest {
 
     @Test fun landscapePhone() = check("landscape-square", LANDSCAPE, Art.SQUARE)
 
-    private fun check(name: String, qualifiers: String, art: Art, longTitle: Boolean = false) {
+    /** Another source's copy is playing: Podium knows which (D-36), the listener isn't told. */
+    @Test fun fallbackCopyIsNotNamed() = check("phone-fallback", PHONE, Art.SQUARE, fallback = true)
+
+    private fun check(name: String, qualifiers: String, art: Art, longTitle: Boolean = false, fallback: Boolean = false) {
         RuntimeEnvironment.setQualifiers(qualifiers)
-        val controller = FakeController(art, longTitle)
+        val controller = FakeController(art, longTitle, fallback)
         compose.setContent {
             PodiumTheme(darkTheme = true, glassTier = GlassTier.Solid) {
                 val palette = DeviceAppearance(FinishPreset.STEEL_GRAY).palette(darkTheme = true)
@@ -140,6 +146,11 @@ class NowPlayingLayoutTest {
             assertTrue(display.contains(node.boundsInRoot), "$label at ${node.boundsInRoot} escapes the display $display ($name)")
         }
 
+        // Normal Now Playing never names a source, even when another source's copy is playing (D-36).
+        val texts = displayNode.descendants().flatMap { node -> node.config.getOrNull(SemanticsProperties.Text).orEmpty().map { it.text } + node.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty() }
+        assertTrue(texts.none { PROVIDER in it || "Playing from" in it }, "a source is named on Now Playing: $texts ($name)")
+        if (fallback) assertEquals(PROVIDER, controller.snapshot.value.item?.servedByDisplayName, "…but the session still knows who serves it")
+
         val out = File("build/screenshots").apply { mkdirs() }
         val bitmap = compose.onRoot().captureToImage().asAndroidBitmap()
         File(out, "$name.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
@@ -150,7 +161,7 @@ class NowPlayingLayoutTest {
     private fun Rect.contains(other: Rect) =
         other.left >= left - 0.5f && other.top >= top - 0.5f && other.right <= right + 0.5f && other.bottom <= bottom + 0.5f
 
-    private class FakeController(art: Art, longTitle: Boolean) : PlaybackController {
+    private class FakeController(art: Art, longTitle: Boolean, fallback: Boolean = false) : PlaybackController {
         private val item = NowPlayingItem(
             uid = QueueUid("q1"),
             trackId = TrackId("test|1"),
@@ -161,8 +172,9 @@ class NowPlayingLayoutTest {
             durationMs = 214_000,
             indexInQueue = 2,
             queueSize = 11,
-            servedByDisplayName = "On this device",
-            resolutionPath = null,
+            servedByDisplayName = if (fallback) PROVIDER else "On this device",
+            resolutionPath = if (fallback) ResolutionPath.EXACT_FALLBACK else null,
+            servedBy = if (fallback) SourceId("fake-provider") else null,
         )
         override val snapshot: StateFlow<PlaybackSnapshot> = MutableStateFlow(
             PlaybackSnapshot(status = PlaybackStatus.Paused(PauseReason.USER), intent = PlayIntent.PAUSE, item = item),
@@ -220,6 +232,7 @@ class NowPlayingLayoutTest {
     private data class Quad(val w: Int, val h: Int, val from: Int, val to: Int)
 
     private companion object {
+        const val PROVIDER = "Fake Provider"
         const val PHONE = "w411dp-h891dp-port-420dpi"
         const val SMALL = "w320dp-h568dp-port-xhdpi"
         const val COMPACT = "w360dp-h640dp-port-xhdpi"

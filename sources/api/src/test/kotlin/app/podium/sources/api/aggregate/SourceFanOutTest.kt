@@ -69,6 +69,16 @@ class SourceFanOutTest {
     }
 
     @Test
+    fun `a source that chokes on its own answer has failed, and it counts`() = runTest {
+        val garbled = FakeOnlineMusicSource("garbled").apply { searchBehavior = Behavior.Malformed }
+        val ok = FakeOnlineMusicSource("ok").apply { track("Song") }
+        val answers = fanOut().askAll(listOf(garbled, ok)) { (it as FakeOnlineMusicSource).search() }
+        assertIs<SourceAnswer.Failed>(answers[0])
+        assertIs<SourceAnswer.Answered<*>>(answers[1])
+        assertIs<SourceHealth.Degraded>(health.health(garbled.sourceId))
+    }
+
+    @Test
     fun `a miss is healthy and never counts toward the breaker`() = runTest {
         val source = FakeOnlineMusicSource("a")
         repeat(5) { fanOut().askAll(listOf(source)) { Outcome.Failure(PodiumError.NotFound("nothing")) } }

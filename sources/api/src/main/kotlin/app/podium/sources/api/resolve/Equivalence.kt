@@ -5,13 +5,19 @@ import app.podium.core.model.TrackId
 import app.podium.sources.api.matching.MatchResult
 import app.podium.sources.api.matching.MatchTier
 
-/** Remembers matcher decisions so equivalence is computed once and can be overridden by the user. */
+/**
+ * Remembers matcher decisions so equivalence is computed once and can be overridden by the user.
+ * Only EXACT decisions link copies; a user's "not the same song" is final (D-17, D-36).
+ */
 interface EquivalenceStore {
     fun get(a: Track, b: Track): MatchResult?
     fun put(a: Track, b: Track, result: MatchResult)
 
     /** The user said "not the same song": never match these again. */
     fun reject(a: Track, b: Track)
+
+    /** Whether the user said these two are not the same song. */
+    fun isRejected(a: TrackId, b: TrackId): Boolean = false
 
     /**
      * Copies on other sources already known to be EXACTly the same recording as [track] (D-35) —
@@ -23,10 +29,11 @@ interface EquivalenceStore {
 /**
  * Decisions in memory, bounded: the most recently touched [capacity] songs keep their EXACT links
  * (the copies themselves, so the resolver can play one without searching again). The user's
- * rejections are kept regardless.
+ * rejections are kept regardless, and an EXACT decision never overrides one.
  */
 class InMemoryEquivalenceStore(private val capacity: Int = 4_000) : EquivalenceStore {
     private val decisions = mutableMapOf<Pair<String, String>, MatchResult>()
+    private val rejected = mutableSetOf<Pair<String, String>>()
 
     /** Song → its EXACT equivalents, in least-recently-used order. */
     private val links = LinkedHashMap<String, MutableMap<String, Track>>(64, 0.75f, true)
@@ -45,13 +52,14 @@ class InMemoryEquivalenceStore(private val capacity: Int = 4_000) : EquivalenceS
 
     private fun pairKey(a: String, b: String) = if (a <= b) a to b else b to a
 
-    private fun key(a: Track, b: Track) = pairKey(a.id.value, b.id.value)
+    private fun key(a: TrackId, b: TrackId) = pairKey(a.value, b.value)
 
-    @Synchronized override fun get(a: Track, b: Track) = decisions[key(a, b)]
+    @Synchronized override fun get(a: Track, b: Track): MatchResult? =
+        if (key(a.id, b.id) in rejected) REJECTED else decisions[key(a.id, b.id)]
 
     @Synchronized override fun put(a: Track, b: Track, result: MatchResult) {
-        val k = key(a, b)
-        if (isRejected(k)) return
+        val k = key(a.id, b.id)
+        if (k in rejected) return
         decisions[k] = result
         if (result.tier == MatchTier.EXACT && a.id != b.id) {
             links.getOrPut(a.id.value) { mutableMapOf() }[b.id.value] = b
@@ -62,22 +70,28 @@ class InMemoryEquivalenceStore(private val capacity: Int = 4_000) : EquivalenceS
         }
     }
 
-    @Synchronized override fun reject(a: Track, b: Track) {
-        decisions[key(a, b)] = REJECTED
-        unlink(a.id, b.id)
+    @Synchronized override fun reject(a: Track, b: Track) = reject(a.id, b.id)
+
+    /** A rejection known only by ids (e.g. read back from storage). */
+    @Synchronized fun reject(a: TrackId, b: TrackId) {
+        val k = key(a, b)
+        rejected += k
+        decisions.remove(k)
+        unlink(a, b)
     }
+
+    @Synchronized override fun isRejected(a: TrackId, b: TrackId): Boolean = key(a, b) in rejected
 
     @Synchronized override fun exactEquivalents(track: Track): List<Track> =
         links[track.id.value]?.values?.toList().orEmpty()
-
-    private fun isRejected(k: Pair<String, String>) = decisions[k] === REJECTED
 
     private fun unlink(a: TrackId, b: TrackId) {
         links[a.value]?.remove(b.value)
         links[b.value]?.remove(a.value)
     }
 
-    private companion object {
+    companion object {
+        /** How a rejected pair reads: no match, and no evidence (the user decided, not the matcher). */
         val REJECTED = MatchResult(MatchTier.NO_MATCH, 0f, emptyList())
     }
 }

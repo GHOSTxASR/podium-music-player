@@ -69,6 +69,16 @@ class MultiSourceCatalogTest {
     }
 
     @Test
+    fun `priority is a preference, never a filter, the lower source's songs stay visible`() = runTest {
+        val c = catalog()
+        registry.setPriority(listOf(a.sourceId, b.sourceId))
+        val titles = c.searchAll("song").results.tracks.map { it.title }
+        assertTrue("Song Gamma" in titles, "only b has it, and b is second")
+        registry.setPriority(listOf(b.sourceId, a.sourceId))
+        assertTrue("Song Alpha" in c.searchAll("song").results.tracks.map { it.title }, "only a has it, and a is now second")
+    }
+
+    @Test
     fun `search unifies every source, interleaved by rank and priority`() = runTest {
         val result = catalog().searchAll("song")
         assertEquals(listOf("Song Alpha", "Song Gamma", "Song Beta", "Song Shared"), result.results.tracks.map { it.title })

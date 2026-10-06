@@ -2,6 +2,7 @@ package app.podium.sources.api.resolve
 
 import app.podium.core.common.Clock
 import app.podium.core.common.Outcome
+import app.podium.core.common.PodiumError
 import app.podium.core.model.SourceId
 import app.podium.core.model.Track
 import app.podium.sources.api.Capability
@@ -17,6 +18,7 @@ import app.podium.sources.api.ResolutionPath
 import app.podium.sources.api.SearchQuery
 import app.podium.sources.api.SourceHealthMonitor
 import app.podium.sources.api.SourceRegistry
+import app.podium.sources.api.aggregate.SourceFanOut
 import app.podium.sources.api.matching.MatchQueryBuilder
 import app.podium.sources.api.matching.MatchResult
 import app.podium.sources.api.matching.MatchTier
@@ -24,6 +26,7 @@ import app.podium.sources.api.matching.TrackMatcher
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeoutOrNull
 
 /** Whether a queue item may fall back to another source's copy. Only EXACT matches ever qualify. */
 enum class FallbackPolicy {
@@ -117,6 +120,8 @@ class StreamResolver(
     private val ownedCopies: List<OwnedCopyLocator> = emptyList(),
     private val equivalence: EquivalenceStore = InMemoryEquivalenceStore(),
     private val fallbackSearchLimit: Int = 10,
+    /** How long one source may take to resolve or search before it counts as a failure and the next is tried. */
+    private val sourceTimeoutMillis: Long = DEFAULT_SOURCE_TIMEOUT_MILLIS,
 ) {
     private val inFlightLock = Mutex()
     private val inFlight = mutableMapOf<String, CompletableDeferred<ResolveOutcome>>()
@@ -161,10 +166,16 @@ class StreamResolver(
                 ?: lastFailure(attempts)
         }
 
-        // 1. An owned copy (download / local file) of this track.
+        // The listener chose a song in one environment; it plays in that environment (D-36). An
+        // unknown source (no longer registered) has no environment to fall back within.
+        val environment = environmentOf(track.source.sourceId)
+
+        // 1. An owned copy (download / local file) of this track — the same song, or an EXACT copy
+        //    in the same environment; never a copy from the other environment.
         for (locator in ownedCopies) {
             val found = locator.find(track) ?: continue
             val (ownedTrack, media) = found
+            if (ownedTrack.id != track.id && (environment == null || environmentOf(ownedTrack.source.sourceId) != environment)) continue
             attempts += ResolveAttempt(ResolutionPath.OWNED_COPY, media.sourceId, ResolveAttempt.Kind.RESOLVED)
             return ResolveOutcome.Resolved(
                 Selection(
@@ -183,11 +194,12 @@ class StreamResolver(
         resolveFrom(track.source.sourceId, track, request, ResolutionPath.OWN_SOURCE, null, attempts)
             ?.let { return it }
 
-        // 3. EXACT-match fallback on other enabled sources, in user priority order. A copy already
-        //    known to be EXACT (several sources answered the same search, D-35) is used directly;
-        //    otherwise the source is searched and the matcher decides.
-        if (request.fallbackPolicy == FallbackPolicy.EXACT_ONLY && request.purpose != Purpose.PREFETCH) {
-            for (source in registry.ordered()) {
+        // 3. EXACT-match fallback on other enabled sources of the same environment, in user priority
+        //    order — never LOCAL <-> ONLINE (D-36). A copy already known to be EXACT (several sources
+        //    answered the same search, D-35) is used directly; otherwise the source is searched and
+        //    the matcher decides.
+        if (request.fallbackPolicy == FallbackPolicy.EXACT_ONLY && request.purpose != Purpose.PREFETCH && environment != null) {
+            for (source in registry.ordered(environment)) {
                 if (source.descriptor.id == track.source.sourceId) continue
                 val candidate = knownExactEquivalent(source, track) ?: findExactEquivalent(source, track, attempts) ?: continue
                 resolveFrom(
@@ -229,9 +241,11 @@ class StreamResolver(
             return null
         }
         val result = try {
-            playback.resolve(track, request.quality, request.purpose)
+            withTimeoutOrNull(sourceTimeoutMillis) { playback.resolve(track, request.quality, request.purpose) }
+                ?: FacetResolution.Failed(HealthOutcome.NETWORK_FAILURE, "timed out")
         } catch (t: Throwable) {
             if (t is kotlinx.coroutines.CancellationException) throw t
+            // A source that throws (a malformed answer, a bug) has failed — that isn't a miss.
             FacetResolution.Failed(HealthOutcome.UNKNOWN, t.javaClass.simpleName)
         }
         return when (result) {
@@ -257,6 +271,8 @@ class StreamResolver(
         }
     }
 
+    private fun environmentOf(source: SourceId) = registry.get(source)?.descriptor?.environment
+
     /** A copy on [source] already decided EXACT for [track] (never anything less). */
     private fun knownExactEquivalent(source: MusicSource, track: Track): Pair<Track, MatchResult>? {
         val copy = equivalence.exactEquivalents(track).firstOrNull { it.source.sourceId == source.descriptor.id } ?: return null
@@ -274,11 +290,23 @@ class StreamResolver(
         if (!health.canAttempt(source.descriptor.id)) return null
         val candidates = linkedMapOf<String, Track>()
         for (query in MatchQueryBuilder.queries(track)) {
-            when (val r = catalog.search(SearchQuery(query, fallbackSearchLimit))) {
+            val r = try {
+                withTimeoutOrNull(sourceTimeoutMillis) { catalog.search(SearchQuery(query, fallbackSearchLimit)) }
+                    ?: Outcome.Failure(PodiumError.Network("Timed out"))
+            } catch (t: Throwable) {
+                if (t is kotlinx.coroutines.CancellationException) throw t
+                Outcome.Failure(PodiumError.Unexpected(t.javaClass.simpleName))
+            }
+            when (r) {
                 is Outcome.Success -> r.value.tracks.forEach { candidates.putIfAbsent(it.id.value, it) }
-                is Outcome.Failure -> attempts += ResolveAttempt(
-                    ResolutionPath.EXACT_FALLBACK, source.descriptor.id, ResolveAttempt.Kind.SKIPPED, detail = "search failed",
-                )
+                is Outcome.Failure -> {
+                    // A broken search is a failure and counts as one; finding nothing is a miss.
+                    SourceFanOut.outcomeOf(r.error, signsIn = source.auth != null)?.let { health.record(source.descriptor.id, it) }
+                    attempts += ResolveAttempt(
+                        ResolutionPath.EXACT_FALLBACK, source.descriptor.id, ResolveAttempt.Kind.SKIPPED, detail = "search failed",
+                    )
+                    return null
+                }
             }
             if (candidates.isNotEmpty()) break
         }
@@ -309,5 +337,10 @@ class StreamResolver(
         }
         val miss = attempts.firstOrNull { it.kind == ResolveAttempt.Kind.MISS || it.kind == ResolveAttempt.Kind.SKIPPED }
         return ResolveOutcome.Miss(miss?.missReason ?: MissReason.NO_SOURCE, attempts)
+    }
+
+    companion object {
+        /** Inside the player's own wait for a resolution (15 s), with room for one fallback. */
+        const val DEFAULT_SOURCE_TIMEOUT_MILLIS = 6_000L
     }
 }

@@ -2,6 +2,7 @@ package app.podium
 
 import android.content.Intent
 import app.podium.core.model.SourceId
+import app.podium.core.model.TrackId
 import app.podium.player.api.PlayIntent
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -45,6 +46,21 @@ internal fun handleDebugIntent(intent: Intent?, graph: AppGraph) {
         // ONLINE as if the network were gone (local music unaffected); and back.
         "online-offline" -> graph.audius.simulateOffline = true
         "online-online" -> graph.audius.simulateOffline = false
+        // Provenance of what's playing (D-36: kept for diagnostics, never shown on Now Playing).
+        "now-playing-source" -> graph.playbackController.snapshot.value.item.let { item ->
+            android.util.Log.i(
+                "PodiumDebug",
+                if (item == null) "Nothing playing"
+                else "Now playing ${item.trackId}: served by ${item.servedByDisplayName} (${item.servedBy}) via ${item.resolutionPath}",
+            )
+        }
+        // "Not the same song" for two copies (the infrastructure a future confirmation UI will use):
+        // --es podium.a <trackId> --es podium.b <trackId>
+        "not-same" -> {
+            val a = intent.getStringExtra("podium.a")
+            val b = intent.getStringExtra("podium.b")
+            if (a != null && b != null && '|' in a && '|' in b) graph.equivalence.reject(TrackId(a), TrackId(b))
+        }
         "pause" -> graph.playbackController.pause()
         "play" -> if (graph.playbackController.snapshot.value.intent != PlayIntent.PLAY) graph.playbackController.play()
         "next" -> graph.playbackController.next()

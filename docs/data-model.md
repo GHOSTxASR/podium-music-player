@@ -25,6 +25,13 @@ Auto-migration 1 → 2 adds ONLINE's own tables, never shared with the local lib
 ### Schema v3 — multi-source ONLINE (D-35)
 Auto-migration 2 → 3 adds one nullable column, `online_history.served_by`: the source whose copy actually played a listen, when it wasn't the song's own (an EXACT copy elsewhere). The row's `track_id`/`source_id`/`provider_id` stay the song the listener chose. Nothing else changed — likes, playlists and history were already source-qualified per row, and the saved queue stores source-qualified `track_id`s (an item's preferred source and EXACT-only fallback are derived from its track, never stored). Tested by `MigrationTest` (a database built from the committed v2 schema, with likes, a playlist and a listen, opens on v3 intact; the `bak-v2` copy is taken).
 
+### Schema v4 — persistent equivalence (D-36)
+Auto-migration 3 → 4 adds `track_equivalence` (see §3), nothing else. Only two kinds of rows are written:
+- `tier = EXACT, decided_by = AUTO`: an EXACT match the matcher actually made between two copies. Their metadata is cached in `track` so the pair can be rebuilt after a restart.
+- `tier = REJECTED, decided_by = USER`: the listener's "not the same song". It's never overwritten by a later automatic decision.
+
+`STRONG`/`POSSIBLE` decisions aren't stored. Pairs, not groups: EXACT isn't transitive (a ±2 s window on each side is 4 s across), so a group would assert matches the matcher never made. With a handful of sources, a song has at most a few pairs. Tested by `MigrationTest` (v3 with likes, a listen with `served_by` and a queue opens on v4 intact; `bak-v3` is taken) and `DatabaseEquivalenceStoreTest`.
+
 ## 2. Entity overview
 
 ```
@@ -89,7 +96,7 @@ Types: `TEXT`, `INTEGER`, `REAL`, `BLOB`. Timestamps are epoch millis `INTEGER`.
 
 Indices: `(source_id, source_track_id)` UNIQUE; `(album_id, disc_no, track_no)`; `(title_sort)`; `(in_library, title_sort)`; `(genre)`.
 
-### track_equivalence — cross-source identity decisions (ADR-013)
+### track_equivalence — cross-source identity decisions (ADR-013; implemented in v4, D-36: only `EXACT`/AUTO and `REJECTED`/USER rows; `evidence_json` is a JSON array of the matcher's sentences)
 | Column | Notes |
 |---|---|
 | track_a, track_b PK | ordered pair of `TrackId`s (a < b) |

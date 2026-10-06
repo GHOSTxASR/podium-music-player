@@ -66,6 +66,9 @@ class FakeOnlineMusicSource(
         data class Hang(val millis: Long = 60_000) : Behavior
         /** Answers, but only after [millis]. */
         data class Slow(val millis: Long) : Behavior
+
+        /** Throws, like an adapter choking on a response it can't read. */
+        data object Malformed : Behavior
     }
 
     val sourceId = SourceId(id)
@@ -135,6 +138,7 @@ class FakeOnlineMusicSource(
             delay(behavior.millis)
             answer()
         }
+        Behavior.Malformed -> throw IllegalStateException("malformed answer")
         is Behavior.Slow -> {
             delay(behavior.millis)
             answer()
@@ -225,6 +229,7 @@ class FakeOnlineMusicSource(
             resolveCalls++
             return when (val b = resolveBehavior) {
                 Behavior.Miss -> FacetResolution.Miss(MissReason.NOT_FOUND)
+                Behavior.Malformed -> throw IllegalStateException("malformed answer")
                 is Behavior.Fail -> FacetResolution.Failed(
                     when (b.error) {
                         is PodiumError.RateLimited -> HealthOutcome.RATE_LIMIT

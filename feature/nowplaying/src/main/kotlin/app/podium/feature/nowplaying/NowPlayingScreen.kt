@@ -105,7 +105,6 @@ import app.podium.player.api.PlaybackSnapshot
 import app.podium.player.api.PlaybackStatus
 import app.podium.player.api.RepeatMode
 import app.podium.player.api.VolumeController
-import app.podium.sources.api.ResolutionPath
 import kotlin.math.ceil
 import kotlinx.coroutines.delay
 
@@ -553,8 +552,8 @@ private fun StatusSlot(p: NowPlayingParts) {
     val note = when {
         status is PlaybackStatus.Error -> errorCopy(status.error)
         p.mode == WheelMode.Scrub -> "Scrubbing. Turn faster to cover more."
-        p.item.resolutionPath != null && p.item.resolutionPath != ResolutionPath.OWN_SOURCE ->
-            p.item.servedByDisplayName?.let { "Playing from $it" }
+        // Which source serves the song is Podium's business, not the listener's (D-36): it is kept
+        // (session, history, logs) but never shown here.
         p.snapshot.quality.codecMismatch -> p.snapshot.quality.sourceClaimed?.let(QualityLabel::format)?.let { "Source reported $it" }
         else -> p.environment
     }

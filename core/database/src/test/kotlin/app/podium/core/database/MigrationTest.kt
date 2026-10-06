@@ -120,6 +120,40 @@ class MigrationTest {
         assertTrue(File(file.parentFile, "${file.name}.bak-v2").isFile, "the v2 file was copied aside before migrating")
     }
 
+    @Test
+    fun `a v3 database opens on v4 with everything intact and equivalence ready`() = runTest {
+        val file = context.getDatabasePath(PodiumDatabase.FILE_NAME)
+        file.delete()
+        val audius = app.podium.core.model.SourceId("audius")
+        val online = TrackMapping.toEntity(song("Signal", source = audius, key = "123"), inLibrary = false, now = 1)
+        createFromSchema(file, 3) { c ->
+            c.execSQL("INSERT INTO source_account (id, display_name, last_sync_at) VALUES ('audius', 'audius', NULL)")
+            insertTrack(c, online, inLibrary = false)
+            c.execSQL("INSERT INTO online_liked_track (account_key, track_id, source_id, provider_id, liked_at, sync_state) VALUES ('', 'audius|123', 'audius', '123', 7, 'LOCAL_ONLY')")
+            c.execSQL(
+                "INSERT INTO online_history (source_id, account_key, provider_id, track_id, started_at, played_ms, duration_ms, completion, served_by) " +
+                    "VALUES ('audius', '', '123', 'audius|123', 9, 60000, 200000, 0.3, 'other')",
+            )
+            c.execSQL("INSERT INTO queue_state (id, current_index, position_ms, repeat_mode, shuffle_enabled, context_label, updated_at) VALUES (1, 0, 1500, 'OFF', 0, 'Search', 9)")
+            c.execSQL("INSERT INTO queue_item (ordinal, original_ordinal, track_id, origin) VALUES (0, 0, 'audius|123', 'CONTEXT')")
+        }
+
+        val db = PodiumDatabase.create(context)
+        try {
+            val store = OnlineLibraryStore(db)
+            assertEquals(setOf(TrackId("audius|123")), store.likedIds().first())
+            assertEquals("other", store.listens().single().servedBy)
+            assertEquals(TrackId("audius|123"), DatabaseQueueStore(db).load()!!.items.single().track.id)
+            // The new table is there, empty, and usable.
+            assertTrue(db.equivalence().all().isEmpty())
+            db.equivalence().put(TrackEquivalenceEntity("audius|123", "other|9", "EXACT", 0.95f, "[]", "AUTO", 10))
+            assertEquals(1, db.equivalence().all().size)
+        } finally {
+            db.close()
+        }
+        assertTrue(File(file.parentFile, "${file.name}.bak-v3").isFile, "the v3 file was copied aside before migrating")
+    }
+
     private fun insertTrack(c: androidx.sqlite.SQLiteConnection, song: TrackEntity, inLibrary: Boolean) {
         c.prepare(
             "INSERT INTO track (id, source_id, source_track_id, title, title_sort, artist_display, artist_id, artists_json, album_id, " +

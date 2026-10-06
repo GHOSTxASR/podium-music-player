@@ -49,7 +49,11 @@ fun EquivalenceStore.remember(group: TrackGroup) {
  * order), and a row sits where its first copy came. The copy shown is the playable one from the
  * most preferred source.
  */
-class TrackGrouper(private val matcher: TrackMatcher = TrackMatcher()) {
+class TrackGrouper(
+    private val matcher: TrackMatcher = TrackMatcher(),
+    /** Pairs the listener said are not the same song (D-36): never grouped, whatever the matcher says. */
+    private val rejected: (TrackId, TrackId) -> Boolean = { _, _ -> false },
+) {
 
     /** One source's answer: its tracks in its own rank order. */
     data class Ranked(val source: SourceId, val tracks: List<Track>)
@@ -118,7 +122,7 @@ class TrackGrouper(private val matcher: TrackMatcher = TrackMatcher()) {
             rows += mutableListOf(t)
         }
 
-        fun exact(a: Track, b: Track): Boolean = decision(a, b).tier == MatchTier.EXACT
+        fun exact(a: Track, b: Track): Boolean = !rejected(a.id, b.id) && decision(a, b).tier == MatchTier.EXACT
 
         fun decision(a: Track, b: Track): MatchResult {
             val key = if (a.id.value <= b.id.value) a.id to b.id else b.id to a.id

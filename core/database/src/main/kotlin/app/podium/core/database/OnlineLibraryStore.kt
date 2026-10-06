@@ -32,19 +32,7 @@ class OnlineLibraryStore(
     // --- Songs ------------------------------------------------------------------------------------------
 
     /** Keep online songs' metadata so likes, playlists, history and the queue survive a restart. */
-    suspend fun remember(tracks: Collection<Track>) {
-        if (tracks.isEmpty()) return
-        val unique = tracks.distinctBy { it.id }
-        db.withWriteTransaction {
-            db.library().insertSourcesIfMissing(unique.map { it.source.sourceId.value }.distinct().map { SourceAccountEntity(it, it, lastSyncAt = null) })
-            // A song a library source owns stays the library's row; only non-library rows are refreshed.
-            unique.chunked(500).forEach { chunk ->
-                val owned = dao.libraryIds(chunk.map { it.id.value }).toSet()
-                val at = now()
-                dao.cacheTracks(chunk.filter { it.id.value !in owned }.map { TrackMapping.toEntity(it, inLibrary = false, now = at) })
-            }
-        }
-    }
+    suspend fun remember(tracks: Collection<Track>) = db.cacheTracks(tracks, now)
 
     // --- Likes --------------------------------------------------------------------------------------------
 
@@ -169,5 +157,23 @@ class OnlineLibraryStore(
         /** The account of a source nobody has signed in to: the listener, on this device. */
         const val DEVICE = ""
         private const val MIN_GAP = 1e-6
+    }
+}
+
+/**
+ * Keep songs' metadata in `track` (in_library = 0) so anything that refers to them — likes, history,
+ * the queue, equivalence decisions — can rebuild them after a restart. A song a library source owns
+ * stays the library's row; only non-library rows are refreshed.
+ */
+internal suspend fun PodiumDatabase.cacheTracks(tracks: Collection<Track>, now: () -> Long) {
+    if (tracks.isEmpty()) return
+    val unique = tracks.distinctBy { it.id }
+    withWriteTransaction {
+        library().insertSourcesIfMissing(unique.map { it.source.sourceId.value }.distinct().map { SourceAccountEntity(it, it, lastSyncAt = null) })
+        unique.chunked(500).forEach { chunk ->
+            val owned = online().libraryIds(chunk.map { it.id.value }).toSet()
+            val at = now()
+            online().cacheTracks(chunk.filter { it.id.value !in owned }.map { TrackMapping.toEntity(it, inLibrary = false, now = at) })
+        }
     }
 }

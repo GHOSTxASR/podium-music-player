@@ -260,6 +260,21 @@ sealed interface ResolveOutcome {
 ```
 
 ### 8.1 Pipeline (`StreamResolver`, in `sources:api`, provider-neutral)
+**As implemented (D-35, D-36):**
+
+1. Pinned selection (reused while valid).
+2. An owned copy: the same song, or an EXACT copy in the same environment.
+3. The track's own source, within the per-source timeout (6 s).
+4. EXACT fallback on the other enabled sources of the track's environment, in priority order. A copy already known to be EXACT (`EquivalenceStore`, persisted) is used directly; otherwise that source is searched and the matcher decides.
+5. Otherwise `Miss`/`Failed`.
+
+Rules along the way:
+
+- **Environment.** The environment comes from the track's own source. A track whose source is no longer registered has no environment, so it gets no fallback.
+- **Miss vs failure.** A miss ("not found / not permitted / not streamable", or an empty search) never touches health. A failure does: a timeout, an exception (e.g. a malformed answer), a network or server error, or a broken search. "Not authorised" counts as rejected credentials only for a source that signs in.
+
+The numbered list below is the original design, kept for the path names it introduced.
+
 1. **Pinned?** If this `queueUid` already resolved and the target hasn't expired → reuse (no mid-play switching).
 2. **Owned copy of this exact track** → verified download or local file (`ResolutionPath.DOWNLOAD/LOCAL`).
 3. **Owned copy of an equivalent recording** (equivalence tier per §10 policy) → `ResolutionPath.EQUIVALENT_OWNED` (surfaced in UI).
@@ -328,11 +343,12 @@ data class MatchResult(val tier: MatchTier, val confidence: Float, val evidence:
 Debug builds show the evidence in Song info; decisions persist in `track_equivalence` with evidence JSON.
 
 ## 10. Fallback rules (identity is sacred)
-1. Fallback changes the **source**, never the **recording**. Only equivalence tiers allowed by §9.1 qualify.
-2. Every fallback is **visible**: Now Playing shows the actual source; Signal Path says why ("Audius didn't respond, playing your copy from Home server").
+1. Fallback changes the **source**, never the **recording**. Only EXACT qualifies (D-17).
+2. Every fallback is **recorded, not announced** (D-36, replaces "Now Playing shows the actual source"). The serving source is kept in the session (`NowPlayingItem.servedBy`, `servedByDisplayName`, `resolutionPath`), in history (`online_history.served_by`) and in the logs; debug builds can print it (`now-playing-source`). Normal Now Playing never names a source.
 3. Fallback never crosses **explicitness** or **version** boundaries, and never chooses a lower tier just to keep playing — it skips with an explanation instead.
 4. Mid-track source switching is not performed. A better copy found later applies to the **next** play.
-5. User can mark a pairing "Not the same song" → `track_equivalence` decided_by USER, tier REJECTED, respected forever.
+5. User can mark a pairing "Not the same song" → `track_equivalence` decided_by USER, tier REJECTED, respected forever. It's never re-linked: not by the matcher, not by grouping, not by a later EXACT decision, in memory or on disk. Implemented as infrastructure (`EquivalenceStore.reject`; debug command `not-same`); there's no listener-facing control yet.
+6. **Fallback never crosses environments** (D-36). A song chosen ONLINE plays ONLINE; a song chosen from the library plays from the library. There's no silent ONLINE → LOCAL or LOCAL → ONLINE, even for a known EXACT pair. Cross-environment playback would need an explicit listener action, which doesn't exist yet.
 
 ## 11. Recommendations & autoplay integration
 `AutoplayEngine` (queue-and-autoplay.md) asks the registry for `RecommendationFacet`s of enabled sources; results are normalized `Track`s, de-duplicated via `RecordingKey`/matcher, filtered by availability/capabilities. Library signals (playlists, history, likes) remain source-neutral.
@@ -354,14 +370,29 @@ ONLINE is every enabled online source at once; the listener sees music, never so
 | **Fan-out** | `aggregate/SourceFanOut` | Asks sources concurrently, each with a timeout (8 s). Calls run detached from the caller: a source stuck in blocking I/O is abandoned, not awaited. Cancelling the collector cancels them. Skips sources whose breaker is open, or that are rate-limited or rejected (asks anyway if every breaker is open). Records health: an answer or a miss is healthy; network/server failures and timeouts count; offline counts against no source; "not authorised" is `AUTH_FAILURE` only for a source that signs in |
 | **Grouping** ("one song, many sources") | `aggregate/TrackGrouper`, `TrackGroup` | One row per recording: **EXACT only** (the matcher's rules for versions, explicitness, covers and length), one copy per source, and ambiguity keeps rows apart. Order is deterministic: results interleaved by rank, sources by priority. The row shows the most preferred source's playable copy; every copy is kept (`alternates`) |
 | **Catalogue** | `aggregate/MultiSourceCatalog` (per environment) | **Search** is progressive: it emits as sources answer, and the final view is complete. It fails only when no source could answer. **Shelves** with the same name merge; the shelf id names every member source. **Genres** appear once; a genre asks only the sources that have it. **Paging**: each source continues from its own place, and a later copy of a shown song joins its row. **Artists, albums and playlists** go to their own source by id, never "the current one"; a disabled source's item says so |
-| **Equivalence** | `resolve/Equivalence.kt` (`InMemoryEquivalenceStore`, bounded) | Groups are remembered as EXACT decisions, with the copies themselves. The user's rejections are permanent |
+| **Equivalence** | `resolve/Equivalence.kt` (interface, `InMemoryEquivalenceStore`); `core:database` `DatabaseEquivalenceStore` (D-36) | EXACT decisions, with the copies themselves, plus the listener's rejections. In memory for synchronous reads; written through in order to `track_equivalence`; loaded at startup. Survives restarts, sources being off or unreachable, and priority changes. Nothing below EXACT is stored. Pairs, not groups, because EXACT isn't transitive |
 | **Resolution** | `StreamResolver` | Same pipeline. In the EXACT-fallback step, a copy already known to be EXACT on a source is used directly; otherwise that source is searched and the matcher decides. A miss moves on and never trips a breaker; failures count. No STRONG/POSSIBLE fallback (D-17); never mid-track (D-18) |
 | **Recommendations / autoplay** | `SourceRecommendationEngine`, `AutoplayEngine` | Each recommending source of the seeds' environment is asked about the seeds it holds (its own copies or known EXACT twins). The current song's source leads; suggestions interleave. Autoplay takes any source of the current song's environment, never another (D-34), and drops a candidate whose twin is queued or was just played |
 | **Online repository** | `AppOnlineRepository` | `status` (what ONLINE can do across sources; null when none is on), `canStartRadio(track)`, `canRelate(artist)`, search as a `Flow`. Liked songs and history show each recording once; every record keeps its own copy and source |
 | **History** | `online_history.served_by` (schema v3) | A listen records the song chosen (its own source and provider id) and, when another source's EXACT copy played it, that source |
 | **Settings** | Settings ▸ Online sources (`OnlineSourcesScreen`, `OnlineSourceSettings`) | Each registered online source: its name, On/Off, and a note when it needs the listener. With more than one, hold Center to move it up or down. Shown only when the build has online sources |
 
-Search and playback priority are related but distinct. Search collects useful results from every source; priority only orders them and picks the copy shown. Playback picks the best eligible copy: the song's own source, then EXACT copies elsewhere in priority order.
+Search and playback priority are related but distinct. Search collects useful results from every source; priority only orders them and picks the copy shown — **a preference, never a filter**. Playback picks the best eligible copy: the song's own source, then EXACT copies elsewhere in the same environment, in priority order.
+
+### 11.3 Adding a source (D-36)
+A new source plugs in without touching any screen:
+1. **A module** `sources:<provider>` with a `MusicSource`. It needs a `SourceDescriptor` (id, display name, `Basis`; the environment defaults from `Basis`, and online is anything but `LOCAL_DEVICE`) and declared `SourceCapabilities`.
+2. **Only the facets the source has:** `CatalogFacet` (search, track, artist, album, playlist), and optionally `DiscoveryFacet`, `RecommendationFacet`, `ArtworkFacet`, `PlaybackFacet` (a permitted route only), `AuthFacet`. Provider ids live in `SourceRef.providerKey` and `providerData`. Outcomes are reported honestly: `Outcome.Failure(NotFound)` or `FacetResolution.Miss` when the source doesn't have something, a real error when it failed.
+3. **Registration** in `AppGraph` (or a build-variant `BuildSources.kt`; keep `UNOFFICIAL_API` sources out of release builds, D-19), before `sourceSettings.apply()`.
+
+Everything else follows from the registry. The new source then:
+- appears in Settings ▸ Online sources;
+- is searched, browsed and recommended alongside the others;
+- has its copies grouped with theirs at EXACT;
+- falls back within its environment;
+- shows up in history, likes and playlists through its ids.
+
+No `if (provider)` anywhere outside its own module.
 
 ## 12. UI independence — what the UI may ask
 | UI need | Ask | Never |
