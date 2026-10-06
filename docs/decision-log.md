@@ -260,3 +260,13 @@ Every significant decision, newest at the bottom. Major ones have an ADR in `adr
   - Removing a server keeps its listens, likes and equivalence rows (orphaned under the old id; a re-added server gets a new id).
   - Self-signed certificates aren't supported.
   - Device acceptance and the security audit are recorded in `testing-strategy.md` §4.1 and `security.md` §8.
+
+### D-39 · Lyrics: LRCLIB by metadata, one line on the whole display
+- **Context:** user direction (2026-10-06, "secondary polish mission"): Now Playing ▸ Lyrics, synced when possible, plain without fake timing, a full-screen canvas that alternates light and dark per line, large justified type that never clips, browsing with the Wheel. D-11 already required consent for online lyrics.
+- **Decision:**
+  - **Provider:** LRCLIB (open API, no key, synced LRC + plain + instrumental), behind a `LyricsProvider` interface in a new pure-Kotlin `core:lyrics` module. Asked by title, artist, album and length only — never by a music service's id — so local and online songs work the same and no provider identity leaks.
+  - **Confidence before words:** Podium's own `LyricsMatcher` (title identity, version tags both ways, a shared artist, length within ±3 s) checks even LRCLIB's exact answer; otherwise "No lyrics found".
+  - **Consent (D-11)** gates every request; cached answers still show without it. Found lyrics cached 30 days, misses 3 days, failures never; files in the app's cache directory under hashed keys.
+  - **The screen:** a destination without header or mini player. One line at a time, set as large as it fits and justified edge to edge (`LyricLayout`, pure), shrinking rather than clipping. Even line index → Bone paper, odd → Carbon black (90 ms, instant with reduced motion). The Wheel reads back/ahead, following resumes after 5 s; Center jumps playback to the line read only when the player can seek.
+- **Options considered:** Musixmatch/LyricFind (licensed, need a business agreement and key), Genius (no lyrics text in its API), the music service's own lyrics (unofficial, provider-specific). Spec: `architecture/LYRICS_ARCHITECTURE.md`.
+- **Tradeoffs / limits:** community-contributed lyrics need a licensing review before any public release; no karaoke word timing; no in-app "clear saved lyrics" yet.

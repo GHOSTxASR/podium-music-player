@@ -20,6 +20,7 @@ rootProject.name = "podium"
 // Pure Kotlin domain modules (ADR-012): no Android imports.
 include(":core:model")
 include(":core:common")
+include(":core:lyrics")
 include(":sources:api")
 include(":player:api")
 

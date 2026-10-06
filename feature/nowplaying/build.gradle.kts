@@ -11,6 +11,7 @@ dependencies {
     implementation(project(":core:designsystem"))
     implementation(project(":core:interaction"))
     implementation(project(":player:api"))
+    implementation(project(":core:lyrics"))
     implementation(project(":sources:api"))
     implementation(libs.androidx.lifecycle.runtime.compose)
 }

@@ -24,7 +24,14 @@ enum class PodiumSymbol(val codePoint: Int) {
     Note(0xe405), Album(0xe019), Person(0xf0d3), Library(0xe030), Lock(0xe899), Error(0xf8b6),
     Offline(0xe2c1), Check(0xe668), Close(0xe5cd), DragHandle(0xe25d), Settings(0xe8b8),
     ShuffleOn(0xe9e1), PlaylistPlay(0xe05f), Headphones(0xf01f), Speaker(0xe32d), Favorite(0xe87d), Power(0xe8ac),
+
+    // Added 2026-10-06 (lyrics, customization): outline only — not in the filled instance, so never
+    // drawn with filled = true.
+    Lyrics(0xec0b), Palette(0xe40a), Image(0xe3f4), TextFields(0xe262), Sparkle(0xe65f), Contrast(0xeb37),
 }
+
+/** Symbols the filled instance doesn't carry (drawn outlined whatever is asked). */
+internal val OutlineOnly = setOf(PodiumSymbol.Lyrics, PodiumSymbol.Palette, PodiumSymbol.Image, PodiumSymbol.TextFields, PodiumSymbol.Sparkle, PodiumSymbol.Contrast)
 
 private val families = ConcurrentHashMap<Triple<Int, Boolean, Int>, FontFamily>()
 
@@ -70,7 +77,7 @@ fun Symbol(
         text = String(Character.toChars(symbol.codePoint)),
         modifier = modifier,
         style = TextStyle(
-            fontFamily = symbolFamily(weight, filled, opsz),
+            fontFamily = symbolFamily(weight, filled && symbol !in OutlineOnly, opsz),
             fontSize = with(density) { size.toSp() },
             lineHeight = with(density) { size.toSp() },
             color = color,

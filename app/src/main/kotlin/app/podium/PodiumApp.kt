@@ -121,6 +121,7 @@ import app.podium.feature.library.LibraryState
 import app.podium.feature.library.MusicScreen
 import app.podium.feature.library.SongsScreen
 import app.podium.feature.nowplaying.NowPlayingScreen
+import app.podium.feature.nowplaying.LyricsScreen
 import app.podium.feature.nowplaying.UpNextScreen
 import app.podium.feature.online.OnlineActions
 import app.podium.feature.online.OnlinePlace
@@ -163,6 +164,9 @@ sealed interface Dest {
     data object Favorites : Dest
     data object NowPlaying : Dest
     data object UpNext : Dest
+
+    /** Now Playing ▸ Lyrics: the whole display is the lyric (no header, no mini player). */
+    data object Lyrics : Dest
     data object Settings : Dest
     data object Theme : Dest
     data object Finish : Dest
@@ -183,7 +187,7 @@ sealed interface Dest {
 
 private val fixedDests = listOf(
     Dest.Home, Dest.Music, Dest.CoverFlow, Dest.Albums, Dest.Artists, Dest.Songs, Dest.Favorites, Dest.NowPlaying,
-    Dest.UpNext, Dest.Settings, Dest.Theme, Dest.Finish, Dest.Grain, Dest.CustomColor, Dest.OnlineSources,
+    Dest.UpNext, Dest.Lyrics, Dest.Settings, Dest.Theme, Dest.Finish, Dest.Grain, Dest.CustomColor, Dest.OnlineSources,
 ).associateBy { it.toString() }
 
 private fun Dest.encode(): String = when (this) {
@@ -219,6 +223,7 @@ private fun titleOf(dest: Dest, graph: AppGraph): String = when (dest) {
     Dest.Favorites -> "Favorites"
     Dest.NowPlaying -> "Now Playing"
     Dest.UpNext -> "Up Next"
+    Dest.Lyrics -> "Lyrics"
     Dest.Settings -> "Settings"
     is Dest.MusicFolders -> if (dest.path.isEmpty()) "Music folders" else dest.path.trimEnd('/').substringAfterLast('/')
     is Dest.Online -> dest.place.title
@@ -379,6 +384,8 @@ private fun ScreenOs(
     val colors = PodiumTheme.colors
     val top = backStack.last()
     val miniPlayerVisible = snapshot.isActive && top.showsMiniPlayer()
+    // Lyrics take the whole display: no header, no fading edges.
+    val fullScreen = top == Dest.Lyrics
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val miniBlock = if (miniPlayerVisible) Spacing.miniPlayer + Spacing.s * 2 else Spacing.s
@@ -397,8 +404,8 @@ private fun ScreenOs(
                     NavDisplay(
                         backStack = backStack,
                         modifier = Modifier.fillMaxSize().scrollEdgeFade(
-                            topFadePx = with(density) { insets.top.toPx() },
-                            bottomStartPx = with(density) { (screenHeight - insets.bottom.coerceAtLeast(24.dp)).toPx() },
+                            topFadePx = if (fullScreen) 0f else with(density) { insets.top.toPx() },
+                            bottomStartPx = with(density) { (if (fullScreen) screenHeight else screenHeight - insets.bottom.coerceAtLeast(24.dp)).toPx() },
                         ),
                         onBack = { navigator.pop() },
                         transitionSpec = { paperForward(paper, density, motion.reduced) },
@@ -433,7 +440,7 @@ private fun ScreenOs(
                 }
             },
             functional = {
-                ScreenHeader(
+                if (!fullScreen) ScreenHeader(
                     title = titleOf(top, graph),
                     depth = backStack.size,
                     canGoBack = backStack.size > 1,
@@ -586,7 +593,9 @@ private fun ScreenContent(
             graph.favorites,
             onUpNext = { navigator.push(Dest.UpNext) },
             environmentOf = { id -> if (graph.environments.isOnline(id)) "Online" else null },
+            onLyrics = { navigator.push(Dest.Lyrics) },
         )
+        Dest.Lyrics -> LyricsScreen(controller, graph.lyricsGateway)
         is Dest.Online -> OnlineScreen(
             place = screen.place,
             repository = graph.online,

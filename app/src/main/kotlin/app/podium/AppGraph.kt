@@ -209,6 +209,22 @@ class AppGraph(val context: Context) {
         if (power.value == Power.BOOTING) power.value = Power.ON
     }
 
+    /**
+     * Lyrics (LYRICS_ARCHITECTURE.md): LRCLIB by the song's metadata, only with the listener's consent
+     * (D-11), kept in the app's cache directory.
+     */
+    val lyrics = app.podium.core.lyrics.LyricsRepository(
+        provider = app.podium.core.lyrics.LrclibProvider(app.podium.core.lyrics.UrlConnectionLyricsHttp(LYRICS_USER_AGENT)),
+        cache = app.podium.core.lyrics.FileLyricsCache(java.io.File(context.cacheDir, "lyrics")),
+        consent = { deviceSettings.onlineLyrics.value },
+    )
+
+    val lyricsGateway = object : app.podium.feature.nowplaying.LyricsGateway {
+        override val attribution get() = lyrics.attribution
+        override suspend fun lyrics(request: app.podium.core.lyrics.LyricsRequest) = this@AppGraph.lyrics.lyrics(request)
+        override fun allow() = deviceSettings.setOnlineLyrics(true)
+    }
+
     /** Podium's own player — Media3 MediaController to the PlaybackService. Main thread only. */
     val localPlayback by lazy { MediaControllerPlaybackController(context, appScope) }
 
@@ -256,6 +272,9 @@ class AppGraph(val context: Context) {
 }
 
 enum class Power { OFF, BOOTING, ON }
+
+/** LRCLIB asks clients to name themselves. */
+private val LYRICS_USER_AGENT = "Podium/${BuildConfig.VERSION_NAME} (Android music player)"
 
 private fun playbackCapability(access: RemoteAccess): CapabilityState = when (access) {
     RemoteAccess.NO_APP -> CapabilityState(

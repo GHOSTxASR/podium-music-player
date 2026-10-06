@@ -72,7 +72,7 @@ import app.podium.core.interaction.rememberFocusListState
 import app.podium.core.interaction.rememberPodiumHaptics
 import kotlin.math.roundToInt
 
-private enum class SettingsRow { Theme, Finish, CustomColor, Grain, MusicFolders, OnlineSources, Autoplay, Recommendations, AvoidRepeats, Haptics, Clicks, StartupSound }
+private enum class SettingsRow { Theme, Finish, CustomColor, Grain, MusicFolders, OnlineSources, Autoplay, Recommendations, AvoidRepeats, OnlineLyrics, LyricsCredit, Haptics, Clicks, StartupSound }
 
 /**
  * Settings (D-26, D-32, D-35): the device's look, which folders hold its music, which online sources it
@@ -97,6 +97,7 @@ fun SettingsScreen(
     val autoplayOn by repository.autoplay.collectAsStateWithLifecycle()
     val recommendationsOn by repository.onlineRecommendations.collectAsStateWithLifecycle()
     val avoidRepeatsOn by repository.avoidRepeats.collectAsStateWithLifecycle()
+    val onlineLyricsOn by repository.onlineLyrics.collectAsStateWithLifecycle()
     val folderList by folders.folders.collectAsStateWithLifecycle()
     val selection by folders.selection.collectAsStateWithLifecycle()
     val service by onlineService.state.collectAsStateWithLifecycle()
@@ -125,6 +126,11 @@ fun SettingsScreen(
                 haptics.confirm()
                 repository.setAvoidRepeats(!avoidRepeatsOn)
             }
+            SettingsRow.OnlineLyrics -> {
+                haptics.confirm()
+                repository.setOnlineLyrics(!onlineLyricsOn)
+            }
+            SettingsRow.LyricsCredit -> haptics.reject()
             SettingsRow.Haptics -> {
                 repository.setHaptics(!hapticsOn)
                 haptics.confirm()
@@ -193,6 +199,9 @@ fun SettingsScreen(
             SettingsRow.Autoplay -> MenuRow("Autoplay", focused, value = if (autoplayOn) "On" else "Off", showChevron = false)
             SettingsRow.Recommendations -> MenuRow("Online recommendations", focused, value = if (recommendationsOn) "On" else "Off", enabled = autoplayOn, showChevron = false)
             SettingsRow.AvoidRepeats -> MenuRow("Avoid repeats", focused, value = if (avoidRepeatsOn) "On" else "Off", enabled = autoplayOn, showChevron = false)
+            SettingsRow.OnlineLyrics -> MenuRow("Online lyrics", focused, value = if (onlineLyricsOn) "On" else "Off", showChevron = false)
+            // The lyrics service's credit (LYRICS_ARCHITECTURE.md §9): its community wrote the words.
+            SettingsRow.LyricsCredit -> MenuRow("Lyrics from LRCLIB, written by its community", focused, enabled = false, showChevron = false)
             SettingsRow.Haptics -> MenuRow("Haptics", focused, value = if (hapticsOn) "On" else "Off", showChevron = false)
             SettingsRow.Clicks -> MenuRow("Click sound", focused, value = if (clicksOn) "On" else "Off", showChevron = false)
             SettingsRow.StartupSound -> MenuRow("Startup sound", focused, value = if (startupSound) "On" else "Off", showChevron = false)

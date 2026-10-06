@@ -32,6 +32,7 @@ dependencies {
     implementation(project(":core:designsystem"))
     implementation(project(":core:interaction"))
     implementation(project(":core:database"))
+    implementation(project(":core:lyrics"))
     implementation(project(":sources:api"))
     implementation(project(":sources:local"))
     implementation(project(":player:api"))

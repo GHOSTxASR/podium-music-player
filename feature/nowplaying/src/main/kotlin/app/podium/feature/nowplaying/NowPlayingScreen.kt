@@ -117,7 +117,7 @@ import kotlinx.coroutines.delay
  */
 private enum class WheelMode { Volume, Scrub, Actions }
 
-private enum class Action { Shuffle, Repeat, Favorite, Queue, More }
+private enum class Action { Shuffle, Repeat, Favorite, Lyrics, Queue, More }
 
 /**
  * Now Playing (design-system.md §6.7, D-28): the artwork is the content and leads; text, progress
@@ -132,6 +132,8 @@ fun NowPlayingScreen(
     onUpNext: () -> Unit,
     /** A quiet word on where the song belongs ("Online"), or null for the local library (D-34). */
     environmentOf: (TrackId) -> String? = { null },
+    /** Now Playing ▸ Lyrics (LYRICS_ARCHITECTURE.md §7). */
+    onLyrics: () -> Unit = {},
 ) {
     val snapshot by controller.snapshot.collectAsStateWithLifecycle()
     val queue by controller.queue.collectAsStateWithLifecycle()
@@ -177,6 +179,7 @@ fun NowPlayingScreen(
                 MenuSpec(
                     item.title,
                     buildList {
+                        add(MenuAction("Lyrics", onSelect = onLyrics))
                         add(MenuAction("Up Next", onSelect = onUpNext))
                         add(MenuAction(if (isFavorite) "Remove from favorites" else "Add to favorites") { favorites.toggle(item.trackId) })
                         if (remoteOwner != null) {
@@ -196,6 +199,7 @@ fun NowPlayingScreen(
             Action.Shuffle -> if (controls.shuffle) controller.setShuffle(!snapshot.shuffleEnabled) else haptics.reject()
             Action.Repeat -> if (controls.repeat) controller.setRepeat(snapshot.repeatMode.next()) else haptics.reject()
             Action.Favorite -> item?.let { favorites.toggle(it.trackId) }
+            Action.Lyrics -> onLyrics()
             Action.Queue -> onUpNext()
             Action.More -> showMore()
         }
@@ -626,7 +630,7 @@ private fun TransportRow(p: NowPlayingParts) {
 @Composable
 private fun ActionCluster(p: NowPlayingParts) {
     BoxWithConstraints {
-        // Five slots of up to 46 dp, narrower when the screen is: the cluster never overflows.
+        // Six slots of up to 46 dp, narrower when the screen is: the cluster never overflows.
         ActionClusterContent(p, slot = ((maxWidth - Spacing.s) / Action.entries.size).coerceIn(36.dp, 46.dp))
     }
 }
@@ -696,6 +700,7 @@ private fun ActionClusterContent(p: NowPlayingParts, slot: Dp) {
                         p.snapshot.repeatMode != RepeatMode.OFF,
                     )
                     Action.Favorite -> Triple(PodiumSymbol.Favorite, "Favorite", p.isFavorite)
+                    Action.Lyrics -> Triple(PodiumSymbol.Lyrics, "Lyrics", null)
                     Action.Queue -> Triple(PodiumSymbol.Queue, "Up Next", null)
                     Action.More -> Triple(PodiumSymbol.More, "More", null)
                 }
@@ -777,6 +782,7 @@ private fun actionLook(p: NowPlayingParts, action: Action): Triple<PodiumSymbol,
         p.snapshot.repeatMode != RepeatMode.OFF,
     )
     Action.Favorite -> Triple(PodiumSymbol.Favorite, "Favorite", p.isFavorite)
+    Action.Lyrics -> Triple(PodiumSymbol.Lyrics, "Lyrics", null)
     Action.Queue -> Triple(PodiumSymbol.Queue, "Up Next", null)
     Action.More -> Triple(PodiumSymbol.More, "More", null)
 }

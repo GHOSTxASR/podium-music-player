@@ -30,6 +30,14 @@ interface DeviceSettingsRepository {
 
     fun setStayInPodium(enabled: Boolean)
 
+    /**
+     * Online lyrics (D-11): whether Podium may send a song's title, artist, album and length to the
+     * lyrics service. Asked once, the first time lyrics are opened; changeable in Settings.
+     */
+    val onlineLyrics: StateFlow<Boolean>
+
+    fun setOnlineLyrics(enabled: Boolean)
+
     fun setAppearance(appearance: DeviceAppearance)
     fun setPreview(appearance: DeviceAppearance?)
     fun setStartupSound(enabled: Boolean)

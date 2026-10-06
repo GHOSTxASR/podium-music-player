@@ -56,6 +56,14 @@ class SharedPrefsDeviceSettings(context: Context) : DeviceSettingsRepository {
         prefs.edit { putBoolean(KEY_STAY_IN_PODIUM, enabled) }
     }
 
+    private val _onlineLyrics = MutableStateFlow(prefs.getBoolean(KEY_ONLINE_LYRICS, false))
+    override val onlineLyrics: StateFlow<Boolean> = _onlineLyrics.asStateFlow()
+
+    override fun setOnlineLyrics(enabled: Boolean) {
+        _onlineLyrics.value = enabled
+        prefs.edit { putBoolean(KEY_ONLINE_LYRICS, enabled) }
+    }
+
     override fun setAutoplay(enabled: Boolean) {
         _autoplay.value = enabled
         prefs.edit { putBoolean(KEY_AUTOPLAY, enabled) }
@@ -112,5 +120,6 @@ class SharedPrefsDeviceSettings(context: Context) : DeviceSettingsRepository {
         const val KEY_RECOMMENDATIONS = "online_recommendations"
         const val KEY_AVOID_REPEATS = "avoid_repeats"
         const val KEY_STAY_IN_PODIUM = "stay_in_podium"
+        const val KEY_ONLINE_LYRICS = "online_lyrics"
     }
 }
