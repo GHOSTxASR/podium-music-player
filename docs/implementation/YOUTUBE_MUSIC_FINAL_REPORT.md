@@ -210,8 +210,9 @@ tests; there are no instrumented `androidTest` suites).
 | `468068e` | fix(paper): edge-aware focus geometry; lists never clip their rows |
 | `9d035e4` | feat(appearance): body glitter, display fonts, a Custom theme and your own background |
 | `83b10d0` | docs: YouTube Music architecture, implementation notes, device plan; security audit |
-| (next) | docs: final report |
-| (next) | build: add verified debug APK artifact |
+| `ba74ce2` | docs: YouTube Music final report |
+| `992ad0a` | build: add verified debug APK artifact |
+| (next) | docs: record the APK commit in the final report |
 
 ## 25. GitHub branch
 
@@ -247,6 +248,22 @@ export ANDROID_HOME=/path/to/android-sdk   # or sdk.dir in local.properties
 | Secret scan of the APK | clean (no API keys, OAuth tokens, private keys, session cookies, test fixtures) |
 | Installed on a device | **no** |
 | Smoke test on a device | **no** (rendered-UI tests only) |
+
+### APK record
+
+```
+APK STATUS:        BUILT
+APK PATH:          artifacts/apk/podium-debug.apk
+APK SIZE:          50,374,931 bytes (48.0 MiB)
+BUILD TASK:        ./gradlew :app:assembleDebug
+BUILD TYPE:        debug
+VERSION NAME:      0.1.0
+VERSION CODE:      1
+COMMIT:            992ad0a (artifact commit; built from code at 83b10d0)
+BRANCH:            ccr-fcca9ac9-6juw47 (verified on origin: blob size and SHA-256 match)
+DEVICE INSTALL:    NOT AVAILABLE (no device reachable from the build container)
+DEVICE SMOKE TEST: NOT RUN
+```
 
 ## Acceptance summary
 
