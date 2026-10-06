@@ -7,6 +7,8 @@ captures/
 .externalNativeBuild/
 .cxx/
 *.apk
+# The one intentional build artifact: the verified debug APK (docs/implementation/YOUTUBE_MUSIC_FINAL_REPORT.md §27).
+!artifacts/apk/podium-debug.apk
 *.aab
 *.ap_
 *.dex
