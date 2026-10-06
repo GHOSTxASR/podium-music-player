@@ -36,6 +36,32 @@ On the device:
 | 1.11 | Context menu (hold Center on a song) with more than 8 actions | menu rows scroll with a neighbour in view; first/last flush |
 | 1.12 | Back from a column: the previous column's glimpse | shows the row that led here, centred |
 
+## 2. Customization (D-41)
+
+Automated (`VirtualDisplayTest`, `CustomizationScreenshotTest`, `DeviceSettingsPersistenceTest`):
+contrast over the whole sRGB cube, ink polarity, picture blending and fallback, every font,
+glitter seeding and the pixel-identical "off", persistence round trip and damaged values;
+screenshots of glitter on three bodies, every font, Custom on paper / mid blue / a loud picture,
+Glass on a picture, Carbon ignoring a picture.
+
+On the device:
+
+| # | Step | Expect |
+|---|---|---|
+| 2.1 | Fresh install, or upgrade from the previous build | the device looks exactly as before |
+| 2.2 | Settings ▸ Appearance ▸ Device body ▸ Glitter: On (Steel gray) | fine specks in the body, no sparkle, the Wheel clean; nothing moves |
+| 2.3 | Turn amount / density / size / opacity up and down | the body updates as the Wheel turns; Center keeps; Menu restores |
+| 2.4 | Glitter animation: Subtle; watch 30 s; then lock the phone for a minute | a very slow glint; no jank in lists; battery and GPU use are unchanged in Android's GPU profiler bars (stays well under the frame budget) |
+| 2.5 | Virtual display ▸ Font: turn through all six | the whole display restyles live; rows stay aligned; nothing clipped; the Wheel's MENU unchanged |
+| 2.6 | Pixel and Mono with long titles, CJK, Cyrillic and Greek titles | uncovered strings in Inter, whole; nothing clipped |
+| 2.7 | Theme ▸ Custom; Background color: walk the hue all the way round | text readable at every colour |
+| 2.8 | Background ▸ Choose a picture (system picker opens; no permission prompt) | the picture shows under a veil; text readable |
+| 2.9 | Background opacity 0 → 100 % | the picture strengthens; text stays readable; High contrast tones it down |
+| 2.10 | Force stop, reopen; reboot, reopen | every choice is kept, the picture still shows |
+| 2.11 | Delete the picture in the gallery, reopen Podium | the background colour shows; Settings says the picture is unavailable |
+| 2.12 | Theme ▸ Carbon with a picture chosen | Carbon's black display; Background rows say "Not with Carbon" |
+| 2.13 | TalkBack through Appearance | every row and value is read |
+
 ## 3. Lyrics (D-39)
 
 Automated (`LyricsTest`, `LyricLayoutTest`, `LyricsScreenTest`): parsing, timing boundaries,

@@ -41,7 +41,7 @@ import app.podium.core.designsystem.theme.BoneColors
 import app.podium.core.designsystem.theme.CarbonColors
 import app.podium.core.designsystem.theme.PodiumTheme
 import app.podium.core.designsystem.type.PodiumText
-import app.podium.core.designsystem.type.familyFor
+import app.podium.core.designsystem.type.LocalTypographyPreset
 import app.podium.core.interaction.InputTargetEffect
 import app.podium.core.interaction.PodiumInput
 import app.podium.core.interaction.WheelButton
@@ -224,7 +224,8 @@ fun LyricsScreen(controller: PlaybackController, gateway: LyricsGateway) {
 private fun Lyric(text: String, color: Color) {
     val measurer = rememberTextMeasurer(cacheSize = 64)
     val base = PodiumTheme.type.title
-    val family = remember(text) { familyFor(text) }
+    val preset = LocalTypographyPreset.current
+    val family = remember(text, preset) { preset.familyFor(text) }
     val style = remember(base, family) { base.copy(fontFamily = family, fontWeight = FontWeight.Medium, letterSpacing = 0.sp) }
     val density = LocalDensity.current
     BoxWithConstraints(

@@ -4,7 +4,12 @@ import android.content.Context
 import androidx.core.content.edit
 import app.podium.core.designsystem.shell.DeviceAppearance
 import app.podium.core.designsystem.shell.FinishPreset
+import app.podium.core.designsystem.shell.Glitter
+import app.podium.core.designsystem.theme.DisplayBackground
 import app.podium.core.designsystem.theme.DisplayTheme
+import app.podium.core.designsystem.theme.TextContrast
+import app.podium.core.designsystem.theme.VirtualDisplay
+import app.podium.core.designsystem.type.DisplayFont
 import app.podium.feature.settings.DeviceSettingsRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -25,6 +30,22 @@ class SharedPrefsDeviceSettings(context: Context) : DeviceSettingsRepository {
             display = prefs.getString(KEY_DISPLAY, null)
                 ?.let { name -> DisplayTheme.entries.firstOrNull { it.name == name } }
                 ?: DisplayTheme.GLASS,
+            glitter = Glitter(
+                enabled = prefs.getBoolean(KEY_GLITTER, false),
+                amount = prefs.getFloat(KEY_GLITTER_AMOUNT, Glitter.DEFAULT_AMOUNT).coerceIn(0f, 1f),
+                density = prefs.getFloat(KEY_GLITTER_DENSITY, Glitter.DEFAULT_DENSITY).coerceIn(0f, 1f),
+                size = prefs.getFloat(KEY_GLITTER_SIZE, Glitter.DEFAULT_SIZE).coerceIn(0f, 1f),
+                opacity = prefs.getFloat(KEY_GLITTER_OPACITY, Glitter.DEFAULT_OPACITY).coerceIn(0f, 1f),
+                animated = prefs.getBoolean(KEY_GLITTER_ANIMATED, false),
+            ),
+            screen = VirtualDisplay(
+                font = enumOf(prefs.getString(KEY_DISPLAY_FONT, null), DisplayFont.CLASSIC),
+                background = enumOf(prefs.getString(KEY_DISPLAY_BACKGROUND, null), DisplayBackground.NONE),
+                solidArgb = prefs.getInt(KEY_DISPLAY_SOLID, VirtualDisplay.DEFAULT_SOLID) or OPAQUE,
+                imageUri = prefs.getString(KEY_DISPLAY_IMAGE, null),
+                imageOpacity = prefs.getFloat(KEY_DISPLAY_IMAGE_OPACITY, VirtualDisplay.DEFAULT_IMAGE_OPACITY).coerceIn(0f, 1f),
+                contrast = enumOf(prefs.getString(KEY_DISPLAY_CONTRAST, null), TextContrast.STANDARD),
+            ),
         ),
     )
     override val appearance: StateFlow<DeviceAppearance> = _appearance.asStateFlow()
@@ -96,6 +117,23 @@ class SharedPrefsDeviceSettings(context: Context) : DeviceSettingsRepository {
             putInt(KEY_CUSTOM, appearance.customArgb)
             putFloat(KEY_GRAIN, appearance.grain)
             putString(KEY_DISPLAY, appearance.display.name)
+            with(appearance.glitter) {
+                putBoolean(KEY_GLITTER, enabled)
+                putFloat(KEY_GLITTER_AMOUNT, amount)
+                putFloat(KEY_GLITTER_DENSITY, density)
+                putFloat(KEY_GLITTER_SIZE, size)
+                putFloat(KEY_GLITTER_OPACITY, opacity)
+                putBoolean(KEY_GLITTER_ANIMATED, animated)
+            }
+            with(appearance.screen) {
+                putString(KEY_DISPLAY_FONT, font.name)
+                putString(KEY_DISPLAY_BACKGROUND, background.name)
+                putInt(KEY_DISPLAY_SOLID, solidArgb)
+                // A reference only, never the picture itself (PODIUM_CUSTOMIZATION.md §7).
+                if (imageUri != null) putString(KEY_DISPLAY_IMAGE, imageUri) else remove(KEY_DISPLAY_IMAGE)
+                putFloat(KEY_DISPLAY_IMAGE_OPACITY, imageOpacity)
+                putString(KEY_DISPLAY_CONTRAST, contrast.name)
+            }
         }
     }
 
@@ -121,5 +159,21 @@ class SharedPrefsDeviceSettings(context: Context) : DeviceSettingsRepository {
         const val KEY_AVOID_REPEATS = "avoid_repeats"
         const val KEY_STAY_IN_PODIUM = "stay_in_podium"
         const val KEY_ONLINE_LYRICS = "online_lyrics"
+        const val KEY_GLITTER = "glitter"
+        const val KEY_GLITTER_AMOUNT = "glitter_amount"
+        const val KEY_GLITTER_DENSITY = "glitter_density"
+        const val KEY_GLITTER_SIZE = "glitter_size"
+        const val KEY_GLITTER_OPACITY = "glitter_opacity"
+        const val KEY_GLITTER_ANIMATED = "glitter_animated"
+        const val KEY_DISPLAY_FONT = "display_font"
+        const val KEY_DISPLAY_BACKGROUND = "display_background"
+        const val KEY_DISPLAY_SOLID = "display_solid"
+        const val KEY_DISPLAY_IMAGE = "display_image_uri"
+        const val KEY_DISPLAY_IMAGE_OPACITY = "display_image_opacity"
+        const val KEY_DISPLAY_CONTRAST = "display_contrast"
+        const val OPAQUE = 0xFF000000.toInt()
+
+        inline fun <reified E : Enum<E>> enumOf(name: String?, default: E): E =
+            name?.let { n -> enumValues<E>().firstOrNull { it.name == n } } ?: default
     }
 }

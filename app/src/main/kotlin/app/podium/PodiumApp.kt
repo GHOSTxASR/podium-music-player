@@ -3,6 +3,9 @@ package app.podium
 import android.app.Activity
 import android.content.Intent
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.AnimatedVisibility
@@ -35,6 +38,7 @@ import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
@@ -94,6 +98,8 @@ import app.podium.core.designsystem.shell.StatusLeds
 import app.podium.core.designsystem.shell.palette
 import app.podium.core.designsystem.theme.Atmosphere
 import app.podium.core.designsystem.theme.AtmosphereBackground
+import app.podium.core.designsystem.theme.DisplayBackground
+import app.podium.core.designsystem.theme.LocalDisplaySurface
 import app.podium.core.designsystem.theme.PodiumMotion
 import app.podium.core.designsystem.theme.PodiumTheme
 import app.podium.core.designsystem.theme.Spacing
@@ -107,6 +113,7 @@ import app.podium.core.interaction.PodiumInput
 import app.podium.core.interaction.WheelButton
 import app.podium.core.model.AlbumId
 import app.podium.core.model.ArtistId
+import app.podium.core.model.PlaylistId
 import app.podium.core.model.Track
 import app.podium.core.model.TrackId
 import app.podium.feature.library.AlbumScreen
@@ -120,27 +127,33 @@ import app.podium.feature.library.LibraryIndex
 import app.podium.feature.library.LibraryState
 import app.podium.feature.library.MusicScreen
 import app.podium.feature.library.SongsScreen
-import app.podium.feature.nowplaying.NowPlayingScreen
 import app.podium.feature.nowplaying.LyricsScreen
+import app.podium.feature.nowplaying.NowPlayingScreen
 import app.podium.feature.nowplaying.UpNextScreen
 import app.podium.feature.online.OnlineActions
 import app.podium.feature.online.OnlinePlace
-import app.podium.sources.api.RemoteContext
-import app.podium.core.model.PlaylistId
 import app.podium.feature.online.OnlineScreen
+import app.podium.feature.settings.AppearanceLevel
+import app.podium.feature.settings.AppearanceScreen
+import app.podium.feature.settings.BackgroundScreen
+import app.podium.feature.settings.ColorTarget
 import app.podium.feature.settings.CustomColorScreen
+import app.podium.feature.settings.DeviceBodyScreen
 import app.podium.feature.settings.FinishScreen
-import app.podium.feature.settings.GrainScreen
+import app.podium.feature.settings.FontScreen
+import app.podium.feature.settings.LevelScreen
 import app.podium.feature.settings.MusicFoldersScreen
 import app.podium.feature.settings.OnlineServiceScreen
 import app.podium.feature.settings.SettingsScreen
 import app.podium.feature.settings.ThemeScreen
+import app.podium.feature.settings.VirtualDisplayScreen
 import app.podium.player.api.PlayIntent
 import app.podium.player.api.PlaybackController
 import app.podium.player.api.PlaybackSnapshot
 import app.podium.player.api.RecommendationRequest
 import app.podium.sources.api.ArtistSummary
 import app.podium.sources.api.CapabilityAction
+import app.podium.sources.api.RemoteContext
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
@@ -168,10 +181,22 @@ sealed interface Dest {
     /** Now Playing ▸ Lyrics: the whole display is the lyric (no header, no mini player). */
     data object Lyrics : Dest
     data object Settings : Dest
+
+    /** Settings ▸ Appearance (D-41) and its two halves. */
+    data object Appearance : Dest
+    data object DeviceBody : Dest
+    data object VirtualDisplay : Dest
     data object Theme : Dest
+    data object Font : Dest
+    data object Background : Dest
     data object Finish : Dest
-    data object Grain : Dest
     data object CustomColor : Dest
+
+    /** The display's background colour, in the colour editor. */
+    data object DisplayColor : Dest
+
+    /** A 0–1 level edited with the Wheel (grain, glitter, background opacity). */
+    data class Level(val level: AppearanceLevel) : Dest
 
     /** Settings ▸ the online music service (D-38): account, the app that plays, hand-off. */
     data object OnlineSources : Dest
@@ -187,7 +212,8 @@ sealed interface Dest {
 
 private val fixedDests = listOf(
     Dest.Home, Dest.Music, Dest.CoverFlow, Dest.Albums, Dest.Artists, Dest.Songs, Dest.Favorites, Dest.NowPlaying,
-    Dest.UpNext, Dest.Lyrics, Dest.Settings, Dest.Theme, Dest.Finish, Dest.Grain, Dest.CustomColor, Dest.OnlineSources,
+    Dest.UpNext, Dest.Lyrics, Dest.Settings, Dest.Appearance, Dest.DeviceBody, Dest.VirtualDisplay, Dest.Theme, Dest.Font,
+    Dest.Background, Dest.Finish, Dest.CustomColor, Dest.DisplayColor, Dest.OnlineSources,
 ).associateBy { it.toString() }
 
 private fun Dest.encode(): String = when (this) {
@@ -195,6 +221,7 @@ private fun Dest.encode(): String = when (this) {
     is Dest.Artist -> "Artist:${id.value}"
     is Dest.MusicFolders -> "MusicFolders:$path"
     is Dest.Online -> "Online:" + OnlinePlace.encode(place)
+    is Dest.Level -> "Level:${level.name}"
     else -> toString()
 }
 
@@ -203,6 +230,7 @@ private fun decodeDest(text: String): Dest? = when {
     text.startsWith("Artist:") -> Dest.Artist(ArtistId(text.removePrefix("Artist:")))
     text.startsWith("MusicFolders:") -> Dest.MusicFolders(text.removePrefix("MusicFolders:"))
     text.startsWith("Online:") -> OnlinePlace.decode(text.removePrefix("Online:"))?.let(Dest::Online)
+    text.startsWith("Level:") -> AppearanceLevel.entries.firstOrNull { it.name == text.removePrefix("Level:") }?.let(Dest::Level)
     else -> fixedDests[text]
 }
 
@@ -227,10 +255,16 @@ private fun titleOf(dest: Dest, graph: AppGraph): String = when (dest) {
     Dest.Settings -> "Settings"
     is Dest.MusicFolders -> if (dest.path.isEmpty()) "Music folders" else dest.path.trimEnd('/').substringAfterLast('/')
     is Dest.Online -> dest.place.title
+    Dest.Appearance -> "Appearance"
+    Dest.DeviceBody -> "Device body"
+    Dest.VirtualDisplay -> "Virtual display"
     Dest.Theme -> "Theme"
+    Dest.Font -> "Font"
+    Dest.Background -> "Background"
     Dest.Finish -> "Finish"
-    Dest.Grain -> "Grain"
     Dest.CustomColor -> "Custom color"
+    Dest.DisplayColor -> "Background color"
+    is Dest.Level -> dest.level.label
     Dest.OnlineSources -> graph.onlineService.state.collectAsStateWithLifecycle().value?.name ?: "Online music"
     is Dest.Album -> {
         val album by remember(dest) { graph.library.album(dest.id) }.collectAsStateWithLifecycle(initialValue = null)
@@ -253,7 +287,13 @@ fun PodiumApp(graph: AppGraph, onSourceAction: (CapabilityAction) -> Unit) {
     val appearance by graph.deviceSettings.appearance.collectAsStateWithLifecycle()
     val preview by graph.deviceSettings.preview.collectAsStateWithLifecycle()
     val effective = preview ?: appearance
-    PodiumTheme(displayTheme = effective.display) {
+    val displayImage by graph.displayImages.state.collectAsStateWithLifecycle()
+    LaunchedEffect(effective.screen.imageUri) { graph.displayImages.show(effective.screen.imageUri) }
+    PodiumTheme(
+        displayTheme = effective.display,
+        display = effective.screen,
+        displayImage = displayImage.image?.takeIf { displayImage.uri == effective.screen.imageUri },
+    ) {
         val controller = graph.playbackController
         val snapshot by controller.snapshot.collectAsStateWithLifecycle()
         val power by graph.power.collectAsStateWithLifecycle()
@@ -398,8 +438,9 @@ private fun ScreenOs(
         GlassHost(
             modifier = Modifier.fillMaxSize(),
             content = {
-                // Glass tints the display with the artwork's atmosphere; Carbon and Bone stay matte.
-                if (!colors.isIndustrial) AtmosphereBackground(atmosphere, Modifier.fillMaxSize())
+                // Glass tints the display with the artwork's atmosphere; Carbon and Bone stay matte, and
+                // a background the listener chose (D-41) shows as it is.
+                if (!colors.isIndustrial && LocalDisplaySurface.current == null) AtmosphereBackground(atmosphere, Modifier.fillMaxSize())
                 CompositionLocalProvider(LocalScreenInsets provides insets) {
                     NavDisplay(
                         backStack = backStack,
@@ -493,10 +534,17 @@ private fun PreviousColumn(previous: Dest, current: Dest, graph: AppGraph, navig
         is Dest.Album -> current.id.value
         is Dest.Artist -> current.id.value
         Dest.NowPlaying -> snapshot.item?.trackId?.value
+        // Settings rows are keyed by their enum names.
+        Dest.Appearance -> "Appearance"
+        Dest.DeviceBody -> "DeviceBody"
+        Dest.VirtualDisplay -> "VirtualDisplay"
         Dest.Theme -> "Theme"
+        Dest.Font -> "Font"
+        Dest.Background -> "Background"
         Dest.Finish -> "Finish"
         Dest.CustomColor -> if (previous == Dest.Finish) "CUSTOM" else "CustomColor"
-        Dest.Grain -> "Grain"
+        Dest.DisplayColor -> "BackgroundColor"
+        is Dest.Level -> current.level.name
         else -> titleOf(current, graph)
     }
     val backLabel = "Back to ${titleOf(previous, graph)}"
@@ -608,19 +656,56 @@ private fun ScreenContent(
             repository = settings,
             folders = graph.musicFolders,
             onlineService = graph.onlineService,
-            onTheme = { navigator.push(Dest.Theme) },
-            onFinish = { navigator.push(Dest.Finish) },
-            onCustomColor = { navigator.push(Dest.CustomColor) },
-            onGrain = { navigator.push(Dest.Grain) },
+            onAppearance = { navigator.push(Dest.Appearance) },
             onMusicFolders = { navigator.push(Dest.MusicFolders("")) },
             onOnlineService = { navigator.push(Dest.OnlineSources) },
         )
         Dest.OnlineSources -> OnlineServiceScreen(graph.onlineService)
         is Dest.MusicFolders -> MusicFoldersScreen(graph.musicFolders, screen.path, onOpen = { navigator.push(Dest.MusicFolders(it)) })
+        Dest.Appearance -> AppearanceScreen(
+            settings,
+            onDeviceBody = { navigator.push(Dest.DeviceBody) },
+            onVirtualDisplay = { navigator.push(Dest.VirtualDisplay) },
+        )
+        Dest.DeviceBody -> DeviceBodyScreen(
+            settings,
+            onFinish = { navigator.push(Dest.Finish) },
+            onCustomColor = { navigator.push(Dest.CustomColor) },
+            onLevel = { navigator.push(Dest.Level(it)) },
+        )
+        Dest.VirtualDisplay -> {
+            val image by graph.displayImages.state.collectAsStateWithLifecycle()
+            VirtualDisplayScreen(
+                settings,
+                imageStatus = image.status,
+                onTheme = { navigator.push(Dest.Theme) },
+                onFont = { navigator.push(Dest.Font) },
+                onBackground = { navigator.push(Dest.Background) },
+                onBackgroundColor = { navigator.push(Dest.DisplayColor) },
+                onLevel = { navigator.push(Dest.Level(it)) },
+            )
+        }
         Dest.Theme -> ThemeScreen(settings)
+        Dest.Font -> FontScreen(settings)
+        Dest.Background -> {
+            val image by graph.displayImages.state.collectAsStateWithLifecycle()
+            // The system photo picker: no storage permission; Podium keeps only the URI.
+            val pick = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+                if (uri != null) {
+                    val current = settings.appearance.value
+                    graph.displayImages.adopt(uri, previous = current.screen.imageUri)
+                    settings.setAppearance(current.copy(screen = current.screen.copy(background = DisplayBackground.IMAGE, imageUri = uri.toString())))
+                    settings.setPreview(null)
+                }
+            }
+            BackgroundScreen(settings, image.status, onChooseImage = {
+                pick.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+            })
+        }
         Dest.Finish -> FinishScreen(settings, onCustomColor = { navigator.push(Dest.CustomColor) })
-        Dest.Grain -> GrainScreen(settings)
         Dest.CustomColor -> CustomColorScreen(settings)
+        Dest.DisplayColor -> CustomColorScreen(settings, ColorTarget.DisplayBackground)
+        is Dest.Level -> LevelScreen(settings, screen.level)
     }
 }
 

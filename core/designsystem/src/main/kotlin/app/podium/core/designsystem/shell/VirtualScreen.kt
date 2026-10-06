@@ -24,12 +24,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -37,12 +39,17 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import app.podium.core.designsystem.symbol.PodiumSymbol
 import app.podium.core.designsystem.symbol.Symbol
+import app.podium.core.designsystem.theme.DisplaySurface
+import app.podium.core.designsystem.theme.LocalDisplaySurface
 import app.podium.core.designsystem.theme.PodiumTheme
 import app.podium.core.designsystem.theme.Spacing
 import app.podium.core.designsystem.type.PodiumText
+import kotlin.math.roundToInt
 
 val ScreenCorner: Dp = 22.dp
 private val IndustrialScreenCorner: Dp = 10.dp
@@ -78,6 +85,7 @@ fun VirtualScreen(modifier: Modifier = Modifier, content: @Composable BoxScope.(
                 .testTag(DisplayTestTag)
                 .clip(inner)
                 .background(colors.canvas)
+                .displaySurface(LocalDisplaySurface.current, colors.canvas)
                 .drawWithContent {
                     drawContent()
                     // Recess: the bezel's shadow falls a few dp onto the top of the display.
@@ -175,3 +183,26 @@ fun ScreenHeader(
         }
     }
 }
+
+/**
+ * The listener's background picture (D-41), behind everything on the display: cropped to fill it,
+ * centred, at the chosen opacity over its solid colour (the canvas already painted). Decoded once
+ * by the app at about the display's size, so drawing is one bitmap blit.
+ */
+private fun Modifier.displaySurface(surface: DisplaySurface?, canvas: Color): Modifier {
+    val image = surface?.image ?: return this
+    if (surface.imageAlpha <= 0f) return this
+    return drawWithCache {
+        val scale = maxOf(size.width / image.width, size.height / image.height)
+        val srcW = (size.width / scale).roundToInt().coerceIn(1, image.width)
+        val srcH = (size.height / scale).roundToInt().coerceIn(1, image.height)
+        val srcOffset = IntOffset((image.width - srcW) / 2, (image.height - srcH) / 2)
+        val dstSize = IntSize(size.width.roundToInt(), size.height.roundToInt())
+        onDrawBehind {
+            drawImage(image, srcOffset, IntSize(srcW, srcH), dstSize = dstSize, alpha = surface.imageAlpha, filterQuality = FilterQuality.Medium)
+            // A veil of the display's own colour, so text reads on a busy picture.
+            if (surface.veil > 0f) drawRect(canvas, alpha = surface.veil)
+        }
+    }
+}
+

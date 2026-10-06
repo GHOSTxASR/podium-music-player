@@ -4,6 +4,7 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import app.podium.core.designsystem.theme.DisplayTheme
+import app.podium.core.designsystem.theme.VirtualDisplay
 import app.podium.core.designsystem.theme.oklchToColor
 import app.podium.core.designsystem.theme.srgbToOklab
 import kotlin.math.atan2
@@ -29,8 +30,12 @@ data class DeviceAppearance(
     val customArgb: Int = DEFAULT_CUSTOM,
     /** Grain strength, 0–1. Solid finishes only. */
     val grain: Float = DEFAULT_GRAIN,
-    /** The display's visual system. Carbon and Bone put the display in matte black hardware (D-29). */
+    /** The display's visual system. Carbon, Bone and Custom put the display in matte black hardware (D-29). */
     val display: DisplayTheme = DisplayTheme.GLASS,
+    /** Flakes in the body's material (D-41). Solid finishes only; off by default. */
+    val glitter: Glitter = Glitter(),
+    /** The display's font, background and contrast (D-41). Never the body. */
+    val screen: VirtualDisplay = VirtualDisplay(),
 ) {
     val isGlass: Boolean get() = !display.isIndustrial && preset == FinishPreset.GLASS
 
@@ -67,6 +72,10 @@ data class ShellPalette(
     val grain: Float,
     /** Matte industrial hardware: flat surfaces, no sheen, no drop shadows (D-29). */
     val matte: Boolean = false,
+    /** The body's glitter (off unless chosen) and the two colours its flakes take from the body. */
+    val glitter: Glitter = Glitter(),
+    val glitterLight: Color = Color.Unspecified,
+    val glitterDark: Color = Color.Unspecified,
 )
 
 fun DeviceAppearance.palette(darkTheme: Boolean): ShellPalette {
@@ -96,6 +105,10 @@ fun DeviceAppearance.palette(darkTheme: Boolean): ShellPalette {
             pressShade = Color.White.copy(alpha = 0.05f),
             grain = grain.coerceIn(0f, 1f),
             matte = true,
+            // Matte black with fine silver flakes, and darker specks that barely show.
+            glitter = glitter,
+            glitterLight = Color(0xFFC9CCD0),
+            glitterDark = Color(0xFF000000),
         )
     }
     val (l, a, b) = srgbToOklab(base)
@@ -115,6 +128,11 @@ fun DeviceAppearance.palette(darkTheme: Boolean): ShellPalette {
         legend = if (light) oklchToColor(0.45, c * 0.5, h) else oklchToColor(0.86, c * 0.3, h),
         pressShade = Color.Black.copy(alpha = if (light) 0.08f else 0.18f),
         grain = grain.coerceIn(0f, 1f),
+        // Flakes of the body's own colour: lighter, a little less saturated (catching light), and
+        // darker (facing away). A light body gets mostly darker specks; a dark one, silvery ones.
+        glitter = glitter,
+        glitterLight = oklchToColor((l + if (light) 0.16 else 0.34).coerceAtMost(0.98), c * 0.55, h),
+        glitterDark = oklchToColor((l - if (light) 0.30 else 0.18).coerceAtLeast(0.04), c * 0.9, h),
     )
 }
 

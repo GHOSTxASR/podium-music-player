@@ -15,8 +15,9 @@ import app.podium.core.designsystem.theme.PodiumTheme
 
 /**
  * A solid finish's body: the base colour with a gentle top-to-bottom light falloff, one soft
- * diagonal sheen (anodised metal catching light), and the finish's grain. Changes animate, so
- * previewing finishes in Settings morphs the whole device.
+ * diagonal sheen (anodised metal catching light), the finish's grain, and — when chosen — glitter
+ * in the material (D-41). Changes animate, so previewing finishes in Settings morphs the whole
+ * device.
  */
 @Composable
 fun DeviceBody(palette: ShellPalette, modifier: Modifier = Modifier) {
@@ -40,6 +41,7 @@ fun DeviceBody(palette: ShellPalette, modifier: Modifier = Modifier) {
                     drawRect(sheen)
                 }
             }
-            .grain { grain },
+            .grain { grain }
+            .glitter(palette.glitter, palette.glitterLight, palette.glitterDark),
     )
 }

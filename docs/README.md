@@ -11,6 +11,8 @@ Foundation written 2026-10-02 (Phases 0–2 and source research S0). Read in thi
    - [architecture/SOURCE_CAPABILITY_MATRIX.md](architecture/SOURCE_CAPABILITY_MATRIX.md) — what each provider officially allows, and Podium's positions
    - [architecture/YOUTUBE_MUSIC_TRANSITION.md](architecture/YOUTUBE_MUSIC_TRANSITION.md) — proposal: replacing Online with YouTube Music while Offline stays frozen (2026-10-06)
    - [architecture/LYRICS_ARCHITECTURE.md](architecture/LYRICS_ARCHITECTURE.md) — lyrics provider, matching, LRC sync, cache, the full-screen lyric
+   - [architecture/PODIUM_CUSTOMIZATION.md](architecture/PODIUM_CUSTOMIZATION.md) — body glitter, display fonts, the Custom theme, backgrounds, contrast, persistence
+   - [testing/UI_DEVICE_ACCEPTANCE.md](testing/UI_DEVICE_ACCEPTANCE.md) — on-device steps for focus geometry, customization and lyrics
    - [music-source-analysis.md](music-source-analysis.md) — original source analysis (technical vs. authorised vs. distributable)
 6. [design-system.md](design-system.md) — tokens, glass materials, components, copy
 7. [interaction-model.md](interaction-model.md) — the Wheel, contexts, inputs, haptics

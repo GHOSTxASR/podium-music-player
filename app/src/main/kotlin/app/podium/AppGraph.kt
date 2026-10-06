@@ -225,6 +225,9 @@ class AppGraph(val context: Context) {
         override fun allow() = deviceSettings.setOnlineLyrics(true)
     }
 
+    /** The display's background picture, read from the URI the listener chose (D-41). */
+    val displayImages = DisplayImages(context, appScope)
+
     /** Podium's own player — Media3 MediaController to the PlaybackService. Main thread only. */
     val localPlayback by lazy { MediaControllerPlaybackController(context, appScope) }
 

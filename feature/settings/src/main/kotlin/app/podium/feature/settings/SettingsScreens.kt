@@ -24,7 +24,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -48,17 +47,15 @@ import app.podium.core.designsystem.component.LocalMiniature
 import app.podium.core.designsystem.component.LocalScreenInsets
 import app.podium.core.designsystem.component.MenuPreview
 import app.podium.core.designsystem.component.MenuRow
-import app.podium.core.designsystem.component.MessageState
-import app.podium.core.designsystem.component.ProgressBar
 import app.podium.core.designsystem.shell.DeviceAppearance
 import app.podium.core.designsystem.shell.FinishPreset
 import app.podium.core.designsystem.shell.HueWalk
 import app.podium.core.designsystem.shell.formatHex
 import app.podium.core.designsystem.shell.palette
 import app.podium.core.designsystem.shell.parseHex
-import app.podium.core.designsystem.symbol.PodiumSymbol
 import app.podium.core.designsystem.theme.BoneColors
 import app.podium.core.designsystem.theme.CarbonColors
+import app.podium.core.designsystem.theme.DisplayBackground
 import app.podium.core.designsystem.theme.DisplayTheme
 import app.podium.core.designsystem.theme.PodiumTheme
 import app.podium.core.designsystem.theme.Spacing
@@ -70,9 +67,8 @@ import app.podium.core.interaction.WheelButton
 import app.podium.core.interaction.WheelContext
 import app.podium.core.interaction.rememberFocusListState
 import app.podium.core.interaction.rememberPodiumHaptics
-import kotlin.math.roundToInt
 
-private enum class SettingsRow { Theme, Finish, CustomColor, Grain, MusicFolders, OnlineSources, Autoplay, Recommendations, AvoidRepeats, OnlineLyrics, LyricsCredit, Haptics, Clicks, StartupSound }
+private enum class SettingsRow { Appearance, MusicFolders, OnlineSources, Autoplay, Recommendations, AvoidRepeats, OnlineLyrics, LyricsCredit, Haptics, Clicks, StartupSound }
 
 /**
  * Settings (D-26, D-32, D-35): the device's look, which folders hold its music, which online sources it
@@ -83,10 +79,7 @@ fun SettingsScreen(
     repository: DeviceSettingsRepository,
     folders: MusicFolderSettings,
     onlineService: OnlineServiceSettings,
-    onTheme: () -> Unit,
-    onFinish: () -> Unit,
-    onCustomColor: () -> Unit,
-    onGrain: () -> Unit,
+    onAppearance: () -> Unit,
     onMusicFolders: () -> Unit,
     onOnlineService: () -> Unit,
 ) {
@@ -106,12 +99,8 @@ fun SettingsScreen(
     val rows = SettingsRow.entries.filter { it != SettingsRow.OnlineSources || service != null }
     val focus = rememberFocusListState("settings")
     val activate: (Int) -> Unit = { index ->
-        val industrial = appearance.display.isIndustrial
         when (rows[index]) {
-            SettingsRow.Theme -> onTheme()
-            SettingsRow.Finish -> if (industrial) haptics.reject() else onFinish()
-            SettingsRow.CustomColor -> if (industrial) haptics.reject() else onCustomColor()
-            SettingsRow.Grain -> if (appearance.isGlass) haptics.reject() else onGrain()
+            SettingsRow.Appearance -> onAppearance()
             SettingsRow.MusicFolders -> onMusicFolders()
             SettingsRow.OnlineSources -> onOnlineService()
             SettingsRow.Autoplay -> {
@@ -154,38 +143,14 @@ fun SettingsScreen(
         onActivate = activate,
         preview = { row ->
             when (row) {
-                SettingsRow.Finish -> appearance.baseArgb?.let { MenuPreview.Swatch(Color(it)) } ?: MenuPreview.Instrument
-                SettingsRow.CustomColor -> MenuPreview.Swatch(Color(appearance.customArgb))
+                SettingsRow.Appearance -> appearance.baseArgb?.let { MenuPreview.Swatch(Color(it)) } ?: MenuPreview.Instrument
                 else -> MenuPreview.Instrument
             }
         },
         modifier = Modifier.fillMaxSize(),
     ) { row, _, focused ->
-        val industrial = appearance.display.isIndustrial
         when (row) {
-            SettingsRow.Theme -> MenuRow("Theme", focused, value = appearance.display.label)
-            SettingsRow.Finish -> MenuRow(
-                "Finish",
-                focused,
-                value = if (industrial) "Matte black with ${appearance.display.label}" else appearance.preset.label,
-                enabled = !industrial,
-                showChevron = !industrial,
-            )
-            SettingsRow.CustomColor -> MenuRow(
-                "Custom color",
-                focused,
-                value = formatHex(appearance.customArgb),
-                leadingContent = { Swatch(Color(appearance.customArgb)) },
-                enabled = !industrial,
-                showChevron = !industrial,
-            )
-            SettingsRow.Grain -> MenuRow(
-                "Grain",
-                focused,
-                value = if (appearance.isGlass) "Solid finishes only" else percent(appearance.grain),
-                enabled = !appearance.isGlass,
-                showChevron = !appearance.isGlass,
-            )
+            SettingsRow.Appearance -> MenuRow("Appearance", focused, value = appearance.display.label)
             SettingsRow.MusicFolders -> MenuRow(
                 "Music folders",
                 focused,
@@ -264,8 +229,9 @@ fun FinishScreen(repository: DeviceSettingsRepository, onCustomColor: () -> Unit
 }
 
 /**
- * Theme picker (D-29): Glass, or the matte instrument looks Carbon and Bone. Turning the wheel
- * tries each one on the whole device; Center keeps it, Menu puts the old one back.
+ * Theme picker (D-29, D-41): Glass, the matte instrument looks Carbon and Bone, or Custom (the same
+ * instrument on your own background). Turning the wheel tries each one on the whole device; Center
+ * keeps it, Menu puts the old one back.
  */
 @Composable
 fun ThemeScreen(repository: DeviceSettingsRepository) {
@@ -297,6 +263,7 @@ fun ThemeScreen(repository: DeviceSettingsRepository) {
                 DisplayTheme.GLASS -> MenuPreview.Instrument
                 DisplayTheme.CARBON -> MenuPreview.Swatch(CarbonColors.canvas)
                 DisplayTheme.BONE -> MenuPreview.Swatch(BoneColors.canvas)
+                DisplayTheme.CUSTOM -> MenuPreview.Swatch(Color(appearance.screen.solidArgb))
             }
         },
         modifier = Modifier.fillMaxSize(),
@@ -310,6 +277,7 @@ fun ThemeScreen(repository: DeviceSettingsRepository) {
                         DisplayTheme.GLASS -> null
                         DisplayTheme.CARBON -> CarbonColors.canvas
                         DisplayTheme.BONE -> BoneColors.canvas
+                        DisplayTheme.CUSTOM -> Color(appearance.screen.solidArgb)
                     },
                 )
             },
@@ -319,78 +287,46 @@ fun ThemeScreen(repository: DeviceSettingsRepository) {
     }
 }
 
-/** Grain strength, adjusted with the wheel and previewed on the device as you turn. */
-@Composable
-fun GrainScreen(repository: DeviceSettingsRepository) {
-    val colors = PodiumTheme.colors
-    val type = PodiumTheme.type
-    val insets = LocalScreenInsets.current
-    val haptics = rememberPodiumHaptics()
-    val appearance = remember { repository.appearance.value }
-    var grain by remember { mutableFloatStateOf(appearance.grain) }
-    if (!LocalMiniature.current) DisposableEffect(Unit) { onDispose { repository.setPreview(null) } }
-    if (appearance.isGlass) {
-        Box(Modifier.fillMaxSize().padding(top = insets.top, bottom = insets.bottom), contentAlignment = Alignment.Center) {
-            MessageState(PodiumSymbol.Settings, "Grain needs a solid finish", "Choose a finish other than Glass, then come back here.")
-        }
-        return
-    }
-    InputTargetEffect(WheelContext.VOLUME) { input ->
-        when (input) {
-            is PodiumInput.Rotate -> {
-                val next = (grain + input.detents * GRAIN_STEP).coerceIn(0f, 1f)
-                if (next == grain) haptics.boundary()
-                grain = next
-                repository.setPreview(appearance.copy(grain = grain))
-                true
-            }
-            is PodiumInput.Press -> if (input.button == WheelButton.CENTER) {
-                repository.setAppearance(appearance.copy(grain = grain))
-                repository.setPreview(null)
-                haptics.confirm()
-                true
-            } else false
-            else -> false
-        }
-    }
-    Column(
-        Modifier.fillMaxSize().padding(top = insets.top, bottom = insets.bottom).padding(horizontal = Spacing.xxl),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        PodiumText(percent(grain), type.largeTitle, colors.labelPrimary)
-        Spacer(Modifier.height(Spacing.l))
-        ProgressBar({ grain }, running = false, emphasized = true)
-        Spacer(Modifier.height(Spacing.l))
-        PodiumText("Turn the wheel to adjust. Press the center to keep it.", type.footnote, colors.labelSecondary)
-    }
-}
+/** What the colour editor colours: the body's Custom finish, or the display's background. */
+enum class ColorTarget { Finish, DisplayBackground }
 
 /**
  * Custom colour editor: type a hex code, or turn the wheel to walk the hue. The device previews
- * the colour as it changes; the center (or the button) applies it as the Custom finish.
+ * the colour as it changes; the center (or the button) applies it — as the Custom finish, or as
+ * the display's background colour (which turns a Glass display's background to Solid if it had
+ * none, so the choice shows).
  */
 @Composable
-fun CustomColorScreen(repository: DeviceSettingsRepository) {
+fun CustomColorScreen(repository: DeviceSettingsRepository, target: ColorTarget = ColorTarget.Finish) {
     val colors = PodiumTheme.colors
     val type = PodiumTheme.type
     val insets = LocalScreenInsets.current
     val haptics = rememberPodiumHaptics()
     val focusManager = LocalFocusManager.current
     val appearance = remember { repository.appearance.value }
-    var argb by remember { mutableIntStateOf(appearance.customArgb) }
-    var walk by remember { mutableStateOf(HueWalk.of(appearance.customArgb)) }
+    val initial = if (target == ColorTarget.Finish) appearance.customArgb else appearance.screen.solidArgb
+    var argb by remember { mutableIntStateOf(initial) }
+    var walk by remember { mutableStateOf(HueWalk.of(initial)) }
+    fun applied(color: Int): DeviceAppearance = when (target) {
+        ColorTarget.Finish -> appearance.copy(preset = FinishPreset.CUSTOM, customArgb = color)
+        ColorTarget.DisplayBackground -> appearance.copy(
+            screen = appearance.screen.copy(
+                solidArgb = color,
+                background = if (appearance.screen.background == DisplayBackground.NONE) DisplayBackground.SOLID else appearance.screen.background,
+            ),
+        )
+    }
     var text by remember { mutableStateOf(formatHex(argb).drop(1)) }
     var invalid by remember { mutableStateOf(false) }
 
     val miniature = LocalMiniature.current
     if (!miniature) {
-        LaunchedEffect(argb) { repository.setPreview(appearance.copy(preset = FinishPreset.CUSTOM, customArgb = argb)) }
+        LaunchedEffect(argb) { repository.setPreview(applied(argb)) }
         if (!LocalMiniature.current) DisposableEffect(Unit) { onDispose { repository.setPreview(null) } }
     }
 
     val apply = {
-        repository.setAppearance(appearance.copy(preset = FinishPreset.CUSTOM, customArgb = argb))
+        repository.setAppearance(applied(argb))
         repository.setPreview(null)
         haptics.confirm()
         focusManager.clearFocus()
@@ -483,7 +419,7 @@ fun CustomColorScreen(repository: DeviceSettingsRepository) {
 }
 
 @Composable
-private fun Swatch(color: Color?) {
+internal fun Swatch(color: Color?) {
     val colors = PodiumTheme.colors
     val shape = CircleShape
     Box(
@@ -501,7 +437,4 @@ private fun Swatch(color: Color?) {
     )
 }
 
-private fun percent(value: Float) = "${(value * 100).roundToInt()}%"
-
-private const val GRAIN_STEP = 0.04f
 private const val HUE_STEP_DEGREES = 6.0

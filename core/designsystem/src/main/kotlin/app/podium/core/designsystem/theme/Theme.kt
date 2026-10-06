@@ -18,7 +18,9 @@ import androidx.compose.ui.unit.dp
 import app.podium.core.designsystem.glass.GlassTier
 import app.podium.core.designsystem.glass.LocalGlassTier
 import app.podium.core.designsystem.type.DefaultType
+import app.podium.core.designsystem.type.LocalTypographyPreset
 import app.podium.core.designsystem.type.PodiumType
+import app.podium.core.designsystem.type.TypographyPreset
 
 /** Motion tokens (animation-system.md §2). */
 @Immutable
@@ -76,13 +78,16 @@ fun deviceGlassTier(): GlassTier = when {
 }
 
 /**
- * The display's visual system (D-29). Glass follows the system light/dark setting; Carbon and Bone
- * are deliberate fixed looks — matte, monochrome, no glass anywhere on the display.
+ * The display's visual system (D-29, D-41). Glass follows the system light/dark setting; Carbon and
+ * Bone are deliberate fixed looks — matte, monochrome, no glass anywhere on the display. Custom is
+ * the same matte instrument on the listener's own background (a colour or a picture), its ink
+ * chosen for contrast.
  */
 enum class DisplayTheme(val label: String) {
     GLASS("Glass"),
     CARBON("Carbon"),
     BONE("Bone"),
+    CUSTOM("Custom"),
     ;
 
     val isIndustrial: Boolean get() = this != GLASS
@@ -93,6 +98,10 @@ fun PodiumTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     glassTier: GlassTier = deviceGlassTier(),
     displayTheme: DisplayTheme = DisplayTheme.GLASS,
+    /** The listener's customization of the display: font, background, contrast (D-41). */
+    display: VirtualDisplay = VirtualDisplay(),
+    /** The decoded background picture, when [display] has one and it could be read. */
+    displayImage: DisplayImage? = null,
     content: @Composable () -> Unit,
 ) {
     val context = LocalContext.current
@@ -100,13 +109,14 @@ fun PodiumTheme(
     val reducedMotion = remember(context) {
         Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
     }
+    val colors = remember(displayTheme, darkTheme, display, displayImage) { DisplayColors.colors(displayTheme, darkTheme, display, displayImage) }
+    val surface = remember(displayTheme, display, displayImage) { DisplayColors.surface(displayTheme, display, displayImage) }
+    val preset = TypographyPreset.of(display.font)
     CompositionLocalProvider(
-        LocalPodiumColors provides when (displayTheme) {
-            DisplayTheme.GLASS -> if (darkTheme) DarkColors else LightColors
-            DisplayTheme.CARBON -> CarbonColors
-            DisplayTheme.BONE -> BoneColors
-        },
-        LocalPodiumType provides DefaultType,
+        LocalPodiumColors provides colors,
+        LocalDisplaySurface provides surface,
+        LocalTypographyPreset provides preset,
+        LocalPodiumType provides preset.type,
         LocalPodiumMotion provides PodiumMotion(reducedMotion),
         LocalGlassTier provides if (displayTheme.isIndustrial) GlassTier.Solid else glassTier,
         content = content,

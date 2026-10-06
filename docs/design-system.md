@@ -116,6 +116,8 @@ Atmosphere follows the **now-playing** artwork app-wide; on album/artist screens
 
 ---
 
+**Custom theme and backgrounds (D-41).** Besides Glass, Carbon and Bone, the display can be Custom: the matte instrument on the listener's own colour or picture, ink chosen by contrast (primary ≥ 4.5:1, secondary ≥ 4.5:1, tertiary ≥ 3:1 on any solid colour), a veil and a text halo over pictures. Carbon and Bone never take a background. Spec: `architecture/PODIUM_CUSTOMIZATION.md` §4–§5.
+
 ## 3. Typography
 
 ### 3.1 Families
@@ -123,6 +125,8 @@ Atmosphere follows the **now-playing** artwork app-wide; on album/artist screens
 - **Inter** (variable): metadata strings not fully covered by Instrument Sans (per-string selection; ADR-010).
 - System Noto: anything Inter lacks.
 - OpenType: `tnum` on every numeric style; `case` on titles containing parentheses; true minus (U+2212) for remaining time.
+
+**Display fonts (D-41).** The listener can set the virtual display in another face (Settings ▸ Appearance ▸ Virtual display ▸ Font: Classic, Clean, Industrial, Mono, Pixel, Condensed). Each is a `TypographyPreset` that rebuilds this whole scale with a size factor matching x-heights, and falls back to Inter per whole string. Classic is the scale below, unchanged. The Wheel's legend is on the body and never changes. Spec: `architecture/PODIUM_CUSTOMIZATION.md` §3.
 
 ### 3.2 Scale (sp; line height; weight; tracking; width)
 | Style | Size/LH | Weight | Tracking | Width | Use |
