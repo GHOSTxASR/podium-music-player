@@ -1,5 +1,6 @@
 package app.podium.core.interaction
 
+import androidx.compose.animation.core.AnimationSpec
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.gestures.animateScrollBy
@@ -14,7 +15,6 @@ import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import kotlin.math.abs
-import kotlin.math.max
 
 /**
  * The single focus of a list (interaction-model.md §1, §5). Rotation moves it, touch scrolling
@@ -50,7 +50,7 @@ class FocusListState(initialIndex: Int = 0, val listState: LazyListState = LazyL
     }
 
     fun focus(index: Int) {
-        if (index in 0 until max(itemCount, 1) && index != focusedIndex) {
+        if (index in 0 until kotlin.math.max(itemCount, 1) && index != focusedIndex) {
             focusedIndex = index
             focusMoves++
         }
@@ -88,38 +88,41 @@ class FocusListState(initialIndex: Int = 0, val listState: LazyListState = LazyL
     }
 
     /**
-     * Scroll so the focused item sits at least one row inside the readable region. A one-row step
-     * glides; anything further — a fast spin that outran the last glide — jumps, so the list is
-     * never behind the focus. Call with the latest focus only (cancel the previous call).
+     * Scroll so the focused row sits where [scroll] wants it (FocusGeometry): at the middle of the
+     * readable region on the paper, or with a neighbour in view in a plain list — the first and last
+     * rows flush with the region's edges, never partly hidden. A short step glides with [glide];
+     * anything further — a fast spin that outran the last glide — jumps, so the list is never
+     * behind the focus. Call with the latest focus only (cancel the previous call).
      */
-    suspend fun keepFocusedInView() {
-        val info = listState.layoutInfo
-        val end = info.viewportEndOffset - info.afterContentPadding
-        val item = info.visibleItemsInfo.firstOrNull { it.index == focusedIndex }
-        if (item == null) {
-            // The focused row isn't even laid out: place it one row inside the edge it went past.
-            val visible = info.visibleItemsInfo
-            val rowSize = visible.firstOrNull()?.size ?: 0
-            if (visible.isNotEmpty() && focusedIndex > visible.last().index && rowSize > 0) {
-                val rowsAbove = ((end - 2 * rowSize) / rowSize).coerceAtLeast(0)
-                listState.scrollToItem(max(0, focusedIndex - rowsAbove))
-            } else {
-                listState.scrollToItem(max(0, focusedIndex - 1))
-            }
-            return
+    suspend fun keepFocusedInView(
+        scroll: FocusScroll = FocusScroll.EDGE,
+        glide: AnimationSpec<Float> = tween(GLIDE_MILLIS, easing = FastOutSlowInEasing),
+    ) {
+        var info = listState.layoutInfo
+        var jumped = false
+        if (info.visibleItemsInfo.none { it.index == focusedIndex }) {
+            // The focused row isn't even laid out: bring it in, then place it.
+            if (focusedIndex !in 0 until info.totalItemsCount) return
+            listState.scrollToItem(focusedIndex)
+            info = listState.layoutInfo
+            jumped = true
         }
-        val margin = item.size
-        val top = item.offset
-        val bottom = item.offset + item.size
-        val delta = when {
-            top < margin && focusedIndex > 0 -> (top - margin).toFloat()
-            bottom > end - margin && focusedIndex < itemCount - 1 -> (bottom - (end - margin)).toFloat()
-            else -> 0f
-        }
+        val rows = info.visibleItemsInfo
+        val item = rows.firstOrNull { it.index == focusedIndex } ?: return
+        fun row(index: Int) = rows.firstOrNull { it.index == index }?.let { FocusGeometry.Row(it.offset, it.size) }
+        val delta = FocusGeometry.scrollDelta(
+            mode = scroll,
+            readable = info.viewportEndOffset - info.afterContentPadding,
+            focused = FocusGeometry.Row(item.offset, item.size),
+            previous = row(focusedIndex - 1),
+            next = row(focusedIndex + 1),
+            hasPrevious = focusedIndex > 0,
+            hasNext = focusedIndex < info.totalItemsCount - 1,
+        )
         when {
-            delta == 0f -> Unit
-            abs(delta) <= item.size * 1.05f -> listState.animateScrollBy(delta, tween(GLIDE_MILLIS, easing = FastOutSlowInEasing))
-            else -> listState.scrollBy(delta)
+            abs(delta) < 0.5f -> Unit
+            jumped || abs(delta) > item.size * 1.5f -> listState.scrollBy(delta)
+            else -> listState.animateScrollBy(delta, glide)
         }
     }
 

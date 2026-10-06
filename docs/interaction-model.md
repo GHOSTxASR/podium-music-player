@@ -80,6 +80,22 @@ Global (when not consumed by the target): `Press(PLAY_PAUSE)` → toggle · `Pre
 - **Album Flow:** horizontal fling scrolls with momentum and snaps to an album; tap the center cover → flip.
 - **Mini player:** tap → Now Playing; ⏯ button toggles; swipe up → Now Playing.
 
+### 5.1 Focus geometry (D-40)
+The focus is derived only from what the list measured — the readable region (the viewport between the content paddings), the rows' offsets and sizes, and the scroll position — never from fixed coordinates (`FocusGeometry`, `FocusListState.keepFocusedInView`, `FocusList`).
+
+| Situation | Paper lists (`FocusScroll.CENTRE`) | Plain lists — menus (`FocusScroll.EDGE`) |
+|---|---|---|
+| Middle of a long list | the focused row rides at the readable region's middle (the arc's apex); the list scrolls one row per detent | the focus moves; the list scrolls only to keep one neighbour each side in view |
+| Near the start / end | the list stops at its end; the focus travels up / down to the real edge | same |
+| First / last row focused | flush with the region's top / bottom: never partly under the title or the mini player, no empty space beyond | same (this was the bug: the first and last rows were exempt from keep-in-view) |
+| The list fits | starts at the top of the readable region; no scrolling | same |
+| Fast spin outruns the list | jump (`scrollToItem`), then place | same |
+
+- **The lens** sits on the focused row and slides between rows in content space, so it is glued to the rows while the list scrolls; it is clipped to the readable region and never clamped to a band. Reduced motion: it jumps; a move of more than three rows jumps.
+- **The ends** fade and soften only where the list continues beyond them (`FocusGeometry.endStrength`), ramping in over the first row of hidden content.
+- **Touch:** unchanged (§5). A tap focuses a row, which then rides to the middle like any other focus move.
+- Tests: `FocusGeometryTest` (pure), `FocusListGeometryTest` (Robolectric, 1/2/3/5/10/50 rows, first/middle/last and back, Carbon/Bone/Glass, phone and small screens, long titles; asserts the focused row is fully inside the readable region, no row is clipped, flush ends and the centred middle).
+
 ## 6. Haptics mapping
 | Event | Token |
 |---|---|

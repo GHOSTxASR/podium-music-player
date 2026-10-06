@@ -56,7 +56,8 @@ Every list sits on one sheet that curves like the Wheel's right side:
          (fading, softening toward the ends)
 ```
 - **The arc** (`PaperGeometry`): a ")" whose apex sits at mid-height of the readable region at 80 % of the width, radius 1.05 × the readable height, hairline, tertiary — hollow facing the list, mirroring the Wheel's right side. The selection indicator rides on it.
-- **Rows ride the arc.** Each row is shifted left by the curve at its height, so the list curves and scrolls along it. Toward the ends rows fade (to 40 %), shrink a little (5 %) and soften (up to 3 dp blur on API 31+); the focused row stays crisp. Rows fade out within 24 dp of the readable region's edges, so they never drift under the title or the mini player. Short lists sit centred on the apex.
+- **Rows ride the arc.** Each row is shifted left by the curve at its height, so the list curves and scrolls along it; the list's own bounds reach far enough left that a bent row is never clipped. Toward an end the list *continues beyond*, rows fade (to 40 %), shrink a little (5 %) and soften (up to 3 dp blur on API 31+), ramping in over the first row of hidden content — an end with nothing beyond it stays crisp, so a short list is crisp throughout. The focused row stays crisp. Rows fade out within 24 dp of the readable region's edges, so they never drift under the title or the mini player.
+- **Focus geometry (D-40, interaction-model.md §5.1).** In a long list the focused row rides at the apex (mid-height of the readable region); near the start or end it travels to the real top or bottom, so the first row sits flush under the title and the last flush on the bottom, never partly hidden and never with empty space beyond. A list that fits starts at the top of the readable region. A live miniature (the previous column's glimpse) centres the row that led here instead, so the glimpse always shows it.
 - **Two glimpses at mid-height, either side of the list,** the same square (34 % of the readable height), the same distance treatment (60 % opacity, 94 % scale, 1.5 dp soften), each running off its display edge:
   - Right, beyond the arc: the focused item's next column (`MenuPreview`: cycling artwork, a sideways carousel, a swatch, or the instrument diagram).
   - Left, before the list: the previous column, live — that screen itself (`LocalPaperPeek`, a `LocalMiniature` composition with no input or side effects), zoomed in on its list with the item that led here focused (`LocalMiniatureFocusKey`), on a raised tile. Tapping it goes back. Root screens have none.
@@ -143,7 +144,7 @@ Atmosphere follows the **now-playing** artwork app-wide; on album/artist screens
 Font scale: honoured to 200% (Android nonlinear scaling). Rows grow (`minHeight`, never fixed height). Wheel legends cap at 1.3× (fixed geometry; semantics carry the label). Bold-text (`fontWeightAdjustment`) adds +100 to weights (cap 700).
 
 ### 3.3 Truncation
-Titles: end ellipsis; Now Playing: narrow width → wrap to 2 lines → ellipsis. Only the focused list row may scroll its title, slowly, after 0.9 s, when it doesn't fit (as the original iPod did; it follows the user's own focus, and is off with reduced motion). No other marquees.
+Titles: end ellipsis; Now Playing: narrow width → wrap to 2 lines → ellipsis. Only the focused list row may scroll its title, slowly, after 0.9 s, when it doesn't fit (as the original iPod did; it follows the user's own focus, and is off with reduced motion). No other marquees. The scrolling title may draw 8 dp beyond its box on every side (layout keeps its own size), so neither Carbon's glow nor a glyph reaching outside its line box is cut into a hard edge, and its ends fade over the last 12 dp instead of stopping mid-letter.
 
 ---
 
@@ -265,7 +266,8 @@ Lint rule (custom detector in `build-logic`): `Modifier.blur`, `RenderEffect`, `
 - Material: `GlassFocus` (Full/Blur) / solid highlight (Solid, HC).
 - Motion: spring `focus` (stiffness 1400, damping 0.86); fast rotation (> 16 detents/s) uses `focusFast` (2400, 1.0). Boundary hit: scaleY 0.94 for 120ms + boundary haptic.
 - Non-glass indicators (always): focused row text weight 600 (animated with the same spring), trailing chevron `FILL=1`, semantics `selected`.
-- Keep-in-view: focused row stays ≥ 1 row from the readable region's edges; scrolling uses `animateScrollBy` with spring `focus`.
+- Keep-in-view (D-40): on the paper the focused row rides at the readable region's middle and the list's own scroll limits put the first and last rows flush with the region's edges; plain lists (menus) keep one neighbour in view each side, the first and last rows flush. The scroll glides with the lens's own spring `focus`, so the two move as one; jumps (> 1.5 rows) are immediate.
+- The lens is glued to the rows: it slides between rows in content space (a fractional row position), so it moves with the list while the list scrolls, and it is clipped to the readable region. It never clamps to a fixed band.
 
 ### 6.3 Rows
 | Row | Layout |

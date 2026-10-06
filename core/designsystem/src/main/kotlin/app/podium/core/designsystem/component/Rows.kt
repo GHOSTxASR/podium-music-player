@@ -17,13 +17,21 @@ import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.offset
 import app.podium.core.designsystem.artwork.ArtworkImage
 import app.podium.core.designsystem.symbol.PodiumSymbol
 import app.podium.core.designsystem.symbol.Symbol
@@ -190,11 +198,52 @@ fun formatDuration(ms: Long?): String? {
 /**
  * The focused row's text scrolls slowly when it doesn't fit, as on the original iPod, so long
  * titles are readable without widening the column. Other rows ellipsize. Off with reduced motion.
+ *
+ * A marquee clips to its own bounds. Clipped at the text's box, that cut the focused text's glow
+ * (Carbon) into a hard rectangle and could shave a glyph that reaches outside its line box (an
+ * accent, a tall script, a display font with deep descenders), and a long title stopped mid-letter
+ * at the right edge. So the scrolling text borrows [TextBleed] of room on every side — for drawing
+ * only, the layout keeps the text's own size — and its ends fade instead of cutting.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun Modifier.scrollsWhenFocused(focused: Boolean): Modifier =
-    if (focused && !PodiumTheme.motion.reduced) basicMarquee(initialDelayMillis = 900, repeatDelayMillis = 1_800) else this
+    if (focused && !PodiumTheme.motion.reduced) {
+        this
+            .layout { measurable, constraints ->
+                val bleed = TextBleed.roundToPx()
+                val placeable = measurable.measure(constraints.offset(horizontal = bleed * 2, vertical = bleed * 2))
+                layout((placeable.width - bleed * 2).coerceAtLeast(0), (placeable.height - bleed * 2).coerceAtLeast(0)) {
+                    placeable.place(-bleed, -bleed)
+                }
+            }
+            .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+            .drawWithContent {
+                drawContent()
+                val bleed = TextBleed.toPx()
+                val fade = bleed + TextEdgeFade.toPx()
+                drawRect(
+                    Brush.horizontalGradient(0f to Color.Transparent, 1f to Color.Black, startX = 0f, endX = bleed),
+                    size = Size(bleed, size.height),
+                    blendMode = BlendMode.DstIn,
+                )
+                drawRect(
+                    Brush.horizontalGradient(0f to Color.Black, 1f to Color.Transparent, startX = size.width - fade, endX = size.width),
+                    topLeft = Offset(size.width - fade, 0f),
+                    size = Size(fade, size.height),
+                    blendMode = BlendMode.DstIn,
+                )
+            }
+            .basicMarquee(initialDelayMillis = 900, repeatDelayMillis = 1_800)
+            .padding(TextBleed)
+    } else this
+
+/** Room the scrolling title may draw beyond its box (covers Carbon's glow, ~7 dp). */
+private val TextBleed = 8.dp
+
+/** How far into the box the scrolling title's right end fades. */
+private val TextEdgeFade = 4.dp
+
 
 /** Cover, title and quiet details at the top of an album, artist or playlist page. Not focusable. */
 @Composable

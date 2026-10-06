@@ -270,3 +270,21 @@ Every significant decision, newest at the bottom. Major ones have an ADR in `adr
   - **The screen:** a destination without header or mini player. One line at a time, set as large as it fits and justified edge to edge (`LyricLayout`, pure), shrinking rather than clipping. Even line index → Bone paper, odd → Carbon black (90 ms, instant with reduced motion). The Wheel reads back/ahead, following resumes after 5 s; Center jumps playback to the line read only when the player can seek.
 - **Options considered:** Musixmatch/LyricFind (licensed, need a business agreement and key), Genius (no lyrics text in its API), the music service's own lyrics (unofficial, provider-specific). Spec: `architecture/LYRICS_ARCHITECTURE.md`.
 - **Tradeoffs / limits:** community-contributed lyrics need a licensing review before any public release; no karaoke word timing; no in-app "clear saved lyrics" yet.
+
+### D-40 · Edge-aware focus geometry; lists never clip their rows
+- **Context:** user direction (2026-10-06, polish mission §2–§7): the first and last rows didn't get the right highlight, the highlight looked held to a fixed band, rows near the ends sat far from the focus, scrolling at the ends felt wrong, and text was cut at corners. Inspected in Robolectric renders of the device (1/2/3/5/10/50 rows, focus walked with the Wheel) before changing anything.
+- **Root causes found:**
+  1. **Clipped rows.** Paper rows ride the arc through `graphicsLayer.translationX`, up to ~50 dp left at the region's ends, but the `LazyColumn` was only as wide as the straight column, and a lazy list clips to its bounds: "Item 1" rendered as "tem 1". The lens (drawn outside the list) wasn't clipped, so the band and the text disagreed at the ends.
+  2. **The marquee's clip.** `basicMarquee` clips to the text's box, which cut Carbon's glow on the focused title into a hard rectangle (and would shave glyphs reaching outside the line box), and stopped long titles mid-letter.
+  3. **Keep-in-view exempted the ends.** `keepFocusedInView` skipped scrolling for index 0 and the last index, and used the focused row's size as the margin, so with rows of different heights the first/last row could stay partly under the title or the mini player.
+  4. **The lens was clamped** to the readable region (`coerceIn`) instead of following its row — the "fixed vertical region".
+  5. **Geometry tied to the display, not the content.** Short lists were centred (empty space above item 1), and the ends faded and blurred even where the list had nothing beyond them.
+- **Decision:**
+  - `FocusGeometry` (core:interaction, pure): scroll targets from the readable region, the rows and the scroll position. Paper: the focused row rides at the middle (the arc's apex) and the list's own scroll limits put the first and last rows flush with the edges. Plain menus: a neighbour in view each side, ends flush. Lists that fit start at the top.
+  - The lens slides between rows in content space (fractional row position) and is clipped to the readable region; the scroll glides with the lens's spring so they move as one.
+  - Ends fade only as far as the list continues beyond them.
+  - The paper list's bounds reach left by the furthest bend plus 8 dp, rows are inset to the column, and the previous column's glimpse is drawn above the list so taps still reach it.
+  - The scrolling title draws 8 dp beyond its box on every side (layout unchanged) and fades its ends.
+  - Miniatures (the previous column's glimpse) centre the row that led here, since short lists no longer sit at mid-height.
+- **Supersedes:** design-system §6.2 "focused row stays ≥ 1 row from the edges" and §5 "short lists sit centred on the apex".
+- **Tradeoffs:** on the paper every detent in the middle of a long list scrolls the list (the lens holds still at the apex), like a drum; a short menu's rows step along the upper part of the arc rather than its apex; the navigation transition still targets the glimpse box's middle, so a top-aligned parent's focused row isn't exactly where the glimpse that replaces it shows it (the glimpse fades in after the move).

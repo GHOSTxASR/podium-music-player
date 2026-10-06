@@ -3,6 +3,7 @@ package app.podium.core.designsystem.component
 import android.os.Build
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -18,22 +19,23 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -50,18 +52,20 @@ import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import app.podium.core.designsystem.glass.GlassTier
 import app.podium.core.designsystem.glass.LocalGlassTier
 import app.podium.core.designsystem.theme.PodiumTheme
+import app.podium.core.interaction.FocusGeometry
 import app.podium.core.interaction.FocusListState
+import app.podium.core.interaction.FocusScroll
 import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.launch
 
 /** Whether the focus lens is the solid classic bar (Solid tier): rows then draw white text. */
 @Composable
@@ -76,6 +80,17 @@ fun isSolidFocus(): Boolean = LocalGlassTier.current == GlassTier.Solid && !Podi
  * arc, and [preview] shows the focused item's next column beyond it. Overlays pass `paper = false`
  * for a plain full-width list. Glass draws a stained capsule beneath the focused row (D-25); Carbon
  * and Bone light the row instead.
+ *
+ * Focus geometry (D-40, interaction-model.md §5.1) comes only from what the list measured — the
+ * readable region between the content paddings, the rows, the scroll position:
+ * - On the paper the focused row rides at the arc's apex; near the start or end of a long list it
+ *   travels to the real top or bottom, and a list that fits starts at the top. The first and last
+ *   rows always end up fully inside the readable region, never partly under the title or the mini
+ *   player.
+ * - The lens is glued to the rows (it moves with the list while it scrolls and slides from row to
+ *   row in content space), and is clipped to the readable region.
+ * - The ends fade and soften only where the list continues beyond them.
+ * - Rows bend left along the arc inside the list's own bounds, so nothing is clipped.
  */
 @Composable
 fun <T> FocusList(
@@ -95,11 +110,11 @@ fun <T> FocusList(
 ) {
     val colors = PodiumTheme.colors
     val motion = PodiumTheme.motion
-    val density = LocalDensity.current
     val solidFocus = isSolidFocus()
     val listState = state.listState
     val activate by rememberUpdatedState(onActivate)
     val longPress by rememberUpdatedState(onLongPress)
+    val miniature = paper && LocalMiniature.current
 
     val currentFocusable by rememberUpdatedState(focusable)
     SideEffect {
@@ -108,50 +123,37 @@ fun <T> FocusList(
         state.clamp()
     }
 
-    // The lens follows the focused row — animated when focus moves, glued to it while scrolling —
-    // and never leaves the readable region: at an edge it holds still and the list moves under it.
-    val lensTop = remember { Animatable(0f) }
-    val lensHeight = remember { Animatable(0f) }
-    var lensVisible by remember { mutableStateOf(false) }
+    // The lens's place as a fractional row index: it slides from row to row in content space, so
+    // it stays glued to the rows while the list scrolls under it. Reduced motion: it jumps.
+    val lensPosition = remember { Animatable(state.focusedIndex.toFloat()) }
     LaunchedEffect(state) {
         var lastMoves = state.focusMoves
-        snapshotFlow {
-            val info = listState.layoutInfo
-            val end = info.viewportEndOffset - info.afterContentPadding
-            val item = info.visibleItemsInfo.firstOrNull { it.index == state.focusedIndex }
-            val top = item?.let { it.offset.coerceIn(0, (end - it.size).coerceAtLeast(0)) + info.beforeContentPadding }
-            Triple(state.focusMoves, top?.toFloat(), item?.size?.toFloat())
-        }.collect { (moves, top, height) ->
-            if (top == null || height == null) {
-                // A spin briefly outran the layout: hold the lens where it is until the list catches
-                // up (a frame or two). Only a touch scroll that moved the row away hides it.
-                if (moves == lastMoves) lensVisible = false
-                lastMoves = moves
-                return@collect
-            }
-            val animate = lensVisible && moves != lastMoves && !motion.reduced
+        snapshotFlow { state.focusMoves to state.focusedIndex }.collectLatest { (moves, index) ->
+            val target = index.toFloat()
+            val byInput = moves != lastMoves
             lastMoves = moves
-            lensVisible = true
-            if (animate) {
-                launch { lensTop.animateTo(top, motion.focus()) }
-                launch { lensHeight.animateTo(height, motion.focus()) }
+            if (byInput && !motion.reduced && kotlin.math.abs(lensPosition.value - target) <= MaxLensSlideRows) {
+                lensPosition.animateTo(target, motion.focus())
             } else {
-                lensTop.snapTo(top)
-                lensHeight.snapTo(height)
+                lensPosition.snapTo(target)
             }
         }
     }
-    // Keep the focused row inside the readable region; a newer move cancels an unfinished scroll.
-    LaunchedEffect(state) {
-        snapshotFlow { state.focusMoves }.collectLatest { state.keepFocusedInView() }
+    // Keep the focused row where the geometry wants it; a newer move cancels an unfinished scroll.
+    // The glide uses the lens's spring, so on the paper the two move as one and the lens holds still.
+    val scroll = if (paper) FocusScroll.CENTRE else FocusScroll.EDGE
+    LaunchedEffect(state, scroll) {
+        snapshotFlow { state.focusMoves }.collectLatest {
+            state.keepFocusedInView(scroll, if (motion.reduced) snap() else motion.focus())
+        }
     }
 
     // Paper lists bend each row along the arc and fade/soften it toward the ends; plain lists don't.
-    val rows: @Composable (Modifier, (Modifier.(index: Int) -> Modifier)?) -> Unit = { listModifier, along ->
+    val rows: @Composable (Modifier, PaddingValues, Dp, (Modifier.(index: Int) -> Modifier)?) -> Unit = { listModifier, padding, inset, along ->
         LazyColumn(
             state = listState,
-            contentPadding = contentPadding,
-            verticalArrangement = if (paper) Arrangement.Center else Arrangement.Top,
+            contentPadding = padding,
+            verticalArrangement = Arrangement.Top,
             modifier = listModifier,
         ) {
             itemsIndexed(items, key = { _, item -> key(item) }) { index, item ->
@@ -159,6 +161,7 @@ fun <T> FocusList(
                 Box(
                     Modifier
                         .fillMaxWidth()
+                        .padding(start = inset)
                         .then(if (along != null) Modifier.along(index) else Modifier)
                         .semantics { selected = focused }
                         .pointerInput(index) {
@@ -182,16 +185,20 @@ fun <T> FocusList(
     if (!paper) {
         Box(modifier) {
             Canvas(Modifier.fillMaxSize()) {
-                if (!lensVisible) return@Canvas
-                drawLens(colors.isIndustrial, colors.isDark, colors.highlight, colors.labelPrimary, solidFocus, 0f, size.width, lensTop.value, lensHeight.value, dotX = null)
+                val top = contentPadding.calculateTopPadding().toPx()
+                val bottom = size.height - contentPadding.calculateBottomPadding().toPx()
+                val lens = lensRect(listState, state.focusedIndex, lensPosition.value) ?: return@Canvas
+                clipRect(top = top, bottom = bottom) {
+                    drawLens(colors.isIndustrial, colors.isDark, colors.highlight, colors.labelPrimary, solidFocus, 0f, size.width, lens.first, lens.second, dotX = null)
+                }
             }
-            rows(Modifier.fillMaxSize(), null)
+            rows(Modifier.fillMaxSize(), contentPadding, 0.dp, null)
         }
         return
     }
 
-    val miniature = LocalMiniature.current
-    // In a miniature, show the item that led to the current column as focused.
+    // In a miniature, show the item that led to the current column as focused — centred, so the
+    // glimpse (zoomed in on the middle of this column) shows it whatever its place in the list.
     LocalMiniatureFocusKey.current?.let { focusKey ->
         LaunchedEffect(items, focusKey) {
             val i = items.indexOfFirst { key(it).toString() == focusKey }
@@ -202,35 +209,17 @@ fun <T> FocusList(
     BoxWithConstraints(modifier.clipToBounds()) {
         val g = PaperGeometry(maxWidth, maxHeight, contentPadding.calculateTopPadding(), contentPadding.calculateBottomPadding())
         val decor = LocalPaperDecor.current()
+        // A miniature may centre any row: room above the first and below the last.
+        val listPadding = if (miniature) PaddingValues(top = g.padTop + g.readable / 2, bottom = g.padBottom + g.readable / 2) else contentPadding
+        // How far a row can bend left (at the readable region's ends, and in the fade beyond), plus
+        // room for the focused text's glow: the list reaches that far left so it never clips a row.
+        val reach = g.bend(g.readable / 2 + RowFadeBeyond) + RowGlowRoom
+        val listLeft = (g.columnLeft - reach).coerceAtLeast(0.dp)
+        val inset = g.columnLeft - listLeft
+        // Each end fades only as much as the list continues beyond it.
+        val ends by remember(listState) { derivedStateOf { endStrengths(listState) } }
 
         if (!miniature) {
-            // The previous column, live, at middle-left: a tile like the next column's at the right,
-            // mirrored off the left edge, showing that screen zoomed to its list.
-            LocalPaperPeek.current?.let { peek ->
-                val corner = previewCorner()
-                Box(
-                    Modifier
-                        .offset(x = g.leftBoxX, y = g.boxTop)
-                        .size(g.boxHeight)
-                        .then(decor)
-                        .distant()
-                        .clip(RoundedCornerShape(corner))
-                        .background(colors.canvasRaised),
-                ) {
-                    Box(
-                        Modifier
-                            .offset(x = g.peekOriginX - g.leftBoxX, y = g.peekOriginY - g.boxTop)
-                            .wrapContentSize(Alignment.TopStart, unbounded = true)
-                            .requiredSize(g.width, g.height)
-                            .graphicsLayer {
-                                scaleX = g.peekScale
-                                scaleY = g.peekScale
-                                transformOrigin = TransformOrigin(0f, 0f)
-                            },
-                    ) { peek(Modifier.fillMaxSize()) }
-                }
-            }
-
             // The next column at middle-right, beyond the arc, running off the display's edge.
             val focusedItem = items.getOrNull(state.focusedIndex)
             Box(
@@ -257,23 +246,28 @@ fun <T> FocusList(
                 if (i == 0) path.moveTo(x, y.toPx()) else path.lineTo(x, y.toPx())
             }
             drawPath(path, colors.labelTertiary.copy(alpha = if (colors.isDark) 0.45f else 0.6f), style = Stroke(width = 1.dp.toPx()))
-            if (lensVisible) {
-                val centre = lensTop.value + lensHeight.value / 2f
-                val centreDp = centre.toDp()
-                val left = (g.columnLeft - g.bend(centreDp - g.centreY)).toPx()
-                val right = (g.arcX(centreDp) - Paper.ArcGap / 2).toPx()
-                drawLens(colors.isIndustrial, colors.isDark, colors.highlight, colors.labelPrimary, solidFocus, left, right, lensTop.value, lensHeight.value, dotX = g.arcX(centreDp).toPx())
+            val lens = lensRect(listState, state.focusedIndex, lensPosition.value) ?: return@Canvas
+            val centre = lens.first + lens.second / 2f
+            val centreDp = centre.toDp()
+            val left = (g.columnLeft - g.bend(centreDp - g.centreY)).toPx()
+            val right = (g.arcX(centreDp) - Paper.ArcGap / 2).toPx()
+            // The lens never draws under the title or the mini player, even mid-scroll.
+            clipRect(top = g.padTop.toPx(), bottom = (g.height - g.padBottom).toPx()) {
+                drawLens(colors.isIndustrial, colors.isDark, colors.highlight, colors.labelPrimary, solidFocus, left, right, lens.first, lens.second, dotX = g.arcX(centreDp).toPx())
             }
         }
 
-        // Each row rides the arc: shifted left by the curve at its height, and fading, shrinking a
-        // little and softening toward the ends — a drum, not a sheet. The focused row stays crisp.
+        // Each row rides the arc: shifted left by the curve at its height, and — toward an end the
+        // list continues beyond — fading, shrinking a little and softening: a drum, not a sheet.
+        // The focused row stays crisp.
         val along: Modifier.(Int) -> Modifier = { index ->
             graphicsLayer {
-                val info = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == index } ?: return@graphicsLayer
-                val y = (info.offset + info.size / 2f).toDp() + g.padTop
+                val info = listState.layoutInfo
+                val item = info.visibleItemsInfo.firstOrNull { it.index == index } ?: return@graphicsLayer
+                val y = (info.beforeContentPadding + item.offset + item.size / 2f).toDp()
                 translationX = -g.bend(y - g.centreY).toPx()
-                val d = g.depth(y)
+                val (top, bottom) = ends
+                val d = g.depth(y) * (if (y < g.centreY) top else bottom)
                 val focusedRow = index == state.focusedIndex
                 alpha = (if (focusedRow) maxOf(0.9f, 1f - 0.6f * d * d) else 1f - 0.6f * d * d) * g.within(y)
                 val scale = 1f - 0.05f * d * d
@@ -287,10 +281,72 @@ fun <T> FocusList(
             }
         }
         CompositionLocalProvider(LocalRowPadding provides 10.dp) {
-            rows(Modifier.offset(x = g.columnLeft).width(g.columnWidth).fillMaxHeight(), along)
+            rows(Modifier.offset(x = listLeft).width(g.columnWidth + inset).fillMaxHeight(), listPadding, inset, along)
+        }
+
+        if (!miniature) {
+            // The previous column, live, at middle-left: a tile like the next column's at the right,
+            // mirrored off the left edge, showing that screen zoomed to its list. Above the list, so
+            // a tap on it reaches it (the list's bounds reach left under it to let rows bend).
+            LocalPaperPeek.current?.let { peek ->
+                val corner = previewCorner()
+                Box(
+                    Modifier
+                        .offset(x = g.leftBoxX, y = g.boxTop)
+                        .size(g.boxHeight)
+                        .then(decor)
+                        .distant()
+                        .clip(RoundedCornerShape(corner))
+                        .background(colors.canvasRaised),
+                ) {
+                    Box(
+                        Modifier
+                            .offset(x = g.peekOriginX - g.leftBoxX, y = g.peekOriginY - g.boxTop)
+                            .wrapContentSize(Alignment.TopStart, unbounded = true)
+                            .requiredSize(g.width, g.height)
+                            .graphicsLayer {
+                                scaleX = g.peekScale
+                                scaleY = g.peekScale
+                                transformOrigin = TransformOrigin(0f, 0f)
+                            },
+                    ) { peek(Modifier.fillMaxSize()) }
+                }
+            }
         }
     }
 }
+
+/** Where the lens is, in the list's own coordinates (top, height), or null when it has no row. */
+private fun lensRect(listState: LazyListState, focusedIndex: Int, position: Float): Pair<Float, Float>? {
+    val info = listState.layoutInfo
+    val rows = info.visibleItemsInfo
+    val lens = FocusGeometry.lens(position, focusedIndex) { i ->
+        rows.firstOrNull { it.index == i }?.let { FocusGeometry.Row(it.offset, it.size) }
+    } ?: return null
+    return (lens.first + info.beforeContentPadding) to lens.second
+}
+
+/** How strongly the top and bottom ends fade: by how much of the list lies beyond each. */
+private fun endStrengths(listState: LazyListState): Pair<Float, Float> {
+    val info = listState.layoutInfo
+    val rows = info.visibleItemsInfo
+    if (rows.isEmpty()) return 0f to 0f
+    val readable = info.viewportEndOffset - info.afterContentPadding
+    val first = rows.first()
+    val last = rows.last()
+    val above = FocusGeometry.hiddenAbove(first.index, first.offset, first.size)
+    val below = FocusGeometry.hiddenBelow(last.index, last.offset + last.size, last.size, info.totalItemsCount, readable)
+    return FocusGeometry.endStrength(above, first.size.toFloat()) to FocusGeometry.endStrength(below, last.size.toFloat())
+}
+
+/** Rows fade out within this distance beyond the readable region ([PaperGeometry.within]). */
+private val RowFadeBeyond = 24.dp
+
+/** Room left of the furthest-bent row for the focused text's glow. */
+private val RowGlowRoom = 8.dp
+
+/** A focus move further than this (a jump, not a step) moves the lens at once. */
+private const val MaxLensSlideRows = 3f
 
 /**
  * The focus lens between [left] and [right]. Glass: a stained capsule (or the solid classic bar).
