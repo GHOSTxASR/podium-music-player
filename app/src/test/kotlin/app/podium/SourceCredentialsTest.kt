@@ -3,35 +3,7 @@ package app.podium
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import app.podium.core.common.ManualClock
 import app.podium.core.model.SourceId
-import app.podium.sources.api.AuthState
-import app.podium.sources.api.Basis
-import app.podium.sources.api.ConfiguredSources
-import app.podium.sources.api.ConnectResult
-import app.podium.sources.api.CredentialStore
-import app.podium.sources.api.InMemorySourcePreferencesStore
-import app.podium.sources.api.MusicSource
-import app.podium.sources.api.SetupField
-import app.podium.sources.api.SetupForm
-import app.podium.sources.api.SetupProblem
-import app.podium.sources.api.SignInResult
-import app.podium.sources.api.SourceDescriptor
-import app.podium.sources.api.SourceFactory
-import app.podium.sources.api.SourceHealthMonitor
-import app.podium.sources.api.SourceProfile
-import app.podium.sources.api.SourceRegistry
-import app.podium.sources.api.SourceSettings
-import app.podium.feature.settings.OnlineSourceSettings
-import app.podium.sources.testing.FakeOnlineMusicSource
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withTimeout
 import org.junit.Test
 import org.junit.runner.RunWith
 import kotlin.test.assertEquals
@@ -73,71 +45,22 @@ class SourceCredentialsTest {
     }
 
     @Test
-    fun `profiles keep names and settings, never secrets, across restarts`() {
-        val profiles = SharedPrefsSourceProfiles(context)
-        val profile = SourceProfile(id, "opensubsonic", "Navidrome (home.lan)", mapOf("address" to "https://home.lan", "username" to "listener"))
-        profiles.save(listOf(profile))
-        assertEquals(listOf(profile), SharedPrefsSourceProfiles(context).load())
-    }
+    fun `retired servers' secrets are removed, the online service's are kept`() {
+        val store = KeystoreCredentialStore(context, FakeCipher)
+        store.write(SourceId("opensubsonic-1a2b3c4d"), mapOf("password" to "old-server-secret"))
+        store.write(SourceId("ytmusic"), mapOf("session" to "kept"))
+        context.getSharedPreferences("source-profiles", Context.MODE_PRIVATE).edit()
+            .putString("profiles", "[{\"id\":\"opensubsonic-1a2b3c4d\",\"kind\":\"opensubsonic\",\"name\":\"Home\",\"settings\":{}}]")
+            .commit()
 
-    /** A signing-in source whose server accepts the password "right". */
-    private class SigningSource(profile: SourceProfile, private val credentials: CredentialStore) : MusicSource by FakeOnlineMusicSource(profile.id.value) {
-        override val descriptor = SourceDescriptor(profile.id, profile.displayName, "Fake", Basis.USER_SERVER)
-        private val _state = MutableStateFlow<AuthState>(if (credentials.read(profile.id) != null) AuthState.SignedIn("listener") else AuthState.SignedOut)
-        override val auth = object : app.podium.sources.api.AuthFacet {
-            override val state: StateFlow<AuthState> = _state
-            override val signInFields = listOf(SetupField("password", "Password", kind = SetupField.Kind.SECRET))
-            override suspend fun signIn(values: Map<String, String>): SignInResult =
-                if (values["password"] == "right") {
-                    credentials.write(profile.id, values)
-                    _state.value = AuthState.SignedIn("listener")
-                    SignInResult.SignedIn
-                } else SignInResult.Refused(SetupProblem.WRONG_CREDENTIALS)
-            override suspend fun signOut() {
-                credentials.delete(profile.id)
-                _state.value = AuthState.SignedOut
-            }
-        }
-    }
+        RetiredSources.cleanUp(context, store)
 
-    @Test
-    fun `settings add a server, sign it out and in again, and remove it`() = runBlocking {
-        withTimeout(10_000) {
-            val credentials = KeystoreCredentialStore(context, FakeCipher)
-            val registry = SourceRegistry(SourceHealthMonitor(ManualClock()))
-            val health = SourceHealthMonitor(ManualClock())
-            val prefs = SourceSettings(registry, InMemorySourcePreferencesStore())
-            val factory = object : SourceFactory {
-                override val form = SetupForm("server", "Add a music server", listOf(SetupField("password", "Password", kind = SetupField.Kind.SECRET)))
-                override suspend fun connect(values: Map<String, String>) =
-                    if (values["password"] == "right") ConnectResult.Connected("Home server", emptyMap(), values) else ConnectResult.Refused(SetupProblem.WRONG_CREDENTIALS)
-                override fun create(profile: SourceProfile, credentials: CredentialStore): MusicSource = SigningSource(profile, credentials)
-            }
-            val configured = ConfiguredSources(registry, prefs, SharedPrefsSourceProfiles(context), credentials, listOf(factory)) { SourceId("server-1") }
-            val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-            val settings = RegistryOnlineSourceSettings(registry, prefs, configured, health, scope)
-
-            val form = settings.addable.single()
-            assertEquals(SetupProblem.WRONG_CREDENTIALS, settings.submit(form, mapOf("password" to "wrong")))
-            assertNull(settings.submit(form, mapOf("password" to "right")))
-            val row = settings.sources.first { it.isNotEmpty() }.single()
-            assertEquals("Home server", row.name)
-            assertEquals(true, row.signedIn)
-            assertTrue(row.removable)
-
-            settings.signOut("server-1")
-            assertEquals(false, settings.sources.first { it.single().signedIn == false }.single().signedIn)
-            assertNull(credentials.read(SourceId("server-1")), "signing out leaves no secret behind")
-
-            val signIn = settings.form(OnlineSourceSettings.signInKey("server-1"))!!
-            assertEquals("Sign in", signIn.submitLabel)
-            assertNull(settings.submit(signIn, mapOf("password" to "right")))
-            assertEquals(true, settings.sources.first { it.single().signedIn == true }.single().signedIn)
-
-            settings.remove("server-1")
-            assertTrue(settings.sources.first { it.isEmpty() }.isEmpty())
-            assertNull(credentials.read(SourceId("server-1")))
-            assertTrue(SharedPrefsSourceProfiles(context).load().isEmpty())
-        }
+        assertNull(store.read(SourceId("opensubsonic-1a2b3c4d")))
+        assertEquals(mapOf("session" to "kept"), store.read(SourceId("ytmusic")))
+        assertTrue(context.getSharedPreferences("source-profiles", Context.MODE_PRIVATE).all.isEmpty())
+        assertFalse("old-server-secret" in storedText())
+        // Nothing to do the second time.
+        RetiredSources.cleanUp(context, store)
+        assertEquals(mapOf("session" to "kept"), store.read(SourceId("ytmusic")))
     }
 }

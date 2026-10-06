@@ -43,9 +43,29 @@ internal fun handleDebugIntent(intent: Intent?, graph: AppGraph) {
         // Show only the test tones in the library (in memory; a restart or library-all restores it).
         "library-test-only" -> graph.libraryScope.value = SourceId("test")
         "library-all" -> graph.libraryScope.value = null
-        // ONLINE as if the network were gone (local music unaffected); and back.
-        "online-offline" -> graph.audius.simulateOffline = true
-        "online-online" -> graph.audius.simulateOffline = false
+        // ONLINE switched off and on again (local music unaffected).
+        "online-off" -> graph.sourceSettings.setEnabled(graph.youtubeMusic.descriptor.id, false)
+        "online-on" -> graph.sourceSettings.setEnabled(graph.youtubeMusic.descriptor.id, true)
+        // What the app that plays online songs exposes through its media session (device acceptance,
+        // YOUTUBE_MUSIC_DEVICE_ACCEPTANCE.md U1–U6). Logs facts only: no titles beyond the current one.
+        "remote-probe" -> {
+            graph.remotePlayback.refresh()
+            val s = graph.remotePlayback.state.value
+            val owner = (graph.playbackController as? app.podium.player.api.OwnerAwarePlaybackController)?.owner?.value
+            android.util.Log.i(
+                "PodiumDebug",
+                "remote access=${graph.remotePlayback.access.value} connected=${s.connected} playing=${s.playing} " +
+                    "buffering=${s.buffering} position=${graph.remotePlayback.positionMs()} duration=${s.durationMs} " +
+                    "mediaIdShape=${s.mediaId?.let { if (Regex("[A-Za-z0-9_-]{11}").matches(it)) "video-id" else "other(${it.length})" }} " +
+                    "actions=${s.actions} queue=${s.queue?.size ?: "not exposed"} activeQueueItem=${s.activeQueueItemId} owner=$owner",
+            )
+        }
+        // Hand one online song to the app: --es podium.track ytmusic|<id>
+        "remote-play" -> intent.getStringExtra("podium.track")?.takeIf { '|' in it }?.let { id ->
+            graph.playbackController.playContext(listOf(TrackId(id)), 0, "Debug")
+        }
+        "remote-pause" -> graph.playbackController.pause()
+        "back-to-local" -> graph.playbackController.resumeLocal()
         // Provenance of what's playing (D-36: kept for diagnostics, never shown on Now Playing).
         "now-playing-source" -> graph.playbackController.snapshot.value.item.let { item ->
             android.util.Log.i(

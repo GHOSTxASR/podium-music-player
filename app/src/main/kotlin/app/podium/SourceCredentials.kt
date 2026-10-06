@@ -7,9 +7,6 @@ import android.util.Base64
 import androidx.core.content.edit
 import app.podium.core.model.SourceId
 import app.podium.sources.api.CredentialStore
-import app.podium.sources.api.SourceProfile
-import app.podium.sources.api.SourceProfileStore
-import org.json.JSONArray
 import org.json.JSONObject
 import java.security.KeyStore
 import javax.crypto.Cipher
@@ -99,46 +96,5 @@ class KeystoreCredentialStore(
 
     companion object {
         const val FILE = "credentials"
-    }
-}
-
-/** The listener's configured sources (D-37) — names, kinds and non-secret settings — in a small prefs file. */
-class SharedPrefsSourceProfiles(context: Context) : SourceProfileStore {
-
-    private val prefs = context.getSharedPreferences("source-profiles", Context.MODE_PRIVATE)
-
-    override fun load(): List<SourceProfile> {
-        val text = prefs.getString(KEY, null) ?: return emptyList()
-        return runCatching {
-            val array = JSONArray(text)
-            (0 until array.length()).map { i ->
-                val o = array.getJSONObject(i)
-                val settings = o.getJSONObject("settings")
-                SourceProfile(
-                    id = SourceId(o.getString("id")),
-                    kind = o.getString("kind"),
-                    displayName = o.getString("name"),
-                    settings = settings.keys().asSequence().associateWith { settings.getString(it) },
-                )
-            }
-        }.getOrDefault(emptyList())
-    }
-
-    override fun save(profiles: List<SourceProfile>) {
-        val array = JSONArray()
-        profiles.forEach { p ->
-            array.put(
-                JSONObject()
-                    .put("id", p.id.value)
-                    .put("kind", p.kind)
-                    .put("name", p.displayName)
-                    .put("settings", JSONObject(p.settings)),
-            )
-        }
-        prefs.edit(commit = true) { putString(KEY, array.toString()) }
-    }
-
-    private companion object {
-        const val KEY = "profiles"
     }
 }

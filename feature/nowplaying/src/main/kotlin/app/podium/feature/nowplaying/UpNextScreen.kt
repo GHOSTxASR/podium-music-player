@@ -51,6 +51,7 @@ import app.podium.core.interaction.rememberFocusListState
 import app.podium.core.interaction.rememberPodiumHaptics
 import app.podium.core.model.QueueUid
 import app.podium.player.api.PlaybackController
+import app.podium.player.api.PlaybackOwner
 import app.podium.player.api.QueueEntry
 import app.podium.player.api.QueueOrigin
 import app.podium.player.api.QueueView
@@ -63,6 +64,12 @@ private sealed interface UpNextRow {
     data object Shuffle : UpNextRow { override val key = "shuffle" }
     data object Repeat : UpNextRow { override val key = "repeat" }
     data object Empty : UpNextRow { override val key = "empty" }
+
+    /** An action row (remote playback): back to the local queue, or open the app that plays. */
+    data class Action(val label: String, override val key: String, val run: () -> Unit) : UpNextRow
+
+    /** A plain line of explanation (not focusable). */
+    data class Note(val text: String, override val key: String) : UpNextRow
 
     /** Section headers are their own rows, never focusable, so the lens only ever covers songs. */
     data class Header(val text: String, override val key: String) : UpNextRow
@@ -104,9 +111,22 @@ fun UpNextScreen(controller: PlaybackController) {
     val dragTarget = (dragFrom + dragSteps).coerceIn(queue.currentIndex + 1, queue.entries.lastIndex.coerceAtLeast(queue.currentIndex + 1))
     val shown = moving?.let { uid -> queue.previewMove(uid, moveTo) } ?: queue
 
+    // Another app plays (YOUTUBE_MUSIC_ARCHITECTURE §8.4): its queue is its own. Podium mirrors what
+    // it reports, read-only, and says so when it reports nothing; it never invents a queue.
+    val remoteOwner = snapshot.owner as? PlaybackOwner.Remote
+    val readOnly = queue.readOnly || remoteOwner != null
     val rows = buildList {
-        add(UpNextRow.Shuffle)
-        add(UpNextRow.Repeat)
+        if (remoteOwner != null) {
+            if (snapshot.canResumeLocal) add(UpNextRow.Action("Back to my music", "back-local") { controller.resumeLocal() })
+            add(UpNextRow.Action("Open ${remoteOwner.displayName}", "open-remote") { controller.openRemoteApp() })
+            if (queue.hidden) {
+                add(UpNextRow.Note("${remoteOwner.displayName} keeps what's next to itself.", "remote-hidden"))
+                return@buildList
+            }
+        } else {
+            add(UpNextRow.Shuffle)
+            add(UpNextRow.Repeat)
+        }
         shown.entries.getOrNull(shown.currentIndex)?.let {
             add(UpNextRow.Header("Now playing", "h-now"))
             add(UpNextRow.Entry(it))
@@ -131,11 +151,12 @@ fun UpNextScreen(controller: PlaybackController) {
                 },
             )
             is UpNextRow.Entry -> if (!row.entry.isCurrent) controller.skipTo(row.entry.uid)
+            is UpNextRow.Action -> row.run()
             else -> Unit
         }
     }
     val menu: (Int) -> Unit = { index ->
-        (rows[index] as? UpNextRow.Entry)?.entry?.takeIf { !it.isCurrent }?.let { entry ->
+        (rows[index] as? UpNextRow.Entry)?.entry?.takeIf { !it.isCurrent && !readOnly }?.let { entry ->
             overlay.show(
                 MenuSpec(
                     entry.title,
@@ -191,7 +212,7 @@ fun UpNextScreen(controller: PlaybackController) {
         contentPadding = LocalScreenInsets.current.listPadding(),
         onActivate = activate,
         onLongPress = menu,
-        focusable = { it !is UpNextRow.Header && it !is UpNextRow.Empty },
+        focusable = { it !is UpNextRow.Header && it !is UpNextRow.Empty && it !is UpNextRow.Note },
         preview = { row -> (row as? UpNextRow.Entry)?.entry?.artworkUri?.let { MenuPreview.Artwork(listOf(it)) } ?: MenuPreview.None },
         modifier = Modifier.fillMaxSize(),
     ) { row, _, focused ->
@@ -208,6 +229,8 @@ fun UpNextScreen(controller: PlaybackController) {
                 showChevron = false,
             )
             UpNextRow.Empty -> MenuRow("Nothing up next", focused = false, showChevron = false, enabled = false)
+            is UpNextRow.Action -> MenuRow(row.label, focused, showChevron = false)
+            is UpNextRow.Note -> SectionHeader(row.text)
             is UpNextRow.Header -> SectionHeader(row.text)
             is UpNextRow.Entry -> {
                 val uid = row.entry.uid
@@ -228,7 +251,7 @@ fun UpNextScreen(controller: PlaybackController) {
                             else -> null
                         },
                         active = row.entry.isCurrent,
-                        trailingContent = if (row.entry.isCurrent) {
+                        trailingContent = if (row.entry.isCurrent || readOnly) {
                             null
                         } else {
                             {

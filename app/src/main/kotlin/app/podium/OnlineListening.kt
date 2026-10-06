@@ -20,10 +20,14 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
-/** Which environment a song belongs to, by its source (D-34). */
+/**
+ * Which environment a song belongs to, by its source (D-34). A song whose source this build doesn't
+ * have (a retired online source, D-38) belongs to neither: it is never treated as local (seam S3).
+ */
 class Environments(private val registry: SourceRegistry) {
-    fun of(id: TrackId): MusicEnvironment = registry.get(id.sourceId)?.descriptor?.environment ?: MusicEnvironment.LOCAL
+    fun of(id: TrackId): MusicEnvironment? = registry.get(id.sourceId)?.descriptor?.environment
     fun isOnline(id: TrackId) = of(id) == MusicEnvironment.ONLINE
+    fun isLocal(id: TrackId) = of(id) == MusicEnvironment.LOCAL
 }
 
 /**
@@ -32,7 +36,7 @@ class Environments(private val registry: SourceRegistry) {
  */
 class EnvironmentFavorites(
     private val local: FavoritesRepository,
-    private val online: AppOnlineRepository,
+    private val online: OnlineMusicRepository,
     private val environments: Environments,
     private val lookup: suspend (TrackId) -> Track?,
     private val scope: CoroutineScope,
@@ -42,10 +46,12 @@ class EnvironmentFavorites(
         .stateIn(scope, SharingStarted.Eagerly, emptySet())
 
     override fun toggle(id: TrackId) {
-        if (!environments.isOnline(id)) {
+        if (environments.isLocal(id)) {
             local.toggle(id)
             return
         }
+        // A song of no known source is neither local nor online: nothing to like.
+        if (!environments.isOnline(id)) return
         scope.launch {
             val track = lookup(id) ?: return@launch
             online.setLiked(track, id !in online.likedIds.value)
@@ -65,6 +71,8 @@ class OnlineHistoryRecorder(
     private val catalog: TrackCatalog,
     private val library: LibraryStore,
     private val scope: CoroutineScope,
+    /** Whose history it is: the signed-in account's key, or the device's (D-38). */
+    private val accountKey: () -> String = { OnlineLibraryStore.DEVICE },
     private val now: () -> Long = System::currentTimeMillis,
 ) {
     private var current: TrackId? = null
@@ -107,10 +115,11 @@ class OnlineHistoryRecorder(
         val played = heard
         val at = startedAt
         val server = servedBy
+        val account = accountKey()
         if (played < MIN_LISTEN_MS) return
         scope.launch {
             val track = catalog.cached(id) ?: library.track(id) ?: return@launch
-            store.record(track, at, played, servedBy = server)
+            store.record(track, at, played, servedBy = server, account = account)
         }
     }
 

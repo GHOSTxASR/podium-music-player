@@ -80,7 +80,7 @@ class OnlineLayoutTest {
     @get:Rule
     val compose = createComposeRule()
 
-    @Test fun carbonMenu() = check("online-carbon-menu", PHONE, DisplayTheme.CARBON, "Online") { OnlineMenuScreen(Repo, {}) }
+    @Test fun carbonMenu() = check("online-carbon-menu", PHONE, DisplayTheme.CARBON, "Online") { OnlineMenuScreen(Repo, Actions, {}) }
 
     @Test fun glassHome() = check("online-glass-home", PHONE, DisplayTheme.GLASS, "Home") { OnlineHomeScreen(Repo, {}) }
 

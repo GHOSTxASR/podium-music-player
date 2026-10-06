@@ -82,13 +82,13 @@ private enum class SettingsRow { Theme, Finish, CustomColor, Grain, MusicFolders
 fun SettingsScreen(
     repository: DeviceSettingsRepository,
     folders: MusicFolderSettings,
-    onlineSources: OnlineSourceSettings,
+    onlineService: OnlineServiceSettings,
     onTheme: () -> Unit,
     onFinish: () -> Unit,
     onCustomColor: () -> Unit,
     onGrain: () -> Unit,
     onMusicFolders: () -> Unit,
-    onOnlineSources: () -> Unit,
+    onOnlineService: () -> Unit,
 ) {
     val appearance by repository.appearance.collectAsStateWithLifecycle()
     val startupSound by repository.startupSound.collectAsStateWithLifecycle()
@@ -99,10 +99,10 @@ fun SettingsScreen(
     val avoidRepeatsOn by repository.avoidRepeats.collectAsStateWithLifecycle()
     val folderList by folders.folders.collectAsStateWithLifecycle()
     val selection by folders.selection.collectAsStateWithLifecycle()
-    val sourceRows by onlineSources.sources.collectAsStateWithLifecycle()
+    val service by onlineService.state.collectAsStateWithLifecycle()
     val haptics = rememberPodiumHaptics()
-    // Only a build with online sources has anything to choose there.
-    val rows = SettingsRow.entries.filter { it != SettingsRow.OnlineSources || sourceRows.isNotEmpty() }
+    // Only a build with an online service has anything to choose there.
+    val rows = SettingsRow.entries.filter { it != SettingsRow.OnlineSources || service != null }
     val focus = rememberFocusListState("settings")
     val activate: (Int) -> Unit = { index ->
         val industrial = appearance.display.isIndustrial
@@ -112,7 +112,7 @@ fun SettingsScreen(
             SettingsRow.CustomColor -> if (industrial) haptics.reject() else onCustomColor()
             SettingsRow.Grain -> if (appearance.isGlass) haptics.reject() else onGrain()
             SettingsRow.MusicFolders -> onMusicFolders()
-            SettingsRow.OnlineSources -> onOnlineSources()
+            SettingsRow.OnlineSources -> onOnlineService()
             SettingsRow.Autoplay -> {
                 haptics.confirm()
                 repository.setAutoplay(!autoplayOn)
@@ -189,7 +189,7 @@ fun SettingsScreen(
                     else -> "${songsIncluded(folderList.orEmpty(), selection)} songs"
                 },
             )
-            SettingsRow.OnlineSources -> MenuRow("Online sources", focused, value = onlineSourcesSummary(sourceRows))
+            SettingsRow.OnlineSources -> MenuRow(service?.name ?: "Online music", focused, value = onlineServiceSummary(service))
             SettingsRow.Autoplay -> MenuRow("Autoplay", focused, value = if (autoplayOn) "On" else "Off", showChevron = false)
             SettingsRow.Recommendations -> MenuRow("Online recommendations", focused, value = if (recommendationsOn) "On" else "Off", enabled = autoplayOn, showChevron = false)
             SettingsRow.AvoidRepeats -> MenuRow("Avoid repeats", focused, value = if (avoidRepeatsOn) "On" else "Off", enabled = autoplayOn, showChevron = false)

@@ -151,6 +151,7 @@ fun OnlineArtistScreen(place: OnlinePlace.Artist, repository: OnlineRepository, 
 
 private sealed interface CollectionRow {
     data object Header : CollectionRow
+    data class Artist(val name: String, val id: app.podium.core.model.ArtistId) : CollectionRow
     data object Play : CollectionRow
     data object Shuffle : CollectionRow
     data object Save : CollectionRow
@@ -165,9 +166,15 @@ fun OnlineCollectionScreen(place: OnlinePlace.Collection, repository: OnlineRepo
     val overlayHost = overlay()
     val d = (detail as? Remote.Ready)?.value
     val playable = d?.tracks.orEmpty().filter { it.availability !is Availability.Unavailable }
-    val rows = remember(d) {
+    // An album leads to its artist (the one most of its songs credit, when the source links them).
+    val artist = remember(d) {
+        if (d?.summary?.isAlbum != true) null
+        else d.tracks.flatMap { it.artists.take(1) }.filter { it.id != null }.groupingBy { it.id!! to it.name }.eachCount()
+            .maxByOrNull { it.value }?.key?.let { (id, name) -> CollectionRow.Artist(name, id) }
+    }
+    val rows = remember(d, artist) {
         if (d == null) emptyList()
-        else listOf(CollectionRow.Header) +
+        else listOf(CollectionRow.Header) + listOfNotNull(artist) +
             (if (playable.isNotEmpty()) listOf(CollectionRow.Play, CollectionRow.Shuffle, CollectionRow.Save) else emptyList()) +
             d.tracks.mapIndexed { i, t -> CollectionRow.Song(t, i) }
     }
@@ -175,10 +182,12 @@ fun OnlineCollectionScreen(place: OnlinePlace.Collection, repository: OnlineRepo
     val label = d?.summary?.title ?: place.title
     val activate: (Int) -> Unit = { i ->
         when (val row = rows.getOrNull(i)) {
-            CollectionRow.Play -> actions.play(playable, 0, label)
-            CollectionRow.Shuffle -> actions.shuffle(playable, label)
+            is CollectionRow.Artist -> navigate(OnlinePlace.Artist(row.id, row.name))
+            // The whole album or playlist goes to whoever plays it, from the chosen song (§8.5).
+            CollectionRow.Play -> actions.playCollection(playable, 0, label, place.id)
+            CollectionRow.Shuffle -> actions.playCollection(playable, 0, label, place.id, shuffle = true)
             CollectionRow.Save -> showAddToPlaylist(overlayHost, playable, repository, navigate)
-            is CollectionRow.Song -> playable.indexOfFirst { it.id == row.track.id }.takeIf { it >= 0 }?.let { actions.play(playable, it, label) }
+            is CollectionRow.Song -> playable.indexOfFirst { it.id == row.track.id }.takeIf { it >= 0 }?.let { actions.playCollection(playable, it, label, place.id) }
             else -> Unit
         }
     }
@@ -201,6 +210,7 @@ fun OnlineCollectionScreen(place: OnlinePlace.Collection, repository: OnlineRepo
         key = {
             when (it) {
                 CollectionRow.Header -> "header"
+                is CollectionRow.Artist -> "artist"
                 CollectionRow.Play -> "play"
                 CollectionRow.Shuffle -> "shuffle"
                 CollectionRow.Save -> "save"
@@ -231,6 +241,7 @@ fun OnlineCollectionScreen(place: OnlinePlace.Collection, repository: OnlineRepo
                     if (summary.isAlbum) "Album" else "Playlist",
                 ),
             )
+            is CollectionRow.Artist -> MenuRow(row.name, focused, leading = PodiumSymbol.Person)
             CollectionRow.Play -> MenuRow("Play", focused, leading = PodiumSymbol.Play, showChevron = false)
             CollectionRow.Shuffle -> MenuRow("Shuffle", focused, leading = PodiumSymbol.Shuffle, showChevron = false)
             CollectionRow.Save -> MenuRow("Add all to a playlist", focused, leading = PodiumSymbol.Queue, showChevron = false)

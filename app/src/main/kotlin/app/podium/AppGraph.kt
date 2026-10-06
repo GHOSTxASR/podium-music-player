@@ -26,16 +26,17 @@ import app.podium.sources.api.ArtworkResolver
 import app.podium.sources.api.SourceHealthMonitor
 import app.podium.sources.api.MusicEnvironment
 import app.podium.sources.api.SourceRegistry
-import app.podium.sources.api.ConfiguredSources
 import app.podium.sources.api.SourceSettings
-import app.podium.sources.api.aggregate.MultiSourceCatalog
-import app.podium.sources.api.aggregate.SourceFanOut
-import app.podium.sources.api.aggregate.TrackGrouper
 import app.podium.sources.api.matching.TrackMatcher
 import app.podium.sources.api.resolve.StreamResolver
-import app.podium.sources.audius.AudiusMusicSource
 import app.podium.sources.local.LocalMusicSource
-import app.podium.sources.subsonic.SubsonicSourceFactory
+import app.podium.sources.youtubemusic.YouTubeMusicSource
+import app.podium.player.api.OwnerAwarePlaybackController
+import app.podium.player.api.RemoteAccess
+import app.podium.player.remote.MediaSessionRemotePlayback
+import app.podium.sources.api.CapabilityAction
+import app.podium.sources.api.CapabilityState
+import app.podium.sources.api.CapabilityStatus
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -51,7 +52,7 @@ import kotlinx.coroutines.launch
  * The composition root (ADR-009): every long-lived object is built here, once. Nothing below this
  * file knows which concrete sources exist.
  */
-class AppGraph(private val context: Context) {
+class AppGraph(val context: Context) {
     val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     val clock: Clock = Clock.System
 
@@ -68,8 +69,6 @@ class AppGraph(private val context: Context) {
     val equivalence = DatabaseEquivalenceStore(database, appScope).also { store -> appScope.launch { store.load() } }
     val resolver = StreamResolver(registry, health, matcher, clock, equivalence = equivalence)
 
-    /** Groups copies into one song at EXACT only, never a pair the listener rejected (D-35, D-36). */
-    private val grouper = TrackGrouper(matcher, equivalence::isRejected)
     val libraryStore = LibraryStore(database)
     val catalog = TrackCatalog(registry) { id -> libraryStore.track(id) }
     val queueStore = DatabaseQueueStore(database)
@@ -77,34 +76,61 @@ class AppGraph(private val context: Context) {
 
     val localSource = LocalMusicSource(context, appScope)
 
-    /** The first online source (D-34): Audius' public catalogue, read anonymously. */
-    val audius = AudiusMusicSource(USER_AGENT, onRequest = DiskActivity::pulse)
-
-    /** Which sources are on and in what order (D-35): stored, applied once every source is registered. */
+    /** Which sources are on (D-35): stored, applied once every source is registered. */
     val sourceSettings = SourceSettings(registry, SharedPrefsSourcePreferences(context))
 
     /** Secrets for sources the listener signs in to (D-37): sealed with a Keystore key, never logged. */
     val credentials = KeystoreCredentialStore(context)
 
-    /** Sources the listener adds (D-37), e.g. their own music server; restored before settings apply. */
-    val configuredSources = ConfiguredSources(
-        registry,
-        sourceSettings,
-        SharedPrefsSourceProfiles(context),
-        credentials,
-        factories = listOf(SubsonicSourceFactory(USER_AGENT)),
+    /** Where Podium hands YouTube Music songs to play (YOUTUBE_MUSIC_ARCHITECTURE §8): the official app. */
+    val remotePlayback = MediaSessionRemotePlayback(
+        context,
+        appScope,
+        YouTubeMusicSource.PROVIDER_APP_PACKAGE,
+        returnToPodium = {
+            if (deviceSettings.stayInPodium.value) Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT) else null
+        },
     )
+
+    /** What the official app means for playing songs, as a capability of the online source. */
+    private val providerApp: StateFlow<CapabilityState> = remotePlayback.access
+        .map(::playbackCapability)
+        .stateIn(appScope, SharingStarted.Eagerly, playbackCapability(remotePlayback.access.value))
+
+    /**
+     * ONLINE (D-38): YouTube Music — its catalogue and the listener's account read here, its songs
+     * played by the official app. The device's own browser user agent, warmed off the main thread.
+     */
+    val youtubeMusic = YouTubeMusicSource(
+        credentials,
+        userAgent = { webUserAgent },
+        region = { java.util.Locale.getDefault().country.takeIf { it.length == 2 } ?: "US" },
+        providerApp = providerApp,
+    )
+
+    private val webUserAgent: String by lazy {
+        runCatching { android.webkit.WebSettings.getDefaultUserAgent(context) }.getOrNull()
+            ?: "Mozilla/5.0 (Linux; Android ${android.os.Build.VERSION.RELEASE}) AppleWebKit/537.36 (KHTML, like Gecko) Mobile Safari/537.36"
+    }
 
     init {
         BuildConfigFlags.checkMirror = BuildConfig.DEBUG
         registry.register(localSource)
-        registry.register(audius)
+        registry.register(youtubeMusic)
         buildVariantSources(context).forEach { registry.register(it) }
-        configuredSources.restore()
         sourceSettings.apply()
+        RetiredSources.cleanUp(context, credentials)
+        appScope.launch(Dispatchers.IO) { webUserAgent }
+        appScope.launch { providerApp.collect { youtubeMusic.onProviderAppChanged() } }
     }
 
     val environments = Environments(registry)
+
+    /** Whether a song's source can only play it in another app (provider-neutral: by route). */
+    fun playsRemotely(track: app.podium.core.model.Track): Boolean {
+        val routes = registry.get(track.source.sourceId)?.playback?.routes ?: return false
+        return app.podium.core.model.PlaybackRoute.REMOTE in routes && app.podium.core.model.PlaybackRoute.DIRECT !in routes
+    }
 
     /** Debug-only narrowing of the library to one source (see DebugCommands); null = everything. */
     val libraryScope = MutableStateFlow<SourceId?>(null)
@@ -114,14 +140,12 @@ class AppGraph(private val context: Context) {
     /** Local favorites only (Music ▸ Favorites). */
     val localFavorites = DatabaseFavorites(database, appScope).also { LegacyFavorites.moveInto(context, it, appScope) }
 
-    /** ONLINE's own library: liked songs, playlists, history (D-34). */
+    /** ONLINE's own library: liked songs, playlists, history (D-34), per account (D-38). */
     val onlineStore = OnlineLibraryStore(database)
-    /** Every enabled online source as one catalogue (D-35). */
-    val onlineCatalog = MultiSourceCatalog(registry, MusicEnvironment.ONLINE, SourceFanOut(health), grouper, equivalence)
-    val online = AppOnlineRepository(registry, onlineCatalog, onlineStore, catalog, appScope, grouper)
+    val online = OnlineMusicRepository(registry, health, onlineStore, catalog, appScope)
 
-    /** Settings ▸ Online sources. */
-    val onlineSources = RegistryOnlineSourceSettings(registry, sourceSettings, configuredSources, health, appScope)
+    /** Settings ▸ YouTube Music: the account, the app that plays, and how hand-off behaves. */
+    val onlineService = AppOnlineServiceSettings(this)
 
     /** The heart on Now Playing: routed to local favorites or ONLINE's liked songs by the song's environment. */
     val favorites = EnvironmentFavorites(localFavorites, online, environments, { catalog.cached(it) ?: libraryStore.track(it) }, appScope)
@@ -139,7 +163,7 @@ class AppGraph(private val context: Context) {
     fun startListening() {
         if (listening) return
         listening = true
-        OnlineHistoryRecorder(playbackController, onlineStore, environments, catalog, libraryStore, appScope).start()
+        OnlineHistoryRecorder(playbackController, onlineStore, environments, catalog, libraryStore, appScope, accountKey = { online.accountKey.value }).start()
     }
     /** The phone's battery, for the battery LED (D-33). */
     val battery: StateFlow<BatteryLevel?> = BatteryMonitor.levels(context).stateIn(appScope, SharingStarted.Eagerly, null)
@@ -185,8 +209,15 @@ class AppGraph(private val context: Context) {
         if (power.value == Power.BOOTING) power.value = Power.ON
     }
 
-    /** The UI's PlaybackController — Media3 MediaController to the PlaybackService. Main thread only. */
-    val playbackController by lazy { MediaControllerPlaybackController(context, appScope) }
+    /** Podium's own player — Media3 MediaController to the PlaybackService. Main thread only. */
+    val localPlayback by lazy { MediaControllerPlaybackController(context, appScope) }
+
+    /**
+     * The UI's PlaybackController: Podium's own player for music it plays itself, the official app for
+     * YouTube Music — one owner at a time, hard cuts between them, the local queue never touched by
+     * remote playback (YOUTUBE_MUSIC_ARCHITECTURE §8.3). Main thread only.
+     */
+    val playbackController by lazy { OwnerAwarePlaybackController(localPlayback, remotePlayback, catalog, registry, appScope) }
     val volume by lazy { SystemVolumeController(context) }
 
     private var musicAccess = localSource.hasPermission()
@@ -226,4 +257,13 @@ class AppGraph(private val context: Context) {
 
 enum class Power { OFF, BOOTING, ON }
 
-private val USER_AGENT = "Podium/${BuildConfig.VERSION_NAME} (Android music player)"
+private fun playbackCapability(access: RemoteAccess): CapabilityState = when (access) {
+    RemoteAccess.NO_APP -> CapabilityState(
+        CapabilityStatus.REQUIRES_PROVIDER_APP,
+        "Install YouTube Music to play songs",
+        CapabilityAction.InstallApp(YouTubeMusicSource.PROVIDER_APP_PACKAGE, "Install YouTube Music"),
+    )
+    // Songs still open in the app; Podium just can't control or mirror it.
+    RemoteAccess.NEEDS_ACCESS -> CapabilityState(CapabilityStatus.DEGRADED, "Allow media controls to control playback from Podium")
+    RemoteAccess.READY -> CapabilityState.Available
+}

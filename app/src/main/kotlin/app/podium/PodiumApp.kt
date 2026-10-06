@@ -124,13 +124,14 @@ import app.podium.feature.nowplaying.NowPlayingScreen
 import app.podium.feature.nowplaying.UpNextScreen
 import app.podium.feature.online.OnlineActions
 import app.podium.feature.online.OnlinePlace
+import app.podium.sources.api.RemoteContext
+import app.podium.core.model.PlaylistId
 import app.podium.feature.online.OnlineScreen
 import app.podium.feature.settings.CustomColorScreen
 import app.podium.feature.settings.FinishScreen
 import app.podium.feature.settings.GrainScreen
 import app.podium.feature.settings.MusicFoldersScreen
-import app.podium.feature.settings.OnlineSourcesScreen
-import app.podium.feature.settings.SourceFormScreen
+import app.podium.feature.settings.OnlineServiceScreen
 import app.podium.feature.settings.SettingsScreen
 import app.podium.feature.settings.ThemeScreen
 import app.podium.player.api.PlayIntent
@@ -168,11 +169,8 @@ sealed interface Dest {
     data object Grain : Dest
     data object CustomColor : Dest
 
-    /** Settings ▸ Online sources (D-35). */
+    /** Settings ▸ the online music service (D-38): account, the app that plays, hand-off. */
     data object OnlineSources : Dest
-
-    /** A source's setup or sign-in form (D-37), by its key. */
-    data class SourceForm(val key: String) : Dest
     data class Album(val id: AlbumId) : Dest
     data class Artist(val id: ArtistId) : Dest
 
@@ -192,7 +190,6 @@ private fun Dest.encode(): String = when (this) {
     is Dest.Album -> "Album:${id.value}"
     is Dest.Artist -> "Artist:${id.value}"
     is Dest.MusicFolders -> "MusicFolders:$path"
-    is Dest.SourceForm -> "SourceForm:$key"
     is Dest.Online -> "Online:" + OnlinePlace.encode(place)
     else -> toString()
 }
@@ -201,7 +198,6 @@ private fun decodeDest(text: String): Dest? = when {
     text.startsWith("Album:") -> Dest.Album(AlbumId(text.removePrefix("Album:")))
     text.startsWith("Artist:") -> Dest.Artist(ArtistId(text.removePrefix("Artist:")))
     text.startsWith("MusicFolders:") -> Dest.MusicFolders(text.removePrefix("MusicFolders:"))
-    text.startsWith("SourceForm:") -> Dest.SourceForm(text.removePrefix("SourceForm:"))
     text.startsWith("Online:") -> OnlinePlace.decode(text.removePrefix("Online:"))?.let(Dest::Online)
     else -> fixedDests[text]
 }
@@ -230,8 +226,7 @@ private fun titleOf(dest: Dest, graph: AppGraph): String = when (dest) {
     Dest.Finish -> "Finish"
     Dest.Grain -> "Grain"
     Dest.CustomColor -> "Custom color"
-    Dest.OnlineSources -> "Online sources"
-    is Dest.SourceForm -> graph.onlineSources.form(dest.key)?.title ?: "Online sources"
+    Dest.OnlineSources -> graph.onlineService.state.collectAsStateWithLifecycle().value?.name ?: "Online music"
     is Dest.Album -> {
         val album by remember(dest) { graph.library.album(dest.id) }.collectAsStateWithLifecycle(initialValue = null)
         album?.album?.title ?: "Album"
@@ -603,16 +598,15 @@ private fun ScreenContent(
         Dest.Settings -> SettingsScreen(
             repository = settings,
             folders = graph.musicFolders,
-            onlineSources = graph.onlineSources,
+            onlineService = graph.onlineService,
             onTheme = { navigator.push(Dest.Theme) },
             onFinish = { navigator.push(Dest.Finish) },
             onCustomColor = { navigator.push(Dest.CustomColor) },
             onGrain = { navigator.push(Dest.Grain) },
             onMusicFolders = { navigator.push(Dest.MusicFolders("")) },
-            onOnlineSources = { navigator.push(Dest.OnlineSources) },
+            onOnlineService = { navigator.push(Dest.OnlineSources) },
         )
-        Dest.OnlineSources -> OnlineSourcesScreen(graph.onlineSources, onOpenForm = { navigator.push(Dest.SourceForm(it)) })
-        is Dest.SourceForm -> SourceFormScreen(graph.onlineSources, screen.key, onDone = { navigator.pop() })
+        Dest.OnlineSources -> OnlineServiceScreen(graph.onlineService)
         is Dest.MusicFolders -> MusicFoldersScreen(graph.musicFolders, screen.path, onOpen = { navigator.push(Dest.MusicFolders(it)) })
         Dest.Theme -> ThemeScreen(settings)
         Dest.Finish -> FinishScreen(settings, onCustomColor = { navigator.push(Dest.CustomColor) })
@@ -881,6 +875,13 @@ private fun rememberOnlineActions(graph: AppGraph, navigator: Navigator): Online
             }
 
             override fun startRadio(track: Track) {
+                graph.catalog.remember(listOf(track))
+                if (graph.playsRemotely(track)) {
+                    // The app that plays it runs its own radio from this song (YOUTUBE_MUSIC_ARCHITECTURE §8.5).
+                    controller.playCollection(listOf(track.id), 0, "${track.title} radio", RemoteContext.Radio(track))
+                    navigator.showNowPlaying()
+                    return
+                }
                 scope.launch {
                     val more = graph.recommendations.recommend(RecommendationRequest(listOf(track), setOf(track.id), RADIO_SIZE))
                     startRadio(listOf(track) + more.filter { it.id != track.id }, "${track.title} radio")
@@ -889,10 +890,27 @@ private fun rememberOnlineActions(graph: AppGraph, navigator: Navigator): Online
 
             override fun startArtistRadio(artist: ArtistSummary) {
                 scope.launch {
+                    val top = (graph.online.artist(artist.id) as? Outcome.Success)?.value?.tracks?.firstOrNull()
+                    if (top != null && graph.playsRemotely(top)) {
+                        graph.catalog.remember(listOf(top))
+                        controller.playCollection(listOf(top.id), 0, "${artist.name} radio", RemoteContext.ArtistRadio(artist.id))
+                        navigator.showNowPlaying()
+                        return@launch
+                    }
                     val tracks = graph.recommendations.artistRadio(artist.id, artist.id.sourceId, RADIO_SIZE, emptySet())
                     startRadio(tracks, "${artist.name} radio")
                 }
             }
+
+            override fun playCollection(tracks: List<Track>, index: Int, label: String, collection: PlaylistId, shuffle: Boolean) {
+                if (tracks.isEmpty()) return
+                graph.catalog.remember(tracks)
+                val start = if (shuffle) tracks.indices.random() else index.coerceIn(0, tracks.lastIndex)
+                controller.playCollection(tracks.map { it.id }, start, label, RemoteContext.Collection(collection), shuffle)
+                navigator.showNowPlaying()
+            }
+
+            override fun signIn() = graph.onlineService.signIn()
 
             override fun startGenreRadio(genre: String) {
                 scope.launch {

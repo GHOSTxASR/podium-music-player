@@ -101,6 +101,9 @@ import app.podium.player.api.FavoritesRepository
 import app.podium.player.api.NowPlayingItem
 import app.podium.player.api.PlayIntent
 import app.podium.player.api.PlaybackController
+import app.podium.player.api.PlaybackOwner
+import app.podium.player.api.RemoteProblem
+import app.podium.player.api.RemoteStatus
 import app.podium.player.api.PlaybackSnapshot
 import app.podium.player.api.PlaybackStatus
 import app.podium.player.api.RepeatMode
@@ -166,24 +169,32 @@ fun NowPlayingScreen(
     }
 
     val isFavorite = item != null && item.trackId in favoriteIds
+    val remoteOwner = snapshot.owner as? PlaybackOwner.Remote
+    val controls = snapshot.controls
     val showMore: () -> Unit = {
         if (item != null) {
             overlay.show(
                 MenuSpec(
                     item.title,
-                    listOf(
-                        MenuAction("Up Next", onSelect = onUpNext),
-                        MenuAction(if (isFavorite) "Remove from favorites" else "Add to favorites") { favorites.toggle(item.trackId) },
-                        MenuAction("Clear Up Next", enabled = queue.upNext.isNotEmpty()) { controller.clearUpcoming() },
-                    ),
+                    buildList {
+                        add(MenuAction("Up Next", onSelect = onUpNext))
+                        add(MenuAction(if (isFavorite) "Remove from favorites" else "Add to favorites") { favorites.toggle(item.trackId) })
+                        if (remoteOwner != null) {
+                            add(MenuAction("Open ${remoteOwner.displayName}") { controller.openRemoteApp() })
+                            if (snapshot.canResumeLocal) add(MenuAction("Back to my music") { controller.resumeLocal() })
+                        } else {
+                            add(MenuAction("Clear Up Next", enabled = queue.upNext.isNotEmpty()) { controller.clearUpcoming() })
+                        }
+                    },
                 ),
             )
         }
     }
     val perform: (Action) -> Unit = { action ->
         when (action) {
-            Action.Shuffle -> controller.setShuffle(!snapshot.shuffleEnabled)
-            Action.Repeat -> controller.setRepeat(snapshot.repeatMode.next())
+            // Only what the playing owner supports does anything (§8.4); the rest says no.
+            Action.Shuffle -> if (controls.shuffle) controller.setShuffle(!snapshot.shuffleEnabled) else haptics.reject()
+            Action.Repeat -> if (controls.repeat) controller.setRepeat(snapshot.repeatMode.next()) else haptics.reject()
             Action.Favorite -> item?.let { favorites.toggle(it.trackId) }
             Action.Queue -> onUpNext()
             Action.More -> showMore()
@@ -239,7 +250,7 @@ fun NowPlayingScreen(
                 WheelButton.CENTER -> {
                     lastWheelAt = System.nanoTime()
                     when (mode) {
-                        WheelMode.Volume -> mode = WheelMode.Scrub
+                        WheelMode.Volume -> mode = if (controls.seek && item?.durationMs != null) WheelMode.Scrub else WheelMode.Actions
                         WheelMode.Scrub -> {
                             mode = WheelMode.Actions
                             scrubTarget = null
@@ -287,6 +298,7 @@ fun NowPlayingScreen(
         controller = controller,
         perform = perform,
         environment = environmentOf(item.trackId),
+        queueHidden = queue.hidden,
     )
     // The cluster's glass refracts the artwork's environment, so the environment is the captured layer.
     GlassHost(
@@ -318,6 +330,8 @@ private class NowPlayingParts(
     val controller: PlaybackController,
     val perform: (Action) -> Unit,
     val environment: String? = null,
+    /** The playing owner doesn't show its queue: no "1 of 1" pretending to know. */
+    val queueHidden: Boolean = false,
 )
 
 @Composable
@@ -509,12 +523,12 @@ private fun ProgressRow(p: NowPlayingParts) {
                         Modifier
                             .weight(1f)
                             .height(24.dp)
-                            .pointerInput(duration) {
-                                if (duration <= 0) return@pointerInput
+                            .pointerInput(duration, p.snapshot.controls.seek) {
+                                if (duration <= 0 || !p.snapshot.controls.seek) return@pointerInput
                                 detectTapGestures { o -> controller.seekTo((o.x / size.width * duration).toLong().coerceIn(0, duration)) }
                             }
-                            .pointerInput(duration) {
-                                if (duration <= 0) return@pointerInput
+                            .pointerInput(duration, p.snapshot.controls.seek) {
+                                if (duration <= 0 || !p.snapshot.controls.seek) return@pointerInput
                                 detectHorizontalDragGestures { change, _ ->
                                     controller.seekTo((change.position.x / size.width * duration).toLong().coerceIn(0, duration))
                                 }
@@ -549,7 +563,10 @@ private fun StatusSlot(p: NowPlayingParts) {
     val type = PodiumTheme.type
     val status = p.snapshot.status
     val quality = QualityLabel.forNowPlaying(p.snapshot.quality)
+    val remote = p.snapshot.remote
+    val owner = (p.snapshot.owner as? PlaybackOwner.Remote)?.displayName
     val note = when {
+        remote != null && owner != null -> remoteNote(remote, owner)
         status is PlaybackStatus.Error -> errorCopy(status.error)
         p.mode == WheelMode.Scrub -> "Scrubbing. Turn faster to cover more."
         // Which source serves the song is Podium's business, not the listener's (D-36): it is kept
@@ -559,13 +576,13 @@ private fun StatusSlot(p: NowPlayingParts) {
     }
     Column(Modifier.fillMaxWidth().height(34.dp), verticalArrangement = Arrangement.Center) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            PodiumText("${p.item.indexInQueue + 1} of ${p.item.queueSize}", type.caption, colors.labelTertiary)
+            PodiumText(if (p.queueHidden) "" else "${p.item.indexInQueue + 1} of ${p.item.queueSize}", type.caption, colors.labelTertiary)
             quality?.let { PodiumText(it, type.caption, colors.labelTertiary) }
         }
         PodiumText(
             note ?: "",
             type.caption,
-            if (status is PlaybackStatus.Error) colors.critical else colors.labelSecondary,
+            if (status is PlaybackStatus.Error || remote?.problem != null) colors.critical else colors.labelSecondary,
             Modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Polite },
             textAlign = TextAlign.Center,
         )
@@ -579,16 +596,18 @@ private fun StatusSlot(p: NowPlayingParts) {
 @Composable
 private fun TransportRow(p: NowPlayingParts) {
     val controller = p.controller
+    val controls = p.snapshot.controls
+    val dim = PodiumTheme.colors.labelTertiary
     if (PodiumTheme.colors.isIndustrial) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.s)) {
-            Key(PodiumSymbol.Previous, "Previous track", 26.dp, 64.dp, onClick = controller::previous)
+            Key(PodiumSymbol.Previous, "Previous track", 26.dp, 64.dp, enabled = controls.previous, onClick = controller::previous)
             Key(if (p.playing) PodiumSymbol.Pause else PodiumSymbol.Play, if (p.playing) "Pause" else "Play", 30.dp, 84.dp, onClick = controller::togglePlayPause)
-            Key(PodiumSymbol.Next, "Next track", 26.dp, 64.dp, onClick = controller::next)
+            Key(PodiumSymbol.Next, "Next track", 26.dp, 64.dp, enabled = controls.next, onClick = controller::next)
         }
         return
     }
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.xl)) {
-        ControlButton(PodiumSymbol.Previous, "Previous track", 30.dp, 52.dp, onClick = controller::previous)
+        ControlButton(PodiumSymbol.Previous, "Previous track", 30.dp, 52.dp, tint = if (controls.previous) PodiumTheme.colors.labelPrimary else dim, onClick = controller::previous)
         ControlButton(
             if (p.playing) PodiumSymbol.Pause else PodiumSymbol.Play,
             if (p.playing) "Pause" else "Play",
@@ -596,7 +615,7 @@ private fun TransportRow(p: NowPlayingParts) {
             56.dp,
             onClick = controller::togglePlayPause,
         )
-        ControlButton(PodiumSymbol.Next, "Next track", 30.dp, 52.dp, onClick = controller::next)
+        ControlButton(PodiumSymbol.Next, "Next track", 30.dp, 52.dp, tint = if (controls.next) PodiumTheme.colors.labelPrimary else dim, onClick = controller::next)
     }
 }
 
@@ -681,7 +700,9 @@ private fun ActionClusterContent(p: NowPlayingParts, slot: Dp) {
                     Action.More -> Triple(PodiumSymbol.More, "More", null)
                 }
                 val focusedHere = lensVisible && Action.entries.indexOf(action) == p.actionFocus
+                val unsupported = (action == Action.Shuffle && !p.snapshot.controls.shuffle) || (action == Action.Repeat && !p.snapshot.controls.repeat)
                 val tint = when {
+                    unsupported -> colors.labelTertiary
                     action == Action.Favorite && on == true -> colors.like
                     on == true -> colors.highlightText
                     focusedHere && colors.isIndustrial -> colors.labelPrimary
@@ -726,6 +747,7 @@ private fun ActionStrip(p: NowPlayingParts, slot: Dp) {
                     20.dp,
                     slot,
                     tint = when {
+                        (action == Action.Shuffle && !p.snapshot.controls.shuffle) || (action == Action.Repeat && !p.snapshot.controls.repeat) -> colors.labelTertiary
                         on == true || focused -> colors.labelPrimary
                         else -> colors.labelSecondary
                     },
@@ -761,7 +783,7 @@ private fun actionLook(p: NowPlayingParts, action: Action): Triple<PodiumSymbol,
 
 /** An outlined rectangular key (industrial transport). Pressing darkens it briefly. */
 @Composable
-private fun Key(symbol: PodiumSymbol, label: String, iconSize: Dp, width: Dp, onClick: () -> Unit) {
+private fun Key(symbol: PodiumSymbol, label: String, iconSize: Dp, width: Dp, enabled: Boolean = true, onClick: () -> Unit) {
     val colors = PodiumTheme.colors
     val haptics = rememberPodiumHaptics()
     val interaction = remember { MutableInteractionSource() }
@@ -782,7 +804,7 @@ private fun Key(symbol: PodiumSymbol, label: String, iconSize: Dp, width: Dp, on
             },
         contentAlignment = Alignment.Center,
     ) {
-        Symbol(symbol, colors.labelPrimary, size = iconSize, weight = 600, filled = true)
+        Symbol(symbol, if (enabled) colors.labelPrimary else colors.labelTertiary, size = iconSize, weight = 600, filled = true)
     }
 }
 
@@ -825,8 +847,20 @@ private fun RepeatMode.next() = when (this) {
     RepeatMode.ONE -> RepeatMode.OFF
 }
 
+/** What another app's playback means right now, and what to do about it (§8.4). */
+internal fun remoteNote(remote: RemoteStatus, owner: String): String = when {
+    remote.starting -> "Starting in $owner"
+    remote.problem == RemoteProblem.NEEDS_ACCESS -> "Opened in $owner. Allow media controls in Settings to control it here."
+    remote.problem == RemoteProblem.NO_APP -> "Install $owner to play this song."
+    remote.problem == RemoteProblem.DID_NOT_START -> "$owner didn't start it. Hold Center, then Open $owner."
+    remote.problem == RemoteProblem.ENDED -> "$owner stopped. Choose a song to play again."
+    else -> "Playing in $owner"
+}
+
 /** Error copy (design-system.md §11): what happened, what's next; never raw exception text. */
 internal fun errorCopy(error: PodiumError): String = when (error) {
+    is PodiumError.NotPlayable -> "This song can't play right now. Choose another one."
+    is PodiumError.AuthExpired -> "Your sign-in expired. Sign in again from Settings."
     is PodiumError.InvalidMedia, is PodiumError.UnsupportedFormat -> "This song can't be played. Skipping to the next one."
     is PodiumError.NotFound -> "This song isn't available right now. Skipping to the next one."
     is PodiumError.Network, PodiumError.Offline -> "Can't reach the music source. Check your connection."

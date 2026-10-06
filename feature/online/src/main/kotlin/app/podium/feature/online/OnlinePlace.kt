@@ -18,7 +18,13 @@ sealed interface OnlinePlace {
     data object Playlists : OnlinePlace { override val title = "Playlists" }
     data object Radio : OnlinePlace { override val title = "Radio" }
     data object History : OnlinePlace { override val title = "History" }
-    data object Recent : OnlinePlace { override val title = "Recently played" }
+    data object Recent : OnlinePlace { override val title = "Played on Podium" }
+
+    /** The account's library (D-38): liked songs, playlists, albums, artists. */
+    data object Library : OnlinePlace { override val title = "Library" }
+    data object LibraryPlaylists : OnlinePlace { override val title = "Playlists" }
+    data object LibraryAlbums : OnlinePlace { override val title = "Albums" }
+    data object LibraryArtists : OnlinePlace { override val title = "Artists" }
 
     data class Shelf(val id: String, override val title: String) : OnlinePlace
     data class Genre(val name: String) : OnlinePlace { override val title get() = name }
@@ -44,6 +50,10 @@ sealed interface OnlinePlace {
             Radio -> "radio"
             History -> "history"
             Recent -> "recent"
+            Library -> "library"
+            LibraryPlaylists -> "library-playlists"
+            LibraryAlbums -> "library-albums"
+            LibraryArtists -> "library-artists"
             is Shelf -> listOf("shelf", place.id, place.title).joinToString("$SEP")
             is Genre -> listOf("genre", place.name).joinToString("$SEP")
             is Artist -> listOf("artist", place.id.value, place.name).joinToString("$SEP")
@@ -64,6 +74,10 @@ sealed interface OnlinePlace {
                 "radio" -> Radio
                 "history" -> History
                 "recent" -> Recent
+                "library" -> Library
+                "library-playlists" -> LibraryPlaylists
+                "library-albums" -> LibraryAlbums
+                "library-artists" -> LibraryArtists
                 "shelf" -> p.getOrNull(2)?.let { Shelf(p[1], it) }
                 "genre" -> p.getOrNull(1)?.let { Genre(it) }
                 "artist" -> p.getOrNull(2)?.let { Artist(ArtistId(p[1]), it) }

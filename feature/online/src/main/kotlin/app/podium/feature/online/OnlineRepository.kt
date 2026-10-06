@@ -5,7 +5,11 @@ import app.podium.core.model.ArtistId
 import app.podium.core.model.PlaylistId
 import app.podium.core.model.Track
 import app.podium.core.model.TrackId
+import app.podium.core.common.PodiumError
+import app.podium.sources.api.AlbumSummary
 import app.podium.sources.api.ArtistDetail
+import app.podium.sources.api.HistoryEntry
+import app.podium.sources.api.PlaylistSummary
 import app.podium.sources.api.ArtistSummary
 import app.podium.sources.api.PlaylistDetail
 import app.podium.sources.api.SearchResults
@@ -22,7 +26,22 @@ data class OnlineStatus(
     val canSearch: Boolean,
     val canBrowse: Boolean,
     val canRecommend: Boolean,
+    /** The account's own library (liked songs, playlists, albums, artists) can be read. */
+    val canLibrary: Boolean = false,
+    /** The account's own listening history can be read. */
+    val canHistory: Boolean = false,
+    /** Genres to explore are offered. */
+    val canExplore: Boolean = true,
+    /** The online account, when the music service has accounts. */
+    val account: OnlineAccount? = null,
 )
+
+/** The listener's online account as browsing shows it — never which service it is (D-35). */
+data class OnlineAccount(val state: AccountState, val name: String? = null) {
+    val signedIn: Boolean get() = state == AccountState.SIGNED_IN
+}
+
+enum class AccountState { SIGNED_OUT, SIGNING_IN, SIGNED_IN, EXPIRED }
 
 /** One of the listener's online playlists (kept on the device until a source can hold them). */
 data class OnlinePlaylist(val id: String, val name: String, val trackCount: Int)
@@ -75,8 +94,21 @@ interface OnlineRepository {
     fun removeFromPlaylist(id: String, entryId: Long)
     fun movePlaylistEntry(id: String, entryId: Long, toIndex: Int)
 
+    /** What Podium itself played online (its own record, not the account's), newest first. */
     val recentlyPlayed: Flow<List<Track>>
     fun clearHistory()
+
+    // --- The account's own library (YOUTUBE_MUSIC_ARCHITECTURE §7) -----------------------------------
+
+    suspend fun libraryPlaylists(offset: Int, limit: Int): Outcome<List<PlaylistSummary>> = Outcome.Failure(PodiumError.Unsupported("library"))
+    suspend fun libraryAlbums(offset: Int, limit: Int): Outcome<List<AlbumSummary>> = Outcome.Failure(PodiumError.Unsupported("library"))
+    suspend fun libraryArtists(offset: Int, limit: Int): Outcome<List<ArtistSummary>> = Outcome.Failure(PodiumError.Unsupported("library"))
+
+    /** What the account itself recorded, newest first. */
+    suspend fun accountHistory(offset: Int, limit: Int): Outcome<List<HistoryEntry>> = Outcome.Failure(PodiumError.Unsupported("history"))
+
+    /** Fetch the account's likes again (after signing in, or when Liked songs opens). */
+    fun refreshLibrary() {}
 }
 
 /** What the ONLINE screens ask the player and the system to do. */
@@ -94,4 +126,14 @@ interface OnlineActions {
 
     /** The song playing now, if it's an online one (radio "from what's playing"). */
     val nowPlaying: StateFlow<Track?>
+
+    /**
+     * Play [tracks] from an album or playlist the listener opened ([collection]); whoever plays it
+     * may play the collection as a whole.
+     */
+    fun playCollection(tracks: List<Track>, index: Int, label: String, collection: app.podium.core.model.PlaylistId, shuffle: Boolean = false) =
+        if (shuffle) shuffle(tracks, label) else play(tracks, index, label)
+
+    /** Sign in to the online account (opens the service's own sign-in page). */
+    fun signIn() {}
 }

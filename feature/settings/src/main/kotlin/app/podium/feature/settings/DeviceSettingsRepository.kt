@@ -22,6 +22,14 @@ interface DeviceSettingsRepository {
     val onlineRecommendations: StateFlow<Boolean>
     val avoidRepeats: StateFlow<Boolean>
 
+    /**
+     * After handing a song to the app that plays online music, bring Podium straight back to the
+     * front (true) or leave the app showing (false). YOUTUBE_MUSIC_ARCHITECTURE §8.2.
+     */
+    val stayInPodium: StateFlow<Boolean>
+
+    fun setStayInPodium(enabled: Boolean)
+
     fun setAppearance(appearance: DeviceAppearance)
     fun setPreview(appearance: DeviceAppearance?)
     fun setStartupSound(enabled: Boolean)

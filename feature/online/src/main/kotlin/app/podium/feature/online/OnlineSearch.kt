@@ -59,6 +59,7 @@ private sealed interface SearchRow {
     data class Section(val title: String) : SearchRow
     data class Song(val track: Track) : SearchRow
     data object MoreSongs : SearchRow
+    data class Video(val track: Track) : SearchRow
     data class Artist(val artist: ArtistSummary) : SearchRow
     data class Album(val album: AlbumSummary) : SearchRow
     data class Playlist(val playlist: PlaylistSummary) : SearchRow
@@ -123,8 +124,9 @@ fun OnlineSearchScreen(repository: OnlineRepository, actions: OnlineActions, nav
                 is Remote.Failed -> add(SearchRow.Message(failureText(r.error)))
                 is Remote.Ready -> {
                     val v = r.value
-                    if (songs.isEmpty() && v.artists.isEmpty() && v.albums.isEmpty() && v.playlists.isEmpty()) {
-                        add(SearchRow.Message("Nothing found. Try other words."))
+                    if (songs.isEmpty() && v.artists.isEmpty() && v.albums.isEmpty() && v.playlists.isEmpty() && v.videos.isEmpty()) {
+                        val account = repository.status.value?.account
+                        add(SearchRow.Message(if (account != null && !account.signedIn) "Nothing found. Signing in opens the full catalogue." else "Nothing found. Try other words."))
                     }
                     if (songs.isNotEmpty()) {
                         add(SearchRow.Section("Songs"))
@@ -142,6 +144,10 @@ fun OnlineSearchScreen(repository: OnlineRepository, actions: OnlineActions, nav
                     if (v.playlists.isNotEmpty()) {
                         add(SearchRow.Section("Playlists"))
                         v.playlists.forEach { add(SearchRow.Playlist(it)) }
+                    }
+                    if (v.videos.isNotEmpty()) {
+                        add(SearchRow.Section("Videos"))
+                        v.videos.forEach { add(SearchRow.Video(it)) }
                     }
                 }
             }
@@ -166,6 +172,7 @@ fun OnlineSearchScreen(repository: OnlineRepository, actions: OnlineActions, nav
             SearchRow.Field -> fieldFocus.requestFocus()
             is SearchRow.Song -> playable.indexOfFirst { it.id == row.track.id }.takeIf { it >= 0 }?.let { actions.play(playable, it, "Search") }
             SearchRow.MoreSongs -> loadMoreSongs()
+            is SearchRow.Video -> ready?.videos?.let { videos -> actions.play(videos, videos.indexOfFirst { it.id == row.track.id }.coerceAtLeast(0), "Search") }
             is SearchRow.Artist -> navigate(OnlinePlace.Artist(row.artist.id, row.artist.name))
             is SearchRow.Album -> navigate(OnlinePlace.Collection(PlaylistId(row.album.id.value), row.album.title, isAlbum = true))
             is SearchRow.Playlist -> navigate(OnlinePlace.Collection(row.playlist.id, row.playlist.title, row.playlist.isAlbum))
@@ -173,7 +180,11 @@ fun OnlineSearchScreen(repository: OnlineRepository, actions: OnlineActions, nav
         }
     }
     val longPress: (Int) -> Unit = { i ->
-        (rows.getOrNull(i) as? SearchRow.Song)?.let { showTrackMenu(overlayHost, it.track, repository, actions, navigate) }
+        when (val row = rows.getOrNull(i)) {
+            is SearchRow.Song -> showTrackMenu(overlayHost, row.track, repository, actions, navigate)
+            is SearchRow.Video -> showTrackMenu(overlayHost, row.track, repository, actions, navigate)
+            else -> Unit
+        }
     }
     ListInputEffect(focus, onActivate = activate, onLongPress = longPress)
     LaunchedEffect(focus) {
@@ -189,6 +200,7 @@ fun OnlineSearchScreen(repository: OnlineRepository, actions: OnlineActions, nav
                 is SearchRow.Section -> "section:${it.title}"
                 is SearchRow.Song -> "song:${it.track.id.value}"
                 SearchRow.MoreSongs -> "more"
+                is SearchRow.Video -> "video:${it.track.id.value}"
                 is SearchRow.Artist -> "artist:${it.artist.id.value}"
                 is SearchRow.Album -> "album:${it.album.id.value}"
                 is SearchRow.Playlist -> "playlist:${it.playlist.id.value}"
@@ -202,6 +214,7 @@ fun OnlineSearchScreen(repository: OnlineRepository, actions: OnlineActions, nav
         preview = { row ->
             when (row) {
                 is SearchRow.Song -> MenuPreview.Artwork(listOfNotNull(row.track.artwork?.uri))
+                is SearchRow.Video -> MenuPreview.Artwork(listOfNotNull(row.track.artwork?.uri))
                 is SearchRow.Artist -> row.artist.artwork?.uri?.let { MenuPreview.Artwork(listOf(it), round = true) } ?: MenuPreview.None
                 is SearchRow.Album -> MenuPreview.Artwork(listOfNotNull(row.album.artwork?.uri))
                 is SearchRow.Playlist -> MenuPreview.Artwork(listOfNotNull(row.playlist.artwork?.uri))
@@ -215,6 +228,7 @@ fun OnlineSearchScreen(repository: OnlineRepository, actions: OnlineActions, nav
             is SearchRow.Section -> SectionLabel(row.title)
             is SearchRow.Song -> OnlineTrackRow(row.track, focused, liked = row.track.id in likedIds)
             SearchRow.MoreSongs -> MenuRow("More songs", focused, leading = PodiumSymbol.More, showChevron = false)
+            is SearchRow.Video -> OnlineTrackRow(row.track, focused, liked = row.track.id in likedIds)
             is SearchRow.Artist -> OnlineArtistRow(row.artist, focused)
             is SearchRow.Album -> TrackRow(row.album.title, row.album.artistDisplay, focused, row.album.artwork?.uri, trailing = row.album.year?.toString())
             is SearchRow.Playlist -> TrackRow(row.playlist.title, row.playlist.ownerName, focused, row.playlist.artwork?.uri, trailing = row.playlist.trackCount?.toString())
@@ -226,8 +240,8 @@ fun OnlineSearchScreen(repository: OnlineRepository, actions: OnlineActions, nav
 private fun failureText(error: PodiumError) = when (error) {
     PodiumError.Offline -> "You're offline. Music on this phone still plays."
     is PodiumError.RateLimited -> "Too many requests. Wait a moment and type again."
-    is PodiumError.NotFound -> "Turn on an online source in Settings to search."
-    is PodiumError.AuthRequired -> "Sign in to your online source in Settings, then search again."
+    is PodiumError.PolicyDisabled -> "Online music is off. Turn it on in Settings to search."
+    is PodiumError.AuthExpired -> "Your sign-in expired. Sign in again from Settings."
     else -> "Couldn't reach online music. Check your connection."
 }
 

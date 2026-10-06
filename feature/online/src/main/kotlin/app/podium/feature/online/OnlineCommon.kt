@@ -65,9 +65,11 @@ fun OnlineMessage(error: PodiumError?) {
         PodiumError.Offline -> "You're offline" to "Online music needs a connection. Music on this phone still plays."
         is PodiumError.RateLimited -> "Too many requests" to "Wait a moment, then go back and try again."
         is PodiumError.NotFound -> "This isn't available" to "It may have been removed. Go back and pick something else."
-        is PodiumError.PolicyDisabled -> "This isn't available right now" to "Its online source is turned off. Turn it on in Settings, Online sources."
-        is PodiumError.AuthRequired -> "Sign in to continue" to "This source needs you to sign in again. Go to Settings, Online sources."
-        null -> "No online source" to "Turn on an online source in Settings. Music on this phone still plays."
+        is PodiumError.PolicyDisabled -> "Online music is off" to "Turn it on in Settings. Music on this phone still plays."
+        is PodiumError.AuthRequired -> "Sign in to see this" to "Your library needs your account. Sign in from Settings."
+        is PodiumError.AuthExpired -> "Your sign-in expired" to "Sign in again from Settings. Music on this phone still plays."
+        is PodiumError.Unsupported -> "Not available here" to "Online music doesn't offer this. Go back and pick something else."
+        null -> "Online music is off" to "Turn it on in Settings. Music on this phone still plays."
         else -> "Couldn't reach online music" to "Check your connection, then go back and try again."
     }
     CenteredMessage(if (error == PodiumError.Offline) PodiumSymbol.Offline else PodiumSymbol.Error, title, message)
@@ -109,19 +111,28 @@ fun OnlinePaperMenu(entries: List<OnlineEntry>, stateKey: String, onLongPress: (
     }
 }
 
-/** An online song row: cover, title over artist, length; unplayable songs say why. */
+/** An online song row: cover, title over artist, length; unplayable songs say why; videos say so. */
 @Composable
 fun OnlineTrackRow(track: Track, focused: Boolean, liked: Boolean = false) {
     val unavailable = track.availability as? Availability.Unavailable
+    val video = track.kind == app.podium.core.model.MediaKind.MUSIC_VIDEO || track.kind == app.podium.core.model.MediaKind.VIDEO
     TrackRow(
         title = track.title,
         subtitle = unavailable?.reason ?: track.artistDisplay,
         focused = focused,
         artworkUri = track.artwork?.uri,
         trailing = formatDuration(track.durationMs),
-        note = if (liked) "Liked" else null,
+        note = when {
+            video && liked -> "Liked video"
+            video -> "Video"
+            liked -> "Liked"
+            else -> null
+        },
     )
 }
+
+/** Songs that only play in another app never join Podium's own queue (D-34, §8.3). */
+val Track.queuesHere: Boolean get() = app.podium.core.model.PlaybackRoute.DIRECT in routes
 
 /** A few covers from some songs, for previews. */
 fun covers(tracks: List<Track>, limit: Int = 8): List<String> = tracks.mapNotNull { it.artwork?.uri }.distinct().take(limit)
@@ -159,7 +170,7 @@ fun showTrackMenu(
         MenuSpec(
             track.title,
             buildList {
-                if (playable) {
+                if (playable && track.queuesHere) {
                     add(MenuAction("Play next") { actions.playNext(track) })
                     add(MenuAction("Add to Up Next") { actions.addToQueue(track) })
                 }

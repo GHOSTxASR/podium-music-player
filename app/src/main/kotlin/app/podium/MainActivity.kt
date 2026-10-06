@@ -19,7 +19,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
-        graph.playbackController.connect()
+        graph.localPlayback.connect()
         graph.startListening()
         handleDebugIntent(intent, graph)
         applyDebugWindowCommand(intent, this)
@@ -36,15 +36,17 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        // The user may have changed music access in system settings while we were away.
+        // The user may have changed music access in system settings while we were away, or allowed
+        // media control, or installed the app that plays online music.
         graph.recheckPermissions()
+        graph.remotePlayback.refresh()
     }
 
     private fun perform(action: CapabilityAction) {
         when (action) {
             is CapabilityAction.RequestPermission -> requestPermission.launch(action.permission)
-            // Sign-in and provider apps arrive with remote sources (S4+); nothing offers them yet.
-            is CapabilityAction.SignIn, is CapabilityAction.InstallApp -> Unit
+            is CapabilityAction.SignIn -> graph.onlineService.signIn()
+            is CapabilityAction.InstallApp -> graph.onlineService.installApp()
         }
     }
 }

@@ -48,6 +48,14 @@ class SharedPrefsDeviceSettings(context: Context) : DeviceSettingsRepository {
     private val _avoidRepeats = MutableStateFlow(prefs.getBoolean(KEY_AVOID_REPEATS, true))
     override val avoidRepeats: StateFlow<Boolean> = _avoidRepeats.asStateFlow()
 
+    private val _stayInPodium = MutableStateFlow(prefs.getBoolean(KEY_STAY_IN_PODIUM, true))
+    override val stayInPodium: StateFlow<Boolean> = _stayInPodium.asStateFlow()
+
+    override fun setStayInPodium(enabled: Boolean) {
+        _stayInPodium.value = enabled
+        prefs.edit { putBoolean(KEY_STAY_IN_PODIUM, enabled) }
+    }
+
     override fun setAutoplay(enabled: Boolean) {
         _autoplay.value = enabled
         prefs.edit { putBoolean(KEY_AUTOPLAY, enabled) }
@@ -103,5 +111,6 @@ class SharedPrefsDeviceSettings(context: Context) : DeviceSettingsRepository {
         const val KEY_AUTOPLAY = "autoplay"
         const val KEY_RECOMMENDATIONS = "online_recommendations"
         const val KEY_AVOID_REPEATS = "avoid_repeats"
+        const val KEY_STAY_IN_PODIUM = "stay_in_podium"
     }
 }
