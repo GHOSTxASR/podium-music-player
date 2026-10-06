@@ -17,8 +17,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -32,21 +30,22 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.podium.core.designsystem.component.FocusList
+import app.podium.core.designsystem.component.KeyLayout
+import app.podium.core.designsystem.component.KeyboardAction
 import app.podium.core.designsystem.component.ListInputEffect
 import app.podium.core.designsystem.component.LocalMiniature
 import app.podium.core.designsystem.component.LocalScreenInsets
 import app.podium.core.designsystem.component.MenuPreview
 import app.podium.core.designsystem.component.MenuRow
+import app.podium.core.designsystem.component.PodiumTextField
 import app.podium.core.designsystem.shell.DeviceAppearance
 import app.podium.core.designsystem.shell.FinishPreset
 import app.podium.core.designsystem.shell.HueWalk
@@ -68,7 +67,7 @@ import app.podium.core.interaction.WheelContext
 import app.podium.core.interaction.rememberFocusListState
 import app.podium.core.interaction.rememberPodiumHaptics
 
-private enum class SettingsRow { Appearance, MusicFolders, OnlineSources, Autoplay, Recommendations, AvoidRepeats, OnlineLyrics, LyricsCredit, Haptics, Clicks, StartupSound }
+private enum class SettingsRow { Appearance, Keyboard, MusicFolders, OnlineSources, Autoplay, Recommendations, AvoidRepeats, OnlineLyrics, LyricsCredit, Haptics, Clicks, StartupSound }
 
 /**
  * Settings (D-26, D-32, D-35): the device's look, which folders hold its music, which online sources it
@@ -91,6 +90,7 @@ fun SettingsScreen(
     val recommendationsOn by repository.onlineRecommendations.collectAsStateWithLifecycle()
     val avoidRepeatsOn by repository.avoidRepeats.collectAsStateWithLifecycle()
     val onlineLyricsOn by repository.onlineLyrics.collectAsStateWithLifecycle()
+    val podiumKeyboard by repository.podiumKeyboard.collectAsStateWithLifecycle()
     val folderList by folders.folders.collectAsStateWithLifecycle()
     val selection by folders.selection.collectAsStateWithLifecycle()
     val service by onlineService.state.collectAsStateWithLifecycle()
@@ -101,6 +101,10 @@ fun SettingsScreen(
     val activate: (Int) -> Unit = { index ->
         when (rows[index]) {
             SettingsRow.Appearance -> onAppearance()
+            SettingsRow.Keyboard -> {
+                haptics.confirm()
+                repository.setPodiumKeyboard(!podiumKeyboard)
+            }
             SettingsRow.MusicFolders -> onMusicFolders()
             SettingsRow.OnlineSources -> onOnlineService()
             SettingsRow.Autoplay -> {
@@ -151,6 +155,8 @@ fun SettingsScreen(
     ) { row, _, focused ->
         when (row) {
             SettingsRow.Appearance -> MenuRow("Appearance", focused, value = appearance.display.label)
+            // Typing: the Wheel becomes Podium's keyboard, or the phone's keyboard appears (D-45).
+            SettingsRow.Keyboard -> MenuRow("Keyboard", focused, value = if (podiumKeyboard) "Podium" else "Phone", showChevron = false)
             SettingsRow.MusicFolders -> MenuRow(
                 "Music folders",
                 focused,
@@ -371,7 +377,7 @@ fun CustomColorScreen(repository: DeviceSettingsRepository, target: ColorTarget 
         ) {
             PodiumText("#", type.title, colors.labelSecondary)
             Spacer(Modifier.width(Spacing.xs))
-            BasicTextField(
+            PodiumTextField(
                 value = text,
                 onValueChange = { raw ->
                     val cleaned = raw.uppercase().filter { it.isDigit() || it in 'A'..'F' }.take(6)
@@ -383,17 +389,20 @@ fun CustomColorScreen(repository: DeviceSettingsRepository, target: ColorTarget 
                         walk = HueWalk.of(parsed)
                     }
                 },
-                singleLine = true,
                 textStyle = type.title.copy(color = colors.labelPrimary),
-                cursorBrush = SolidColor(colors.highlightText),
-                keyboardOptions = KeyboardOptions(
+                description = "Hex color code",
+                action = KeyboardAction.DONE,
+                onAction = { focusManager.clearFocus() },
+                layout = KeyLayout.HEX,
+                maxLength = 6,
+                accept = { it.isDigit() || it.uppercaseChar() in 'A'..'F' },
+                phoneOptions = KeyboardOptions(
                     capitalization = KeyboardCapitalization.Characters,
                     autoCorrectEnabled = false,
                     keyboardType = KeyboardType.Ascii,
-                    imeAction = ImeAction.Done,
                 ),
-                keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
-                modifier = Modifier.weight(1f).semantics { contentDescription = "Hex color code" },
+                cursorColor = colors.highlightText,
+                modifier = Modifier.weight(1f),
             )
         }
         Spacer(Modifier.height(Spacing.s))

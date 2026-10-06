@@ -38,8 +38,8 @@ import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -74,6 +74,10 @@ import app.podium.core.designsystem.artwork.BackgroundExtension
 import app.podium.core.designsystem.artwork.LocalArtworkLoader
 import app.podium.core.designsystem.artwork.rememberArtwork
 import app.podium.core.designsystem.component.GlassMenu
+import app.podium.core.designsystem.component.KeyboardHost
+import app.podium.core.designsystem.component.KeyboardStyle
+import app.podium.core.designsystem.component.LocalKeyboardHost
+import app.podium.core.designsystem.component.LocalKeyboardStyle
 import app.podium.core.designsystem.component.LocalMiniature
 import app.podium.core.designsystem.component.LocalMiniatureFocusKey
 import app.podium.core.designsystem.component.LocalOverlayHost
@@ -85,6 +89,7 @@ import app.podium.core.designsystem.component.OverlayHost
 import app.podium.core.designsystem.component.PaperGeometry
 import app.podium.core.designsystem.component.PodWheel
 import app.podium.core.designsystem.component.ScreenInsets
+import app.podium.core.designsystem.component.WheelKeyboard
 import app.podium.core.designsystem.glass.GlassHost
 import app.podium.core.designsystem.glass.scrollEdgeFade
 import app.podium.core.designsystem.shell.BootScreen
@@ -304,6 +309,9 @@ fun PodiumApp(graph: AppGraph, onSourceAction: (CapabilityAction) -> Unit) {
         val navigator = remember(backStack) { Navigator(backStack) }
         val router = remember { InputRouter() }
         val overlay = remember { OverlayHost() }
+        // Typing (D-45): fields open the Podium keyboard where the Wheel is, or the phone's.
+        val keyboard = remember { KeyboardHost() }
+        val podiumKeyboard by graph.deviceSettings.podiumKeyboard.collectAsStateWithLifecycle()
         val hapticsOn by graph.deviceSettings.haptics.collectAsStateWithLifecycle()
         val clicksOn by graph.deviceSettings.clicks.collectAsStateWithLifecycle()
         val feedback = remember(hapticsOn, clicksOn) { Feedback(haptics = hapticsOn, clicker = if (clicksOn) graph.sounds else Clicker.Silent) }
@@ -332,6 +340,8 @@ fun PodiumApp(graph: AppGraph, onSourceAction: (CapabilityAction) -> Unit) {
             LocalOverlayHost provides overlay,
             LocalArtworkLoader provides graph.artworkLoader,
             LocalFeedback provides feedback,
+            LocalKeyboardHost provides keyboard,
+            LocalKeyboardStyle provides if (podiumKeyboard) KeyboardStyle.PODIUM else KeyboardStyle.PHONE,
         ) {
             // One structure for every finish, so trying finishes on never rebuilds the screen.
             GlassHost(
@@ -357,13 +367,16 @@ fun PodiumApp(graph: AppGraph, onSourceAction: (CapabilityAction) -> Unit) {
                             }
                         },
                         wheel = { diameter ->
-                            PodWheel(
-                                onInput = { router.dispatch(it) },
-                                diameter = diameter,
-                                isPlaying = snapshot.intent == PlayIntent.PLAY,
-                                palette = palette,
-                            )
+                            WheelKeyboard(keyboard, diameter, palette) {
+                                PodWheel(
+                                    onInput = { router.dispatch(it) },
+                                    diameter = diameter,
+                                    isPlaying = snapshot.intent == PlayIntent.PLAY,
+                                    palette = palette,
+                                )
+                            }
                         },
+                        keyboardOpen = keyboard.isOpen,
                         powerButton = {
                             PowerButton(on = power != Power.OFF, palette = palette, onToggle = graph::togglePower)
                         },
@@ -513,6 +526,10 @@ private fun ScreenOs(
                         )
                     }
                 }
+                // Back folds the keyboard away before it goes anywhere (D-45). Registered when it
+                // opens, so it comes after the navigation's own handler and wins.
+                val keyboard = LocalKeyboardHost.current
+                if (keyboard != null && keyboard.isOpen) BackHandler { keyboard.dismiss() }
                 overlay.menu?.let { spec ->
                     GlassMenu(spec, onDismiss = overlay::dismiss, panelPadding = PaddingValues(top = ScreenHeaderHeight))
                     BackHandler { overlay.dismiss() }

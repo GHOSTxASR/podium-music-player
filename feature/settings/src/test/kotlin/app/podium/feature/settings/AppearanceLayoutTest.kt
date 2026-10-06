@@ -36,14 +36,14 @@ import app.podium.core.designsystem.theme.DisplayTheme
 import app.podium.core.designsystem.theme.PodiumTheme
 import app.podium.core.interaction.InputRouter
 import app.podium.core.interaction.LocalInputRouter
+import java.io.File
+import kotlin.test.assertTrue
 import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.GraphicsMode
-import java.io.File
-import kotlin.test.assertTrue
 
 /**
  * Settings ▸ Appearance (D-41) inside the device at a small and a phone screen: every node stays
@@ -67,6 +67,8 @@ class AppearanceLayoutTest {
         override val avoidRepeats = MutableStateFlow(true)
         override val stayInPodium = MutableStateFlow(true)
         override val onlineLyrics = MutableStateFlow(false)
+        override val podiumKeyboard = MutableStateFlow(true)
+        override fun setPodiumKeyboard(enabled: Boolean) = Unit
         override fun setStayInPodium(enabled: Boolean) = Unit
         override fun setOnlineLyrics(enabled: Boolean) = Unit
         override fun setAppearance(appearance: DeviceAppearance) { this.appearance.value = appearance }

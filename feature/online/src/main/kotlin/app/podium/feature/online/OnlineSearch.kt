@@ -6,9 +6,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -21,22 +18,22 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.podium.core.common.Outcome
 import app.podium.core.common.PodiumError
 import app.podium.core.designsystem.component.FocusList
+import app.podium.core.designsystem.component.KeyboardAction
 import app.podium.core.designsystem.component.ListInputEffect
 import app.podium.core.designsystem.component.LoadingRow
 import app.podium.core.designsystem.component.LocalRowPadding
 import app.podium.core.designsystem.component.LocalScreenInsets
 import app.podium.core.designsystem.component.MenuPreview
 import app.podium.core.designsystem.component.MenuRow
+import app.podium.core.designsystem.component.PodiumTextField
 import app.podium.core.designsystem.component.TrackRow
 import app.podium.core.designsystem.symbol.PodiumSymbol
 import app.podium.core.designsystem.theme.PodiumTheme
@@ -273,15 +270,15 @@ internal fun SearchField(
             .padding(horizontal = Spacing.m, vertical = Spacing.s),
     ) {
         if (value.isEmpty()) PodiumText(placeholder, type.row, colors.labelTertiary)
-        BasicTextField(
+        PodiumTextField(
             value = value,
             onValueChange = onChange,
-            singleLine = true,
             textStyle = type.row.copy(color = colors.labelPrimary),
-            cursorBrush = SolidColor(colors.labelPrimary),
-            keyboardOptions = KeyboardOptions(imeAction = if (search) ImeAction.Search else ImeAction.Done),
-            keyboardActions = KeyboardActions(onSearch = { onDone() }, onDone = { onDone() }),
-            modifier = Modifier.fillMaxWidth().focusRequester(focus).semantics { contentDescription = description },
+            description = description,
+            focusRequester = focus,
+            action = if (search) KeyboardAction.SEARCH else KeyboardAction.DONE,
+            onAction = onDone,
+            modifier = Modifier.fillMaxWidth(),
         )
     }
 }

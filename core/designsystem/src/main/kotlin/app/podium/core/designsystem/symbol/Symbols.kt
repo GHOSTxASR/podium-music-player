@@ -28,10 +28,16 @@ enum class PodiumSymbol(val codePoint: Int) {
     // Added 2026-10-06 (lyrics, customization): outline only — not in the filled instance, so never
     // drawn with filled = true.
     Lyrics(0xec0b), Palette(0xe40a), Image(0xe3f4), TextFields(0xe262), Sparkle(0xe65f), Contrast(0xeb37),
+
+    // Added 2026-10-06 (the Podium keyboard, D-45): outline only.
+    Backspace(0xe14a), Shift(0xe5f2), CapsLock(0xe318), KeyboardHide(0xe31a), Return(0xe31b),
 }
 
 /** Symbols the filled instance doesn't carry (drawn outlined whatever is asked). */
-internal val OutlineOnly = setOf(PodiumSymbol.Lyrics, PodiumSymbol.Palette, PodiumSymbol.Image, PodiumSymbol.TextFields, PodiumSymbol.Sparkle, PodiumSymbol.Contrast)
+internal val OutlineOnly = setOf(
+    PodiumSymbol.Lyrics, PodiumSymbol.Palette, PodiumSymbol.Image, PodiumSymbol.TextFields, PodiumSymbol.Sparkle, PodiumSymbol.Contrast,
+    PodiumSymbol.Backspace, PodiumSymbol.Shift, PodiumSymbol.CapsLock, PodiumSymbol.KeyboardHide, PodiumSymbol.Return,
+)
 
 private val families = ConcurrentHashMap<Triple<Int, Boolean, Int>, FontFamily>()
 

@@ -48,7 +48,8 @@
 | Like | Heart fill with a single 1.0 → 1.15 → 1.0 `press` pulse. No particles. |
 | Album Flow | Covers positioned by a continuous `scrollPosition` (float); each cover's transform is a pure function of its distance from center (rotationY, scale, translationZ, translationX overlap) — renders any intermediate state exactly, which is why it can follow the wheel 1:1. Settles with `flow`. |
 | Lyrics follow | Current line change: scroll so it sits at 33% height with `navigate`; color/opacity cross-fade `fadeStandard`. Paused 4 s after user input. |
-| Loading → content | Placeholder rows cross-fade to real rows (`fadeStandard`); no staggered entrance. |
+| Loading → content | The loading screen (D-43) appears only after 150 ms; content replaces it with no staggered entrance. The pinwheel steps about 12 times a second; still with reduced motion. |
+| Wheel ↔ keyboard (D-45) | One spring (damping 0.82, stiffness 240): the Wheel turns up to 150°, shrinks and fades as its piece of the body widens into the keyboard panel; keys rise from the middle outwards. Closing reverses it. Reduced motion: 160 ms tween. interaction-model.md §2.1. |
 
 ## 4. What we never animate
 Ambient floats, shimmer skeletons, marquee text, parallax on scroll, staggered list entrances, bouncing icons, animated gradients, idle wheel effects.

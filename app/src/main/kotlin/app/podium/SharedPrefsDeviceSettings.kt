@@ -86,6 +86,14 @@ class SharedPrefsDeviceSettings(context: Context) : DeviceSettingsRepository {
         prefs.edit { putBoolean(KEY_ONLINE_LYRICS, enabled) }
     }
 
+    private val _podiumKeyboard = MutableStateFlow(prefs.getBoolean(KEY_PODIUM_KEYBOARD, true))
+    override val podiumKeyboard: StateFlow<Boolean> = _podiumKeyboard.asStateFlow()
+
+    override fun setPodiumKeyboard(enabled: Boolean) {
+        _podiumKeyboard.value = enabled
+        prefs.edit { putBoolean(KEY_PODIUM_KEYBOARD, enabled) }
+    }
+
     override fun setAutoplay(enabled: Boolean) {
         _autoplay.value = enabled
         prefs.edit { putBoolean(KEY_AUTOPLAY, enabled) }
@@ -162,6 +170,7 @@ class SharedPrefsDeviceSettings(context: Context) : DeviceSettingsRepository {
         const val KEY_AVOID_REPEATS = "avoid_repeats"
         const val KEY_STAY_IN_PODIUM = "stay_in_podium"
         const val KEY_ONLINE_LYRICS = "online_lyrics"
+        const val KEY_PODIUM_KEYBOARD = "podium_keyboard"
         const val KEY_GLITTER = "glitter"
         const val KEY_GLITTER_AMOUNT = "glitter_amount"
         const val KEY_GLITTER_DENSITY = "glitter_density"

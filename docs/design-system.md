@@ -316,12 +316,12 @@ ONLINE uses the same paper, themes and Wheel — no new paradigm. Menus are pape
 - `IndexGlyph`: 96dp rounded square `GlassFloating` centered in the readable region; shows the current initial letter during fast rotation in sorted lists; fades out 600ms after rotation slows.
 
 ### 6.10 Small components
-`QualityLabel` (footnote, secondary, tappable, e.g., "FLAC 24-bit/96 kHz"; absent when unknown) · `DownloadIndicator` (12dp glyph states: queued ○, progress ring, done ●, failed !, in `labelTertiary`/`positive`/`critical`) · `LikeButton` (heart outline ↔ filled `like`, TOGGLE haptic) · `Toggle` (track 51×31 classic proportions; knob becomes `GlassControl` while dragged, per HIG) · `SearchField` (BasicTextField; 44dp; `canvasRaised` fill — content, not glass).
+`QualityLabel` (footnote, secondary, tappable, e.g., "FLAC 24-bit/96 kHz"; absent when unknown) · `DownloadIndicator` (12dp glyph states: queued ○, progress ring, done ●, failed !, in `labelTertiary`/`positive`/`critical`) · `LikeButton` (heart outline ↔ filled `like`, TOGGLE haptic) · `Toggle` (track 51×31 classic proportions; knob becomes `GlassControl` while dragged, per HIG) · `PodiumTextField` (D-45; the one text field: with the Podium keyboard it opens the keyboard the Wheel becomes, with the Phone setting it is a `BasicTextField` that summons the phone's keyboard; see interaction-model.md §2.1).
 
 **Quality label wording:** `<Codec> <bitDepth>-bit/<sampleRate> kHz` for lossless (`FLAC 24-bit/96 kHz`), `<Codec> <bitrate> kbps` for lossy (`AAC 256 kbps`). Sample rates print as 44.1, 48, 88.2, 96, 176.4, 192. Never "Lossless"/"Hi-Res" unless `audio-architecture.md` §5.1 holds. No all-caps, no middle dots. Unknown → no label.
 
 ### 6.11 State components
-- `LoadingState`: nothing for 300 ms; then static placeholder rows (6% label fill, **no shimmer**) + 16dp arc in the TitleBar.
+- `LoadingScreen` (D-43): nothing for 150 ms; then Podium's pinwheel, twelve spokes with the lit one stepping round about 12 times a second and a fading tail, in the display's ink (30 dp), above one footnote word ("Loading", "Reading your music"), centred in the readable region. It stands still with reduced motion. `LoadingRow` is the same as one list row (18 dp, secondary ink), e.g. "Searching". No placeholder rows, no shimmer.
 - `EmptyState`: glyph 48dp tertiary · title (17/22 600) · one-sentence message (15/22 secondary) · one action (focusable; lens lands on it).
 - `ErrorState`: same layout, message from §11, action "Try again" (+ secondary "Settings" when relevant).
 - `OfflineBanner`: inline row at top of affected lists, not a modal.

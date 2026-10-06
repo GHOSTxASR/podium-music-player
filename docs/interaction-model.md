@@ -29,6 +29,32 @@ There is always one **focused** element. **Rotate** moves focus (or adjusts the 
 
 Hardware volume keys and Bluetooth media buttons go to the system / media session, never through `InputRouter`.
 
+### 2.1 Typing: the Podium keyboard (D-45)
+Text is typed in `PodiumTextField` (core:designsystem), the only text field. Settings ▸ Keyboard picks the keyboard: **Podium** (default) or **Phone**.
+
+- **Opening.** Focusing a field opens a `KeyboardSession` on the shell's `KeyboardHost`. This happens on a tap on the field, or when the field's screen focuses it (Search does on arrival). Podium's field never starts an input connection, so the phone's keyboard never appears.
+- **The morph.** `WheelKeyboard` sits in the Wheel's slot.
+  - Opening, from one progress value (spring, damping 0.82, stiffness 240): the Wheel turns up to 150°, shrinks to 78 % and fades out by halfway. The piece holding it widens from the Wheel's diameter to the body's width less 12 dp a side, its corners going from a circle to 26 dp (6 dp on matte finishes). The keys rise from the panel's middle outwards, each fading in, scaling up from 60 % and lifting 10 dp.
+  - Closing runs the same path backwards. Reduced motion uses a 160 ms tween.
+  - The power button and indicator lights fade aside while the keyboard is open.
+- **Closing.** The close key (bottom right), Back, the field losing focus, or the field leaving the screen. The keyboard folds back into the Wheel.
+- **While open.** The Wheel is gone, so its inputs are too. Touch on the screen still works: results can be scrolled, and tapping one opens it as the keyboard folds away with the screen. The action key (Search) clears the field's focus, so the Wheel comes back to browse the results.
+- **Keys** (`KeyboardLayouts`, pure):
+  - Letters page: QWERTY, the second row indented half a key. Shift and Delete flank the third row. The bottom row is 123, Space, full stop, the action word (Search or Done, from the field) and close.
+  - Numbers and symbols page: the same shape, with abc back to letters.
+  - A hex page for colour codes (digits, A–F, Delete, Done, close).
+  - Every row of a page fills the same width.
+- **Typing** (`KeyboardEditor`, pure):
+  - A key types on release, so a finger can slide off a key to cancel it.
+  - Shift capitalises the next letter. Two taps within 350 ms lock capitals until the next Shift.
+  - Delete removes a whole character (never half an emoji). Held, it repeats after 420 ms, every 60 ms, and stops when the finger lifts or slides off.
+  - Fields can cap the length and accept only some characters (the hex field: six hex digits).
+  - Every key gives the Wheel's detent haptic and dips to 94 % while pressed.
+- **Falls back to the phone's keyboard** when Settings says Phone, when the Wheel's column is narrower than 300 dp (landscape), inside a miniature, and wherever no `KeyboardHost` is provided.
+- **Accessibility.**
+  - Each key is a button named for what it does: the letter, "Shift", "Shift, on", "Caps lock, on", "Delete", "Space", "Numbers and symbols", "Letters", "Search"/"Done", "Close keyboard".
+  - The field exposes its text and accepts text set directly by an accessibility service.
+
 ## 3. Wheel gesture detection (`WheelGestureDetector`)
 Parameters are tokens (tunable on device; values are starting points):
 | Token | Value |
@@ -127,6 +153,7 @@ Settings (D-32): **Haptics** (on by default; on top of the system touch-feedback
 Three one-line hints shown in context the first time each applies: "Turn the wheel to move. Press the center to choose." · "Press and hold the center for more options." · "On Now Playing, the wheel changes volume. Press the center to scrub." No tutorial carousel.
 
 ## 10. Tests
+- Keyboard (D-45): `KeyboardEditorTest` (JVM) covers typing, shift and caps lock, whole-character delete, the hex field's limits and row widths. `WheelKeyboardTest` (Robolectric, native graphics) focuses a field, types "Hi 5" with the keys across pages, deletes, closes, and saves the morph's frames in Steel, Carbon and Glass.
 - `WheelGestureDetector`: synthetic pointer streams (JVM) — slop, detent emission at boundaries, hysteresis, acceleration tiers, press vs rotate disambiguation, long-press timing, center-only press.
 - `InputRouter`: target stack, consumption/fall-through, global handlers.
 - `FocusList`: keep-in-view math, boundaries, snap-to-visible after touch scroll, saver/restore.

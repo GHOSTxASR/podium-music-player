@@ -38,6 +38,14 @@ interface DeviceSettingsRepository {
 
     fun setOnlineLyrics(enabled: Boolean)
 
+    /**
+     * Typing (D-45): the Podium keyboard, which the Wheel turns into (true), or the phone's own
+     * keyboard (false).
+     */
+    val podiumKeyboard: StateFlow<Boolean>
+
+    fun setPodiumKeyboard(enabled: Boolean)
+
     fun setAppearance(appearance: DeviceAppearance)
     fun setPreview(appearance: DeviceAppearance?)
     fun setStartupSound(enabled: Boolean)

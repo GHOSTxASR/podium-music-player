@@ -88,3 +88,42 @@ On the device:
 | 3.11 | A very long line, unusual characters (accents, CJK) | wraps, shrinks, never clipped |
 | 3.12 | Reduced motion (animator scale 0) | inversion is instant |
 | 3.13 | TalkBack | each line announced politely |
+| 3.14 | A song with synced lyrics; watch a few lines (D-42) | words appear one by one as they're sung, in place, never late; the line's first word on the line's time |
+| 3.15 | Open the details overlay on a song without word stamps | it says the words are paced to the line |
+| 3.16 | Turn the Wheel back to a sung line | the whole line shows at once |
+
+## 4. The Podium keyboard (D-45)
+
+Automated (`KeyboardEditorTest`, `WheelKeyboardTest`): typing, shift and caps lock, delete, hex
+limits; the morph's frames (`keyboard-<finish>-0…5.png`) in Steel, Carbon and Glass; typing "Hi 5"
+with the keys and closing back to the Wheel.
+
+On the device:
+
+| # | Step | Expect |
+|---|---|---|
+| 4.1 | Online ▸ Search (empty) | the Wheel unwinds and opens into the keyboard; the phone's keyboard never appears; the power button and lights step aside |
+| 4.2 | Type a query; Shift; Shift twice quickly; 123 and abc | letters type at the caret; one capital, then caps lock; pages switch |
+| 4.3 | Hold Delete; then hold it and slide off the key | repeats after a moment; slide off stops it |
+| 4.4 | Press Search | the keyboard folds back into the Wheel; the Wheel walks the results |
+| 4.5 | Tap the field again; press Back | the keyboard opens; Back closes it (doesn't leave Search) |
+| 4.6 | Close key while results load | folds away; loading continues |
+| 4.7 | Settings ▸ Keyboard ▸ Phone; Search | the phone's keyboard, as before; Search key on it searches |
+| 4.8 | Settings ▸ Appearance ▸ Custom color ▸ type a code | Podium: the hex page (digits, A–F); six characters at most |
+| 4.9 | Each finish (Glass, Steel, Silver, Custom) and Carbon/Bone | the panel is the ring's own material (glass on Glass); keys readable |
+| 4.10 | Rotate to landscape with Search open | the phone's keyboard (the Wheel's column is too narrow) |
+| 4.11 | Reduced motion (animator scale 0) | a short crossfade, no spin |
+| 4.12 | TalkBack on the keyboard | each key named ("Shift, on", "Delete", "Close keyboard") and pressable |
+| 4.13 | Haptics on; type | each key gives the Wheel's click |
+
+## 5. Loading (D-43)
+
+Automated (`LoadingScreenTest`): the pinwheel and word in each theme; nothing for the first 150 ms.
+
+| # | Step | Expect |
+|---|---|---|
+| 5.1 | A slow network (or first launch online); open Online ▸ Home, an album, an artist | the pinwheel and "Loading", centred; never a blank screen |
+| 5.2 | Search for something | a "Searching" row under the field until results arrive |
+| 5.3 | A fast answer (cached) | no flash of the loading screen |
+| 5.4 | First open of the local library | "Reading your music" |
+| 5.5 | Reduced motion | the pinwheel stands still; the word remains |
