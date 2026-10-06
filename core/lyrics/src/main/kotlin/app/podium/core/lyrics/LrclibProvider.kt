@@ -45,7 +45,8 @@ fun interface LyricsHttp {
  * 2. if that finds nothing, `GET /api/search` by title and artist, and Podium's own [LyricsMatcher]
  *    picks a candidate only when it's confidently the same recording.
  *
- * Synced lyrics are preferred; plain lyrics are used as plain; "instrumental" is believed.
+ * Synced lyrics are preferred (with the line end times and any word times of LRCLIB's `lyricsfile`);
+ * plain lyrics are used as plain; "instrumental" is believed.
  */
 class LrclibProvider(
     private val http: LyricsHttp,
@@ -65,6 +66,8 @@ class LrclibProvider(
         val instrumental: Boolean = false,
         val plainLyrics: String? = null,
         val syncedLyrics: String? = null,
+        /** LRCLIB's structured form of the same lyrics: adds line end times, and words when word-synced. */
+        val lyricsfile: String? = null,
     )
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true; coerceInputValues = true }
@@ -100,7 +103,10 @@ class LrclibProvider(
 
     private fun answer(record: Record): ProviderAnswer {
         if (record.instrumental) return ProviderAnswer.Found(Lyrics.Instrumental)
-        LrcParser.synced(record.syncedLyrics)?.let { return ProviderAnswer.Found(it) }
+        val file = runCatching { LyricsFile.parse(record.lyricsfile) }.getOrDefault(emptyList())
+        LrcParser.synced(record.syncedLyrics)?.let { return ProviderAnswer.Found(Lyrics.Synced(LyricsFile.enrich(it.lines, file))) }
+        // No LRC, but the structured file has times: use it.
+        file.takeIf { lines -> lines.any { it.text.isNotBlank() } }?.let { return ProviderAnswer.Found(Lyrics.Synced(it)) }
         LrcParser.plain(record.plainLyrics)?.let { return ProviderAnswer.Found(it) }
         return ProviderAnswer.NotFound
     }

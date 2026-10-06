@@ -69,9 +69,20 @@ wins, then the same album. Nothing confident → `NotFound` ("No lyrics found").
 `LrcParser.parse` reads `[mm:ss.xx]`, `[mm:ss]`, `[mm:ss.xxx]`, `[mm:ss:xx]` (hundredths, the old
 form) and `[h:mm:ss.xx]` (a third colon group is hours only when a dotted fraction follows), several
 stamps on one line (repeated choruses), `[offset:±ms]` (positive = earlier), ignores metadata tags,
-strips word-level `<mm:ss.xx>` stamps, skips lines without a readable stamp (never guesses), sorts by
-time, and collapses runs of empty lines. Malformed input gives an empty list → treated as no synced
+skips lines without a readable stamp (never guesses), sorts by time, and collapses runs of empty
+lines. Enhanced-LRC word stamps (`<mm:ss.xx>` before a word or syllable) become the line's
+`words` (a word takes its first syllable's stamp; the offset and repeated stamps apply to them too);
+a line where some words have no stamp keeps none. Malformed input gives an empty list → treated as no synced
 lyrics; plain lyrics are then used if present.
+
+### 4.1 LRCLIB's `lyricsfile`
+
+LRCLIB answers also carry `lyricsfile`, a small YAML document (observed 2026-10-06: `lines:` with
+`text`, `start_ms`, `end_ms`; `hasWordSync` marks records with words). `LyricsFile` reads just that
+shape tolerantly and `enrich` gives each LRC line its end time — and words, when the file has them —
+where start (±50 ms) and text agree. Without LRC, the file's own lines are used. Word-synced records
+were rare in samples (none in 60 search results), so the word shape is read as the line shape nested
+under `words:`; anything else fails to "no words".
 
 ## 5. Timing
 
@@ -81,6 +92,20 @@ The screen wakes exactly when the next line is due (clamped to 16–500 ms, so a
 half a second), and only recomposes when the index changes — one redraw per line, no per-frame work.
 Position comes from `PlaybackController.positionMs()`, so it is correct for Podium's own player and
 for delegated online playback (the owner-aware controller reports the remote session's position).
+
+### 5.1 Words as they are sung
+
+`WordTiming.starts(line, nextStart)` gives each word's appearance time:
+
+- **Provider word times** when the line has them for every word: used in order, never before the
+  line starts.
+- **Otherwise an estimate inside the line's real window** — from its start to its `end_ms`, or to
+  85 % of the gap to the next line — shared by syllables (vowel groups) with half a syllable's pause
+  after punctuation, and never slower than 380 ms per syllable, so a line before an instrumental
+  break doesn't trickle its words across the break. The first word appears exactly on the line's
+  time; only the pace inside the line is estimated, and the details overlay says so ("Words paced
+  to the line").
+- The screen wakes at the next word or line (16–500 ms), so it redraws once per word.
 
 ## 6. Repository, consent and cache
 
@@ -105,6 +130,10 @@ for delegated online playback (the owner-aware controller reports the remote ses
 The lyric screen is a destination of its own (`Dest.Lyrics`): no header, no mini player, no edge
 fades — the whole virtual display is the lyric.
 
+- **Words arrive as they are sung** (§5.1): the line's layout is computed for the whole line, so
+  each word appears in its final place — fading in over 140 ms and settling 12 % of the type size
+  upward (instant with reduced motion). Reading with the Wheel, paused on a line, and plain lyrics
+  show whole lines. Before the song's first line a quiet "…" waits.
 - **One line at a time**, as large as it fits: `LyricLayout` (pure, unit-tested) tries sizes from
   `min(16 % of the display height, 64 dp)` down to 20 sp in 8 % steps, wrapping greedily; each line is
   **justified edge to edge**, a single word stands centred. If even 20 sp doesn't fit, it keeps
@@ -149,20 +178,22 @@ fades — the whole virtual display is the lyric.
 
 ## 10. Tests
 
-- `core:lyrics` (`LyricsTest.kt`, 20 tests): LRC formats, offsets, repeated stamps, word stamps,
+- `core:lyrics` (`LyricsTest.kt`, 27 tests): word timing (enhanced LRC words, offsets, repeated
+  stamps, the estimate's window, cap and order, provider times, syllables, `lyricsfile` lines and
+  words, enrichment, the provider's end times, the cache round trip with words); LRC formats, offsets, repeated stamps, word stamps,
   malformed input; timing boundaries (exactly at a start, between lines, before the first, after the
   last); matcher (version tags, artists, ±3 s); provider (get hit, get rejected by matcher → search,
   404 → not found, 429/offline/garbage mapping); repository (consent, TTLs, failures not cached,
   in-flight de-dup, file cache round trip and corruption).
 - `feature:nowplaying`: `LyricLayoutTest` (6: short line large and justified edge to edge, single
   word centred, long lines smaller and never clipped, shrinking below the smallest size, one enormous
-  word, empty), `LyricsScreenTest` (6 Robolectric screenshots with the paper colour checked: first
+  word, empty), `LyricsScreenTest` (8 Robolectric screenshots with the paper colour checked: first
   line light, second line dark, long line on a small screen, before the first line, consent, not
-  found). Screenshots land in `feature/nowplaying/build/screenshots/`.
+  found, a line early in its words, a line half sung). Screenshots land in
+  `feature/nowplaying/build/screenshots/`.
 
 ## 11. Not done / next
 
-- Word-level (karaoke) timing is parsed away, not shown — by design.
 - No "clear saved lyrics" control yet (the system clears the cache directory when space is low).
 - Device acceptance (real timing against delegated playback) is listed in
   `docs/testing/UI_DEVICE_ACCEPTANCE.md`; it was not performed from the build container.

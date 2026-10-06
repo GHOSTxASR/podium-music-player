@@ -117,6 +117,11 @@ class FileLyricsCache(private val directory: File, private val maxEntries: Int =
         val kind: String,
         val times: List<Long> = emptyList(),
         val lines: List<String> = emptyList(),
+        /** Per line: its end time, or -1. Absent in entries written before word timing. */
+        val ends: List<Long> = emptyList(),
+        /** Per line: its words' start times (empty when the provider times whole lines only). */
+        val wordTimes: List<List<Long>> = emptyList(),
+        val wordTexts: List<List<String>> = emptyList(),
     )
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -134,7 +139,10 @@ class FileLyricsCache(private val directory: File, private val maxEntries: Int =
             return null
         }
         val lyrics = when (stored.kind) {
-            "synced" -> stored.lines.zip(stored.times).map { (text, ms) -> LyricsLine(ms, text) }.takeIf { it.isNotEmpty() }?.let(Lyrics::Synced)
+            "synced" -> stored.lines.zip(stored.times).mapIndexed { i, (text, ms) ->
+                val words = stored.wordTimes.getOrNull(i).orEmpty().zip(stored.wordTexts.getOrNull(i).orEmpty()) { t, w -> LyricsWord(t, w) }
+                LyricsLine(ms, text, endMs = stored.ends.getOrNull(i)?.takeIf { it >= 0 }, words = words)
+            }.takeIf { it.isNotEmpty() }?.let(Lyrics::Synced)
             "plain" -> stored.lines.takeIf { it.isNotEmpty() }?.let(Lyrics::Plain)
             "instrumental" -> Lyrics.Instrumental
             else -> null
@@ -147,7 +155,15 @@ class FileLyricsCache(private val directory: File, private val maxEntries: Int =
         memory[key] = entry
         val file = fileOf(key) ?: return
         val stored = when (val l = entry.lyrics) {
-            is Lyrics.Synced -> Stored(entry.storedAt, "synced", l.lines.map { it.startMs }, l.lines.map { it.text })
+            is Lyrics.Synced -> Stored(
+                entry.storedAt,
+                "synced",
+                l.lines.map { it.startMs },
+                l.lines.map { it.text },
+                ends = l.lines.map { it.endMs ?: -1L },
+                wordTimes = l.lines.map { line -> line.words.map { it.startMs } },
+                wordTexts = l.lines.map { line -> line.words.map { it.text } },
+            )
             is Lyrics.Plain -> Stored(entry.storedAt, "plain", lines = l.lines)
             Lyrics.Instrumental -> Stored(entry.storedAt, "instrumental")
             null -> Stored(entry.storedAt, "none")

@@ -58,6 +58,7 @@ class LrcParserTest {
         assertNull(LrcParser.synced("[00:01.00]\n[00:02.00]   "))
         val words = LrcParser.parse("[00:01.00] <00:01.00>Hello <00:01.50>there")
         assertEquals("Hello there", words.single().text)
+        assertEquals(listOf(LyricsWord(1_000, "Hello"), LyricsWord(1_500, "there")), words.single().words)
         // Gaps are kept once, not repeated.
         val gaps = LrcParser.parse("[00:01.00] a\n[00:02.00]\n[00:03.00]\n[00:04.00] b")
         assertEquals(listOf("a", "", "b"), gaps.map { it.text })
@@ -68,6 +69,110 @@ class LrcParserTest {
         val plain = LrcParser.plain("\n\nfirst\n\nsecond\n\n")!!
         assertEquals(listOf("first", "", "second"), plain.lines)
         assertNull(LrcParser.plain("   \n  "))
+    }
+}
+
+class WordTimingTest {
+
+    @Test
+    fun `enhanced LRC word stamps become the line's words, syllable stamps included`() {
+        val line = LrcParser.parse("[offset:+200]\n[00:12.00]<00:12.00>Hel<00:12.30>lo <00:12.60>world, <00:13.40>again").single()
+        assertEquals("Hello world, again", line.text)
+        // The offset moves the words with the line; a word takes its first syllable's stamp.
+        assertEquals(listOf(11_800L, 12_400L, 13_200L), line.words.map { it.startMs })
+        assertEquals(listOf("Hello", "world,", "again"), line.words.map { it.text })
+        assertFalse(WordTiming.isEstimated(line))
+        // A repeated line repeats its words' timing from each of its starts.
+        val chorus = LrcParser.parse("[00:10.00][01:10.00]<00:10.00>la <00:10.50>la")
+        assertEquals(listOf(70_000L, 70_500L), chorus[1].words.map { it.startMs })
+        // Some words without stamps: the line's words can't be trusted, so none are kept.
+        assertTrue(LrcParser.parse("[00:01.00] untimed <00:01.50>half").single().words.isEmpty())
+    }
+
+    @Test
+    fun `words appear inside the line's real window, the first exactly on time`() {
+        val line = LyricsLine(10_000, "I wish that I could be like the cool kids")
+        val starts = WordTiming.starts(line, nextStartMs = 14_000)
+        assertEquals(10, starts.size)
+        assertEquals(10_000L, starts.first())
+        assertEquals(starts.sorted(), starts)
+        // All in before the next line (85 % of the gap), none before the line.
+        assertTrue(starts.last() < 14_000 * 1L && starts.last() <= 10_000 + (4_000 * 0.85).toLong())
+        // A longer word takes longer than a short one.
+        val gapAfterI = starts[1] - starts[0]
+        val gapAfterCould = starts[5] - starts[4]
+        assertTrue(gapAfterI <= gapAfterCould)
+    }
+
+    @Test
+    fun `an instrumental break after a line doesn't stretch its words`() {
+        val line = LyricsLine(5_000, "hold on")
+        val starts = WordTiming.starts(line, nextStartMs = 60_000)
+        // Two syllables at most 380 ms each: "on" comes within a second, not across the break.
+        assertTrue(starts[1] - starts[0] <= WordTiming.MAX_MS_PER_SYLLABLE)
+        // An end time from the provider bounds the line instead of the next line's start.
+        val ended = WordTiming.starts(LyricsLine(5_000, "a b c d", endMs = 5_400), nextStartMs = 60_000)
+        assertTrue(ended.last() < 5_400)
+    }
+
+    @Test
+    fun `provider word times are used in order and never before the line`() {
+        val line = LyricsLine(1_000, "one two three", words = listOf(LyricsWord(900, "one"), LyricsWord(1_600, "two"), LyricsWord(1_500, "three")))
+        assertEquals(listOf(1_000L, 1_600L, 1_600L), WordTiming.starts(line, 9_000))
+        assertEquals(0, WordTiming.shown(WordTiming.starts(line, 9_000), 999))
+        assertEquals(1, WordTiming.shown(WordTiming.starts(line, 9_000), 1_000))
+        assertEquals(1_600L, WordTiming.nextWordMs(WordTiming.starts(line, 9_000), 1_200))
+        assertNull(WordTiming.nextWordMs(WordTiming.starts(line, 9_000), 2_000))
+    }
+
+    @Test
+    fun `syllables are counted roughly but sensibly`() {
+        assertEquals(1, WordTiming.syllables("I"))
+        assertEquals(1, WordTiming.syllables("love"))
+        assertEquals(2, WordTiming.syllables("little"))
+        assertEquals(3, WordTiming.syllables("beautiful"))
+        // A guess, not a dictionary: close is enough to pace a line.
+        assertTrue(WordTiming.syllables("everything") in 3..4)
+        assertEquals(1, WordTiming.syllables("♪"))
+        assertEquals(2, WordTiming.syllables("Jóga"))
+    }
+
+    @Test
+    fun `LRCLIB's lyricsfile adds end times and words to the LRC`() {
+        val file = """
+            version: '1.0'
+            metadata:
+              title: Song
+            lines:
+            - text: Yeah
+              start_ms: 13130
+              end_ms: 16560
+            - text: 'It''s a ♪ line'
+              start_ms: 27160
+              end_ms: 29960
+              words:
+              - text: It's
+                start_ms: 27160
+                end_ms: 27400
+              - text: a
+                start_ms: 27400
+              - text: ♪
+                start_ms: 27900
+              - text: line
+                start_ms: 28300
+            other: x
+        """.trimIndent()
+        val parsed = LyricsFile.parse(file)
+        assertEquals(listOf("Yeah", "It's a ♪ line"), parsed.map { it.text })
+        assertEquals(16_560L, parsed[0].endMs)
+        assertEquals(listOf(27_160L, 27_400L, 27_900L, 28_300L), parsed[1].words.map { it.startMs })
+        val lrc = LrcParser.parse("[00:13.13] Yeah\n[00:27.16] It's a ♪ line\n[00:31.00] next")
+        val enriched = LyricsFile.enrich(lrc, parsed)
+        assertEquals(16_560L, enriched[0].endMs)
+        assertEquals(4, enriched[1].words.size)
+        assertNull(enriched[2].endMs)
+        assertTrue(LyricsFile.parse("not: yaml: at all").isEmpty())
+        assertTrue(LyricsFile.parse(null).isEmpty())
     }
 }
 
@@ -147,6 +252,13 @@ class LrclibProviderTest {
             urls += url
             return answers[urls.size - 1]()
         }
+    }
+
+    @Test
+    fun `the lyricsfile's end times come with the synced lyrics`() = runTest {
+        val withFile = synced.dropLast(1) + ""","lyricsfile":"lines:\n- text: one\n  start_ms: 1000\n  end_ms: 1700\n- text: two\n  start_ms: 2000\n  end_ms: 2900\n"}"""
+        val lyrics = assertIs<Lyrics.Synced>(assertIs<ProviderAnswer.Found>(LrclibProvider(Script(listOf({ 200 to withFile }))).lookup(request)).lyrics)
+        assertEquals(listOf(1_700L, 2_900L), lyrics.lines.map { it.endMs })
     }
 
     @Test
@@ -258,7 +370,12 @@ class LyricsRepositoryTest {
     fun `the file cache round-trips every kind and survives damage`() {
         val dir = Files.createTempDirectory("lyrics").toFile()
         val cache = FileLyricsCache(dir)
-        val synced = Lyrics.Synced(listOf(LyricsLine(1_000, "one"), LyricsLine(2_000, "")))
+        val synced = Lyrics.Synced(
+            listOf(
+                LyricsLine(1_000, "one two", endMs = 1_800, words = listOf(LyricsWord(1_000, "one"), LyricsWord(1_400, "two"))),
+                LyricsLine(2_000, ""),
+            ),
+        )
         cache.write("fake-0123456789abcdef0123456789abcdef", LyricsCache.Entry(5, synced))
         cache.write("fake-ffffffffffffffffffffffffffffffff", LyricsCache.Entry(6, null))
         cache.write("fake-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", LyricsCache.Entry(7, Lyrics.Instrumental))

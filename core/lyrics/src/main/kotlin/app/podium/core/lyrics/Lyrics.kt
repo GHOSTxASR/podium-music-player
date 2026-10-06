@@ -6,8 +6,20 @@ package app.podium.core.lyrics
  * pretend to.
  */
 
-/** One line of synced lyrics: sung from [startMs]. An empty [text] is a gap between lines. */
-data class LyricsLine(val startMs: Long, val text: String)
+/**
+ * One line of synced lyrics: sung from [startMs]. An empty [text] is a gap between lines.
+ * [endMs] is when the line ends, when the provider says (otherwise the next line's start bounds it);
+ * [words] are the provider's own word times (enhanced LRC), empty when it only times whole lines.
+ */
+data class LyricsLine(
+    val startMs: Long,
+    val text: String,
+    val endMs: Long? = null,
+    val words: List<LyricsWord> = emptyList(),
+)
+
+/** A word of a line, sung from [startMs] — only from a provider that times words. */
+data class LyricsWord(val startMs: Long, val text: String)
 
 sealed interface Lyrics {
     /** Lines with times, in order. Never empty. */

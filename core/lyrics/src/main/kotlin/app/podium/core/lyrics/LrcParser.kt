@@ -3,15 +3,16 @@ package app.podium.core.lyrics
 /**
  * Reads LRC text (LYRICS_ARCHITECTURE.md §4): `[mm:ss.xx] words`, also `[mm:ss]`, `[mm:ss.xxx]`,
  * `[mm:ss:xx]` and `[h:mm:ss.xx]`; several stamps on one line (a repeated chorus); an `[offset:±ms]`
- * tag; metadata tags (`[ar:…]`) ignored; word-level stamps (`<mm:ss.xx>`) removed from the words.
- * Lines without a readable stamp are skipped, never guessed. Malformed input gives an empty list.
+ * tag; metadata tags (`[ar:…]`) ignored; word-level stamps (enhanced LRC, `<mm:ss.xx>` before a word
+ * or syllable) kept as the line's [LyricsLine.words] and removed from its text. Lines without a
+ * readable stamp are skipped, never guessed. Malformed input gives an empty list.
  */
 object LrcParser {
 
     private val STAMP = Regex("""\[(\d{1,3}):(\d{1,2})(?::(\d{1,2}))?(?:[.:](\d{1,3}))?]""")
     private val LEADING_STAMPS = Regex("""^\s*((?:\[\d{1,3}:\d{1,2}(?::\d{1,2})?(?:[.:]\d{1,3})?]\s*)+)(.*)$""")
     private val OFFSET = Regex("""^\s*\[offset:\s*([+-]?\d+)\s*]\s*$""", RegexOption.IGNORE_CASE)
-    private val WORD_STAMP = Regex("""<\d{1,3}:\d{1,2}(?:[.:]\d{1,3})?>""")
+    private val WORD_STAMP = Regex("""<(\d{1,3}):(\d{1,2})(?:[.:](\d{1,3}))?>""")
     private val SPACES = Regex("""\s+""")
 
     fun parse(text: String?): List<LyricsLine> {
@@ -25,14 +26,79 @@ object LrcParser {
                 continue
             }
             val match = LEADING_STAMPS.matchEntire(raw) ?: continue
-            val words = match.groupValues[2].replace(WORD_STAMP, "").replace(SPACES, " ").trim()
-            STAMP.findAll(match.groupValues[1]).forEach { stamp -> millis(stamp)?.let { lines += LyricsLine(it, words) } }
+            val (text, timed) = words(match.groupValues[2])
+            val starts = STAMP.findAll(match.groupValues[1]).mapNotNull { millis(it) }.toList()
+            val first = starts.minOrNull() ?: continue
+            for (start in starts) {
+                // A repeated line (several stamps) repeats its words' timing from each start.
+                val shift = start - first
+                lines += LyricsLine(start, text, words = timed.map { it.copy(startMs = it.startMs + shift) })
+            }
         }
         // In LRC a positive offset makes lyrics appear sooner.
         return lines
-            .map { it.copy(startMs = (it.startMs - offsetMs).coerceAtLeast(0)) }
+            .map { line ->
+                line.copy(
+                    startMs = (line.startMs - offsetMs).coerceAtLeast(0),
+                    words = line.words.map { it.copy(startMs = (it.startMs - offsetMs).coerceAtLeast(0)) },
+                )
+            }
             .sortedBy { it.startMs }
             .let(::collapseLeadingGaps)
+    }
+
+    /**
+     * A line's text without word stamps, and its words with their stamps — empty when the line has
+     * none. A stamp may start a syllable inside a word ("<00:12.00>Hel<00:12.30>lo"); a word takes
+     * the stamp of its first character.
+     */
+    private fun words(body: String): Pair<String, List<LyricsWord>> {
+        val stamps = WORD_STAMP.findAll(body).toList()
+        if (stamps.isEmpty()) return body.replace(SPACES, " ").trim() to emptyList()
+        val text = StringBuilder()
+        val timeAt = ArrayList<Long?>() // the stamp in force at each character of text
+        var current: Long? = null
+        var cursor = 0
+        for (stamp in stamps) {
+            appendFragment(body.substring(cursor, stamp.range.first), current, text, timeAt)
+            current = wordMillis(stamp) ?: current
+            cursor = stamp.range.last + 1
+        }
+        appendFragment(body.substring(cursor), current, text, timeAt)
+        val clean = text.toString()
+        val words = ArrayList<LyricsWord>()
+        var i = 0
+        while (i < clean.length) {
+            if (clean[i].isWhitespace()) { i++; continue }
+            val start = i
+            while (i < clean.length && !clean[i].isWhitespace()) i++
+            val time = timeAt[start] ?: continue
+            words += LyricsWord(time, clean.substring(start, i))
+        }
+        val trimmed = clean.replace(SPACES, " ").trim()
+        // Words without a stamp anywhere before them can't be timed: keep the provider's words only
+        // when they cover the whole line.
+        return trimmed to if (words.size == trimmed.split(' ').count { it.isNotEmpty() }) words else emptyList()
+    }
+
+    private fun appendFragment(fragment: String, time: Long?, text: StringBuilder, timeAt: MutableList<Long?>) {
+        for (c in fragment) {
+            text.append(c)
+            timeAt += time
+        }
+    }
+
+    private fun wordMillis(stamp: MatchResult): Long? {
+        val (m, s, f) = stamp.destructured
+        val minutes = m.toLongOrNull() ?: return null
+        val seconds = s.toLongOrNull()?.takeIf { it < 60 } ?: return null
+        val fractionMs = when (f.length) {
+            0 -> 0L
+            1 -> f.toLong() * 100
+            2 -> f.toLong() * 10
+            else -> f.toLong()
+        }
+        return (minutes * 60 + seconds) * 1000 + fractionMs
     }
 
     /** Synced lyrics from LRC, or null when nothing in it has words. */

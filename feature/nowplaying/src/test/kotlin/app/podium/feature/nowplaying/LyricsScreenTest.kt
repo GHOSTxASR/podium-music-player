@@ -75,6 +75,11 @@ class LyricsScreenTest {
 
     @Test fun beforeTheFirstLine() = check("lyrics-intro", 0, PHONE, expectLight = true)
 
+    // Words arrive as they are sung: early in the line only its first words are in.
+    @Test fun wordsArriveOneByOne() = check("lyrics-line-1-early", 10_700, PHONE, expectLight = true)
+
+    @Test fun secondLineHalfSung() = check("lyrics-line-2-half", 15_200, PHONE, expectLight = false)
+
     @Test fun consent() = check("lyrics-consent", 0, PHONE, expectLight = true, answer = LyricsResult.NeedsConsent)
 
     @Test fun notFound() = check("lyrics-not-found", 0, SMALL, expectLight = true, answer = LyricsResult.NotFound)
