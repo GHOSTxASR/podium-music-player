@@ -32,6 +32,9 @@ import app.podium.player.api.QueueOrigin
 import app.podium.player.api.RecommendationRequest
 import app.podium.player.api.RepeatMode
 import app.podium.player.api.persistedShape
+import app.podium.sources.api.AuthState
+import app.podium.sources.api.HealthOutcome
+import app.podium.sources.api.NetworkPolicy
 import app.podium.sources.api.PlaybackTarget
 import app.podium.sources.api.Purpose
 import app.podium.sources.api.resolve.ResolveOutcome
@@ -48,8 +51,10 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.distinctUntilChangedBy
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -146,7 +151,32 @@ class PodiumPlaybackEngine(
         restoreSavedQueue()
         saveQueueChanges()
         keepOnlineMusicGoing()
+        forgetStreamsOfSourcesThatStop()
     }
+
+    // --- Sources that stop serving -------------------------------------------------------------------
+
+    /**
+     * A source that stops serving — turned off, signed out, removed — takes its resolved streams
+     * with it: queued items it served lose their pins and resolve afresh before they play (a pinned
+     * URL can carry that source's sign-in). The item playing keeps its pin: audio never changes
+     * source mid-track (D-18).
+     */
+    private fun forgetStreamsOfSourcesThatStop() {
+        scope.launch {
+            deps.registry.connectedSources
+                .map { all -> all.filter { it.enabled && it.authenticationState.serves() }.mapTo(HashSet()) { it.sourceId } }
+                .distinctUntilChanged()
+                .collect { serving ->
+                    val state = queue.state.value
+                    state.items
+                        .filter { it.uid != state.current?.uid && it.selection?.servedBy?.let { s -> s !in serving } == true }
+                        .forEach { queue.unpin(it.uid) }
+                }
+        }
+    }
+
+    private fun AuthState.serves() = this !is AuthState.SignedOut && this !is AuthState.Rejected && this !is AuthState.Expired
 
     // --- Autoplay (D-34) -------------------------------------------------------------------------------
 
@@ -373,6 +403,11 @@ class PodiumPlaybackEngine(
             val selection = resolveForLoader(uid)
             val target = selection.target as? PlaybackTarget.DirectStream
                 ?: throw PodiumResolveException(null, "Route ${selection.target::class.simpleName} needs another engine")
+            // The platform allows cleartext only so the listener's own server can be reached; every
+            // source is held to that here, whatever it hands over (D-09). A per-item refusal.
+            if (!NetworkPolicy.permits(target.media.uri)) {
+                throw PodiumResolveException(HealthOutcome.INVALID_MEDIA, "Refused an unencrypted stream off the listener's network")
+            }
             return dataSpec.withUri(Uri.parse(target.media.uri)).withAdditionalHeaders(target.media.headers)
         }
     }

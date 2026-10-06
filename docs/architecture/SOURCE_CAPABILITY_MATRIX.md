@@ -46,6 +46,9 @@ This document records what each provider officially offers and what its own publ
 3. **Terms/policy:** API designed for third-party clients; content is the user's.
 4. **Distribution:** No constraints known; many Subsonic clients are on Google Play.
 5. **Podium:** Phase S4; jukebox is the first real `RemoteProvider` (S5).
+6. **Built (O11, D-37):** `sources:subsonic`, an ONLINE source the listener adds (several servers at once).
+   - **Has:** token auth (no password on the wire), search, artists, albums, server playlists (play only), genres, newest/random/frequent shelves, similar songs and artist radio (server agents), artwork, direct streams (raw, or capped by `maxBitRate`).
+   - **Not yet:** API-key auth, stars/scrobbling, playlist editing, play-queue sync, lyrics, downloads, jukebox.
 
 ### 2.3 Audius
 1. **API capability:** Search, browse (trending/playlists/users), stream (MP3), artist-controlled downloads, optional user sign-in for social/library features.

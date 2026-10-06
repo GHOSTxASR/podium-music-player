@@ -76,7 +76,8 @@ data class HealthPolicy(
  * - A MISS proves the source is reachable: it clears the failure streak and never counts against it.
  * - INVALID_MEDIA is per-item and does not affect the breaker.
  * - N consecutive infrastructure failures open the circuit with escalating backoff; after it expires
- *   a single probe is allowed (half-open); success closes it, failure re-opens it longer.
+ *   a single probe is allowed (half-open); success closes it, failure re-opens it longer. A failure
+ *   while it's open (a source asked anyway) keeps it open for the same time, never longer.
  */
 class SourceHealthMonitor(
     private val clock: Clock,
@@ -129,12 +130,18 @@ class SourceHealthMonitor(
 
                 outcome.isInfrastructureFailure -> {
                     val failures = current.consecutiveFailures + 1
-                    if (wasProbing || failures >= policy.failureThreshold) {
-                        val opens = current.openCount + 1
-                        val backoff = policy.backoffMillis[(opens - 1).coerceAtMost(policy.backoffMillis.lastIndex)]
-                        Entry(failures, opens, SourceHealth.Unreachable(now + backoff, opens))
-                    } else {
-                        current.copy(consecutiveFailures = failures, state = SourceHealth.Degraded(failures))
+                    when {
+                        // Still open — it was asked anyway (every source's breaker was open): it stays
+                        // open for its current backoff. Only a failed probe makes the backoff longer.
+                        health(source) is SourceHealth.Unreachable ->
+                            current.copy(consecutiveFailures = failures, state = SourceHealth.Unreachable(now + backoff(current.openCount), current.openCount))
+
+                        wasProbing || failures >= policy.failureThreshold -> {
+                            val opens = current.openCount + 1
+                            Entry(failures, opens, SourceHealth.Unreachable(now + backoff(opens), opens))
+                        }
+
+                        else -> current.copy(consecutiveFailures = failures, state = SourceHealth.Degraded(failures))
                     }
                 }
 
@@ -144,6 +151,8 @@ class SourceHealthMonitor(
         }
         publish()
     }
+
+    private fun backoff(opens: Int) = policy.backoffMillis[(opens - 1).coerceIn(0, policy.backoffMillis.lastIndex)]
 
     /** User re-authenticated or re-enabled the source. */
     fun reset(source: SourceId) {

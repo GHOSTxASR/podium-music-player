@@ -226,6 +226,8 @@ Configured ─► Probing ─► (AuthRequired ─► Authenticating) ─► Rea
 ### 6.4 Authentication flows (provider-neutral)
 `AuthFlow` variants: `None`, `Credentials(fields)` (server URL/user/password or API key), `OAuthPkce(authUri, redirect)` via Custom Tabs, `ProviderAppSso(package)` (provider app hands back a token). Tokens/secrets: Keystore-encrypted; refresh handled inside the adapter; UI only sees `AuthState`.
 
+**As implemented (D-37):** the `Credentials(fields)` flow exists as `AuthFacet.signInFields` / `signIn(values)` / `signOut()`, built on the same `SetupField`s a source's setup form uses. Secrets go to the `CredentialStore` only. Other flows aren't built. See §11.4.
+
 ## 7. Source health
 
 ```kotlin
@@ -242,6 +244,7 @@ sealed interface SourceHealth {
 - **Circuit breaker:** 3 consecutive transport failures → `Unreachable`, skip for 30 s → 2 min → 10 min (half-open probe with a cheap `ping`); one success closes it. 429 → `RateLimited(Retry-After or 60 s)`. 401/403 on auth endpoints → `AuthRejected` (no retries until the user acts).
 - Health is **per source instance** (a LAN server can be unreachable while the internet works).
 - Every resolve/search records an outcome to `SourceHealthMonitor`; health feeds `ConnectedSource.connectionState` and resolver ordering.
+- **As implemented:** the breaker opens on 3 consecutive infrastructure failures (network, server, unknown). It backs off 30 s, then 2 min, then 10 min. When the backoff expires, the next real request is the probe (there is no separate `ping`). A failure while the breaker is still open (a source asked anyway because every breaker was open, §11.2) keeps it open for the same time: only a failed probe lengthens the backoff (D-37).
 
 ## 8. Stream resolution
 
@@ -287,6 +290,7 @@ The numbered list below is the original design, kept for the path names it intro
 - HTTP 401/403/410 during playback → invalidate entry → re-resolve **once** from the same source; second failure → health event + fallback step 5.
 - Concurrent resolves for the same key share one in-flight job (no thundering herd on rapid skips).
 - PREFETCH only for sources whose descriptor marks `cheapResolve = true`, and the result is **pinned** to that queue item.
+- **A source that stops serving takes its pins with it (D-37).** When a source is turned off, signed out (or its sign-in refused) or removed, the engine unpins the queued items that source served, and they resolve afresh before they play: a pinned URL may carry the source's sign-in. The playing item keeps its pin, because audio never changes source mid-track (D-18).
 
 ## 9. Track normalization & matching (`TrackMatcher`)
 
@@ -394,6 +398,49 @@ Everything else follows from the registry. The new source then:
 
 No `if (provider)` anywhere outside its own module.
 
+### 11.4 Configured sources and OpenSubsonic (D-37, implemented)
+Some sources are *added by the listener*, not built in: one per music server, with its own sign-in. They're ordinary sources once registered (§11.3). Only how they come and go is new.
+
+| Piece | Where | What it does |
+|---|---|---|
+| **Setup form** | `SetupForm`, `SetupField` (text / URL / secret) | A kind of source describes what it needs. Settings renders it without knowing the kind (`SourceFormScreen`). Secrets are masked, use a password keyboard, aren't saved to instance state, and are cleared when the form closes |
+| **Factory** | `SourceFactory` (registered in `AppGraph`) | `connect(values)` checks the answers with the source itself, with no side effects, and answers `ConnectResult.Connected(name, settings, secrets)` or `Refused(SetupProblem)`. `create(profile, credentials)` builds the source |
+| **Profiles** | `SourceProfile`, `SourceProfileStore` (app: `SharedPrefsSourceProfiles`, prefs file `source-profiles`) | Id (`<kind>-<8 hex>`), kind, display name, non-secret settings (address, user name). Never in the database, never a secret |
+| **Secrets** | `CredentialStore` (app: `KeystoreCredentialStore`, prefs file `credentials`) | Per source, AES-256-GCM, with the key held in the Android Keystore; ciphertext only. A value that can't be opened means "sign in again" |
+| **Lifecycle** | `ConfiguredSources` | `restore()` at startup before `SourceSettings.apply()`. `add()`: connect → secrets → profile → register. `remove()`: unregister → delete secrets → drop profile → forget the source's on/off and priority |
+| **Sign-in** | `AuthFacet.signInFields` / `signIn` / `signOut`, `AuthState` | Signed out or refused: every gated capability is `REQUIRES_SIGN_IN` with a Sign in action; the source stays configured. Settings ▸ Online sources: "Sign in" on the row; hold Center for Move up/down, Sign out/in, Remove |
+| **Network policy** | `NetworkPolicy` (`check(address)`, `permits(url)`) | `https` anywhere. `http` only to the listener's own network (loopback, RFC 1918, link-local, ULA, `.local` / `.lan` / `.home.arpa`) and after consent. Enforced at setup, on every request and redirect hop of the server client, and on every stream URL the player opens, whichever source it comes from |
+
+**OpenSubsonic** (`sources:subsonic`; Navidrome, Gonic, Airsonic-Advanced, Ampache, LMS…):
+- **API** (`SubsonicApi`): REST v1.16.1, JSON. Every URL carries `u`, a fresh salt `s` (8 random bytes) and `t = md5(password + s)`, never `p`.
+- **Transport** (`UrlConnectionTransport`): `HttpURLConnection` with an 8 s connect and 10 s read timeout. It's cancellable (giving up closes the socket) and follows redirects itself under the policy. URLs and exception messages never leave it; errors are reduced to class names.
+- **Facets:**
+  - catalogue: `search3`, `getSong`, `getAlbum`, `getArtist` + `getTopSongs`, `getPlaylist`;
+  - discovery: "Recently added", "Random picks", "Most played", "Server playlists", genres;
+  - recommendations: `getSimilarSongs`, `getSimilarSongs2`, `getArtistInfo2`;
+  - artwork: `getCoverArt`, fetched inside the module and handed over as bytes for `podium-art://` refs;
+  - playback: one route, DIRECT. `getSong` first, then a `stream` URL with fresh authentication, optionally `maxBitRate`.
+- **Capabilities:**
+
+  | State | Capabilities |
+  |---|---|
+  | Available when signed in | SEARCH, BROWSE, DIRECT_STREAM, ARTWORK |
+  | DEGRADED | RECOMMENDATIONS (depends on the server's metadata agents) |
+  | UNAVAILABLE | LIKES (kept on the device), PLAYLISTS (playable, not editable), DOWNLOADS (later) |
+
+- **Miss vs failure:**
+
+  | What the server answers | Treated as |
+  |---|---|
+  | Error 70, a missing element, HTTP 404 | Miss |
+  | 40/41/44/50, HTTP 401/403 | Refused credentials: `AUTH_FAILURE`, the source turns `Rejected` |
+  | 42/43 | Token auth unsupported (also `AuthRequired`) |
+  | HTTP 429 | Rate-limited |
+  | Malformed JSON, 5xx, timeouts, network errors | Failures |
+  | 20/30 | Protocol version mismatch (`PolicyDisabled`) |
+- **Identity:** `opensubsonic-xxxxxxxx|<song id>`. The album key `al.<id>` is kept apart from song ids. Copies on two servers group at EXACT (ISRC, title identity, artist, length) like any others; a "Live" cut never does.
+- **Names:** the display name is the server's `type` plus its host, shown only in Settings ▸ Online sources. Browsing never names a server (D-35).
+
 ## 12. UI independence — what the UI may ask
 | UI need | Ask | Never |
 |---|---|---|
@@ -405,7 +452,7 @@ No `if (provider)` anywhere outside its own module.
 | Unavailable explanation | `availability` + `CapabilityState.note` | provider error strings |
 
 ## 13. Module layout (delta to ADR-012)
-`sources:api` gains facets, `StreamResolver`, `TrackMatcher`, `TrackNormalizer`, `SourceHealthMonitor`, `SourceRegistry` (pure Kotlin, JVM-tested). Provider modules: `sources:local`, `sources:subsonic`, `sources:audius`, and — only if approved (§ matrix) — `sources:youtube-catalog`, `sources:spotify`. `player:api` gains `PlaybackRouter` and engine interfaces; `player:service` hosts `DirectStreamEngine`; remote engines live with their provider module (they implement `RemoteProviderController`).
+`sources:api` gains facets, `StreamResolver`, `TrackMatcher`, `TrackNormalizer`, `SourceHealthMonitor`, `SourceRegistry` (pure Kotlin, JVM-tested). Provider modules: `sources:local`, `sources:subsonic` (built, D-37), `sources:audius`, and — only if approved (§ matrix) — `sources:youtube-catalog`, `sources:spotify`. `player:api` gains `PlaybackRouter` and engine interfaces; `player:service` hosts `DirectStreamEngine`; remote engines live with their provider module (they implement `RemoteProviderController`).
 
 ## 14. Testing (minimum, all JVM unless noted)
 | Area | Tests |

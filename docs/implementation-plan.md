@@ -13,6 +13,8 @@
 | S2b library database (Room 3: library cache, favorites, saved queue, FTS5) | ✅ 2026-10-03 — D-31 |
 | Boot self-test, click sound, music folders; indicator lights | ✅ 2026-10-03 — D-32, D-33 |
 | Online O1–O8 (contracts, Audius, ONLINE database, navigation, playback, autoplay, radio, device tests) | ✅ 2026-10-03 — D-34 (S7 Audius brought forward by the user) |
+| O10 multi-source Online · O10.5 resolution stabilised (environment-bound fallback, persistent equivalence) | ✅ 2026-10-06 — D-35, D-36 |
+| O11 OpenSubsonic (S4's source part: configured sources, sign-in, Keystore credentials, network policy) and multi-source hardening | ✅ 2026-10-06 — D-37; device acceptance in `testing-strategy.md` §4.1, audit in `security.md` §8. S4 leftovers: API-key auth, stars, lyrics, play-queue sync, downloads; jukebox is S5 |
 | Next | Awaiting the user: YouTube (D-20) / Spotify (D-21) decisions; Audius sign-in needs an API key |
 
 ## Revised order

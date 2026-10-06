@@ -55,6 +55,22 @@ class SourceHealthMonitorTest {
     }
 
     @Test
+    fun `failures while the circuit is open keep its backoff, only a failed probe lengthens it`() {
+        repeat(3) { monitor.record(id, HealthOutcome.NETWORK_FAILURE) }
+        // Asked anyway while open (every source was down), several times: still the first backoff.
+        clock.advanceBy(10_000)
+        repeat(4) { monitor.record(id, HealthOutcome.NETWORK_FAILURE) }
+        val open = assertIs<SourceHealth.Unreachable>(monitor.health(id))
+        assertEquals(1, open.openCount)
+        assertEquals(clock.nowMillis() + 30_000, open.retryAtMillis)
+
+        clock.advanceBy(30_000)
+        assertIs<SourceHealth.Probing>(monitor.health(id))
+        monitor.record(id, HealthOutcome.SUCCESS)
+        assertEquals(SourceHealth.Healthy, monitor.health(id))
+    }
+
+    @Test
     fun `invalid media is per item and does not trip the breaker`() {
         repeat(10) { monitor.record(id, HealthOutcome.INVALID_MEDIA) }
         assertTrue(monitor.canAttempt(id))

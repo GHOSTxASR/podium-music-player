@@ -63,6 +63,27 @@
 9. TalkBack: Home → Album → play → Now Playing → volume → Up Next.
 10. Font 200%, reduced motion, high contrast.
 
+### 4.1 Online sources on device (O11, 2026-10-06)
+**Method:**
+- **Test servers.** No third-party server. Two scripted OpenSubsonic servers run on the development PC: "A" as Navidrome on 4533, "B" as Gonic on 4534. They're reached from the phone through `adb reverse`, with credentials generated per run and never printed. The servers verify token auth the way a real one does. They log each request's method and whether a `p=` or the password appeared. They can be told to go down (503), fail streams (500), hang, or forget a song (error 70).
+- **Test data.** "Harbour Lights" and "Paper Boats" exist on both servers with the same ISRC. "Harbour Lights (Live)" and "Slow Signal" exist only on A. A's "Missing Master" shares its ISRC with the local test tone.
+- **Hygiene.**
+  - Before testing, the database and preferences were snapshotted, and test records were identified by diffing against that snapshot.
+  - Afterwards, both servers were removed through the UI, test listens, likes, cached rows and equivalence pairs were deleted, and the queue was restored. The database matched the snapshot except for library-sync timestamps; `sources.xml` and the other preferences were byte-identical.
+- **Tooling.** Podium's debug commands `now-playing-source`, `not-same`, `pause`, `next` and `play-test-tones` drove and observed playback.
+
+| Area | Checks | Result |
+|---|---|---|
+| Setup and sign-in | Add a server; wrong password refused with copy; `http://localhost` asks for consent; second server added; profiles persist; sign out deletes only that server's secret; sign back in; remove deletes secret, profile and choices; the other server unaffected; no secret in UI, prefs (sealed), DB, logcat or on the wire | Pass |
+| Browsing and playback | Search merges Audius and both servers, "Harbour Lights" grouped once (A/B EXACT), "Live" separate; artist, album, playlist ("Server playlists"), artwork; album plays via Media3 ("MP3 192 kbps"); Add to Up Next; next/previous; background playback with the foreground service and media session; media-key pause/play/next | Pass |
+| Priority and enablement | Moving a server to the top and turning sources off/on persist across force-stop; re-enabling clears the breaker; no server or provider name in browsing, Now Playing or errors (Settings ▸ Online sources only) | Pass |
+| Environment boundaries | Local "Missing Master" plays from the local mirror, with no server request although A has the same ISRC; A's "Missing Master" with A down fails over ONLINE sources only — local copies never considered | Pass |
+| Equivalence (schema v4) | EXACT pairs stored as AUTO (a1–b1, a3–b2; local tone–mirror); none across environments or for the Live cut; `not-same` on a1/b1 stored as USER REJECTED, the search row split in two, and with A down a1 no longer fell back to b1 | Pass |
+| Failure vs miss | A down: queued A songs played from B via EXACT_FALLBACK; A-only song → failure, breaker opened, skipped without fallback, Settings said "Can't reach it right now"; A's results left out of search. Song gone from A (error 70) → `MISS NOT_FOUND` four times, A stayed "On" | Pass |
+| No mid-track switch | A taken down while playing A's "Paper Boats", then a seek past the buffer: the 503 ended the item and the queue moved on; B's EXACT copy was **not** substituted | Pass |
+| Autoplay | With two servers and Audius: suggestions from A and B (A's "Missing Master", not the local tone; "Quiet Rooms" from B), nothing local | Pass |
+| Found and fixed | Breaker backoff escalated per call while open (server hidden from search for up to 10 min after recovering) — fixed and unit-tested | Fixed |
+
 ## 5. Conventions
 - Test names describe behaviour: `skipping_rapidly_resolves_only_the_final_item`.
 - Fakes over mocks (`FakeMusicSource`, `FakePlaybackController`, `FakeClock`, `FakeConnectivity`).

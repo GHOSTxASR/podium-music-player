@@ -51,7 +51,7 @@ Rows render unavailable items at 40% label opacity with a trailing reason glyph;
 |---|---|---|---|
 | Downloads (audio files) | User-owned | `files/downloads` (or app-specific external volume) | Only explicit delete |
 | Database (likes, playlists, history, queue, synced metadata) | User-owned + pinned | `databases/podium.db` | Never (export/reset in Settings) |
-| Credentials | User-owned | encrypted DataStore file | Remove source |
+| Credentials | User-owned | encrypted prefs file `credentials` (ciphertext only, Keystore key; D-37) | Sign out or remove source |
 | Pinned artwork | Pinned | `files/artwork` | GC when unreferenced |
 | Streaming cache | Evictable | `cache/stream` (Media3 SimpleCache, LRU 512 MB default) | LRU, "Clear streaming cache", OS cache pressure |
 | Image cache (Coil) | Evictable | `cache/images` (256 MB) | LRU, "Clear artwork cache" |

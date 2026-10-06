@@ -10,21 +10,26 @@
 ## 2. Threat model (STRIDE, condensed)
 | Asset | Threat | Mitigation |
 |---|---|---|
-| Server credentials | Theft from storage/backup | AES-256-GCM with an Android Keystore key (non-exportable); ciphertext in a dedicated DataStore file excluded from backup and device transfer; never logged |
-| Server credentials | Interception on network | HTTPS required except LAN hosts with explicit per-server consent (D-09); Subsonic token+salt (no plaintext password on the wire); prefer OpenSubsonic API keys |
-| Session/API tokens in URLs | Leakage via logs | `Redactor` strips `t`, `s`, `p`, `apiKey`, `u` query params from every logged URL |
+| Server credentials | Theft from storage/backup | AES-256-GCM with a non-exportable Android Keystore key; ciphertext only, in the private prefs file `credentials` (never the database); cloud backup off; a device-to-device copy can't be opened without this phone's key; never logged (D-37) |
+| Server credentials | Interception on network | HTTPS required except hosts on the listener's own network, after explicit consent (D-09); Subsonic token + fresh salt per request (the password never on the wire). OpenSubsonic API keys: not yet |
+| Session/API tokens in URLs | Leakage via logs, storage, other apps | Tokenised URLs are never logged and never persisted (artwork is stored as source + key, fetched inside the source). Transport errors are reduced to class names. Stream URLs live only in memory, pinned to queue items, and are dropped when their source stops serving (D-37) |
 | Media session | Malicious controller app | `onConnectAsync` allow-list; unknown controllers read-only (ADR-003) |
 | Exported components | Intent abuse | Only launcher activity and `PlaybackService` (required) exported; download job service not exported; deep links (P1) validated against an allow-list of key types and id formats |
 | Downloads | Path traversal / overwrite | Paths built from `sha1(trackId)` + known extension; never from metadata; files in app-private storage |
 | Downloaded files | Tampered/corrupt content | Verification (size, checksum, decode probe) before use; sha256 recorded |
 | External URLs (artist links, attributions) | Phishing/intent injection | Only `https:` (and `http:` LAN for servers) opened via Custom Tabs; no `intent:`/`javascript:` schemes; artwork URLs must be http(s) |
 | Malicious server responses | Parser abuse, huge payloads | kotlinx.serialization with `ignoreUnknownKeys`, response size caps (5 MB JSON), timeouts (connect 10 s, read 20 s), no reflection-based deserialisation |
-| Cleartext | MITM on LAN | Warning at setup; badge on the source ("Not encrypted"); never for non-private hosts |
-| Local DB | Data exfiltration via backup | Backup includes DB (user value) but no credentials; documented in privacy notice; user can disable backup at OS level |
+| Cleartext | MITM on LAN | Warning and consent at setup; never to hosts off the listener's network, checked on every request, redirect hop and stream URL (`NetworkPolicy.permits`). The "Not encrypted" badge on the source is not built yet |
+| Local DB | Data exfiltration via backup | `allowBackup="false"`: no cloud backup. Device-to-device transfer can still copy app data; the DB holds no credentials and no tokenised URLs |
 | WebView | — | **Not used** anywhere |
 
 ## 3. Network configuration
-- `network_security_config.xml`: base config trusts system CAs only (no user CAs in release), `cleartextTrafficPermitted="true"` at platform level **only because** app-level `NetworkPolicy` enforces the LAN rule (D-09); unit-tested with hostnames/IPs (RFC 1918, 169.254/16, fc00::/7, fe80::/10, `.local`, `.lan`, `.home.arpa`, public IPs, IDN tricks).
+- **As implemented (D-37):** there's no `network_security_config.xml`. The manifest sets `usesCleartextTraffic="true"` **only because** a security config can't name address ranges. The app-level `NetworkPolicy` enforces the D-09 rule instead, and it's unit-tested (`NetworkPolicyTest`) with hostnames and IPs: RFC 1918, 169.254/16, fc00::/7, fe80::, loopback, `.local`, `.lan`, `.home.arpa`, public IPs and look-alikes (`nas.local.example.com`, `192.168.1.20@evil.example.com`). It checks:
+  - the address typed at setup (`check`);
+  - every request the server client makes and every redirect hop it would follow (never https → http, at most 3);
+  - every stream URL the player opens, from any source (`permits`).
+- System CAs only (platform default). Media3's own HTTP data source follows same-protocol redirects without the policy check (known limit, D-37).
+- *Original design:* base config trusting system CAs only, cleartext permitted at platform level only because `NetworkPolicy` enforces the LAN rule.
 - Debug builds may trust user CAs for proxy debugging.
 - Certificate pinning: not used (self-hosted servers have arbitrary certs). Self-signed certs: user may trust a specific certificate fingerprint for a server after an explicit warning (P1), stored per source.
 
@@ -54,3 +59,22 @@ No location, contacts, microphone, or phone permissions.
 
 ## 7. Logging rules
 Release: ids, states, error codes, durations. Never: titles, artist names, queries, URLs with credentials, file paths containing user names, full stack traces in UI. Debug builds may log titles for development.
+Server code never logs URLs or exception messages (they can contain the URL and its token); the debug `now-playing-source` command logs a source's id and display name, never a URL.
+
+## 8. Configured-source security: O11 audit (2026-10-06)
+Scope: the OpenSubsonic source, configured sources, credentials, the network policy and what they touch. Evidence: code review, unit tests, and device acceptance on a Nothing Phone (3a). The device test used local test servers through `adb reverse` with generated credentials, plus a scan of Podium's logcat, the servers' request logs and the app's files.
+
+| Area | Finding | Result |
+|---|---|---|
+| Keystore / AES-GCM | 256-bit AES key generated in the Keystore (GCM, no padding, random IV from the Keystore); output IV + ciphertext + tag; unreadable value → signed out | OK |
+| Passwords at rest | Only sealed, in `credentials.xml`; `source-profiles.xml` holds address and user name; no secret in the database | OK (verified on device) |
+| Passwords on the wire | Token + fresh 8-byte `SecureRandom` salt per request; 237 requests logged by the test servers, none with `p=` | OK |
+| Logs | Podium-only logcat (5,600 lines over the whole acceptance run): no password, user name, server address, `/rest/` URL, token or salt | OK |
+| Cleartext | Setup refuses public `http`, asks before local `http`. **Fixed:** the policy was only checked at setup while the platform allows cleartext app-wide. Now every request, redirect hop and stream URL is checked | Fixed |
+| Profile isolation | Secrets keyed by a random per-profile id; signing out of / removing one server left the other's secret, profile and playback untouched (device) | OK |
+| Sign out / remove | Secrets deleted, capabilities → sign in, choices forgotten. **Fixed:** stream URLs already pinned to queued items could still be used after sign-out, removal or turning the source off; they're now dropped (the playing item excepted, D-18) | Fixed |
+| Temporary auth state | Form values in non-saveable state, cleared on leaving; masked; password keyboard, no autocorrect. `ConnectResult.Connected` and `ServerCredentials` mask secrets in `toString()` (**fixed** for the former) | Fixed |
+| Exported components | Launcher activity and `PlaybackService` only; untrusted controllers get default (read-only) commands, Podium's own UI the queue commands; debug intents are no-ops in release | OK |
+| Backup | `allowBackup="false"`; a device-to-device copy of `credentials.xml` can't be opened without this phone's Keystore key | OK (documented) |
+| Exceptions | Transport and API errors reduced to class names; ExoPlayer's own error logs carried no URLs in the device run | OK |
+| Breaker | **Fixed:** failures while a breaker was already open lengthened its backoff per call (to 10 min after a short outage) | Fixed |

@@ -199,7 +199,7 @@ message PodiumSettings {
   string onboarding_version_seen = 17;
 }
 ```
-Credentials are **not** here: they live in an encrypted store (AES-256-GCM key in Android Keystore; ciphertext in a separate DataStore file excluded from backup).
+Credentials are **not** here: they live in an encrypted store (AES-256-GCM key in Android Keystore; ciphertext in a separate DataStore file excluded from backup). *As implemented (D-37):* a private prefs file `credentials` holding only ciphertext, per source; configured sources' profiles (address, user name, name) in `source-profiles`; neither is in the database.
 
 ## 5. Migrations
 - Schema JSON exported to `core/database/schemas/` and committed.

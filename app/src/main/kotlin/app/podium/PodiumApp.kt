@@ -130,6 +130,7 @@ import app.podium.feature.settings.FinishScreen
 import app.podium.feature.settings.GrainScreen
 import app.podium.feature.settings.MusicFoldersScreen
 import app.podium.feature.settings.OnlineSourcesScreen
+import app.podium.feature.settings.SourceFormScreen
 import app.podium.feature.settings.SettingsScreen
 import app.podium.feature.settings.ThemeScreen
 import app.podium.player.api.PlayIntent
@@ -169,6 +170,9 @@ sealed interface Dest {
 
     /** Settings ▸ Online sources (D-35). */
     data object OnlineSources : Dest
+
+    /** A source's setup or sign-in form (D-37), by its key. */
+    data class SourceForm(val key: String) : Dest
     data class Album(val id: AlbumId) : Dest
     data class Artist(val id: ArtistId) : Dest
 
@@ -188,6 +192,7 @@ private fun Dest.encode(): String = when (this) {
     is Dest.Album -> "Album:${id.value}"
     is Dest.Artist -> "Artist:${id.value}"
     is Dest.MusicFolders -> "MusicFolders:$path"
+    is Dest.SourceForm -> "SourceForm:$key"
     is Dest.Online -> "Online:" + OnlinePlace.encode(place)
     else -> toString()
 }
@@ -196,6 +201,7 @@ private fun decodeDest(text: String): Dest? = when {
     text.startsWith("Album:") -> Dest.Album(AlbumId(text.removePrefix("Album:")))
     text.startsWith("Artist:") -> Dest.Artist(ArtistId(text.removePrefix("Artist:")))
     text.startsWith("MusicFolders:") -> Dest.MusicFolders(text.removePrefix("MusicFolders:"))
+    text.startsWith("SourceForm:") -> Dest.SourceForm(text.removePrefix("SourceForm:"))
     text.startsWith("Online:") -> OnlinePlace.decode(text.removePrefix("Online:"))?.let(Dest::Online)
     else -> fixedDests[text]
 }
@@ -225,6 +231,7 @@ private fun titleOf(dest: Dest, graph: AppGraph): String = when (dest) {
     Dest.Grain -> "Grain"
     Dest.CustomColor -> "Custom color"
     Dest.OnlineSources -> "Online sources"
+    is Dest.SourceForm -> graph.onlineSources.form(dest.key)?.title ?: "Online sources"
     is Dest.Album -> {
         val album by remember(dest) { graph.library.album(dest.id) }.collectAsStateWithLifecycle(initialValue = null)
         album?.album?.title ?: "Album"
@@ -604,7 +611,8 @@ private fun ScreenContent(
             onMusicFolders = { navigator.push(Dest.MusicFolders("")) },
             onOnlineSources = { navigator.push(Dest.OnlineSources) },
         )
-        Dest.OnlineSources -> OnlineSourcesScreen(graph.onlineSources)
+        Dest.OnlineSources -> OnlineSourcesScreen(graph.onlineSources, onOpenForm = { navigator.push(Dest.SourceForm(it)) })
+        is Dest.SourceForm -> SourceFormScreen(graph.onlineSources, screen.key, onDone = { navigator.pop() })
         is Dest.MusicFolders -> MusicFoldersScreen(graph.musicFolders, screen.path, onOpen = { navigator.push(Dest.MusicFolders(it)) })
         Dest.Theme -> ThemeScreen(settings)
         Dest.Finish -> FinishScreen(settings, onCustomColor = { navigator.push(Dest.CustomColor) })

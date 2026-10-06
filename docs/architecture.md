@@ -184,7 +184,7 @@ sealed interface PodiumError {
 ## 10. Observability
 
 - `Logger` facade (`core:common`) with tags: `playback.state`, `queue`, `source.<id>`, `download`, `db`, `net`, `input` (debug only).
-- Release builds log **ids and states only** — no titles, artists, queries, or URLs with tokens (`Redactor` strips `t=`, `s=`, `apiKey`, `u=`).
+- Release builds log **ids and states only** — no titles, artists, queries, or URLs with tokens. As implemented (D-37) there's no `Redactor`: server code never logs a URL or an exception message at all, only error class names.
 - Ring-buffer log (last 2,000 lines) in memory + file in `cacheDir/diagnostics`, exportable by the user from Settings ▸ About ▸ Diagnostics. Nothing is uploaded.
 - Debug-only overlay: playback state machine, current queue origins, glass tier, frame timing.
 

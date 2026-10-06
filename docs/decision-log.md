@@ -223,3 +223,40 @@ Every significant decision, newest at the bottom. Major ones have an ADR in `adr
   - **Autoplay:** two sources of unknown environment are no longer treated as the same environment.
 - **Options considered for persistence:** (a) pair rows (chosen; matches the spec, every row is a real matcher decision, few rows per song with a handful of sources); (b) equivalence groups (fewer rows, but merging groups would claim EXACT for pairs never compared, because EXACT isn't transitive).
 - **Tradeoffs / limits:** no listener-facing "Not the same song" control yet. The resolver's timeout bounds cooperative sources; a source stuck in blocking I/O is still bounded by the player's own 15 s wait. Equivalence rows aren't garbage-collected (they're tiny; a GC pass belongs with the `track` GC). Stored decisions are trusted after a matcher change: a stricter matcher doesn't re-judge old EXACT rows (re-validation could run at load if the lexicon ever loosens).
+
+
+### D-37 · Configured sources and OpenSubsonic (O11)
+- **Context:** user direction (2026-10-06, "O11"): the second production online source is the listener's own music server. Until now every source was built into the app and none signed in. OpenSubsonic (Navidrome, Gonic, Airsonic-Advanced, Ampache, LMS…) is the authorised, user-owned route recorded in `architecture/SOURCE_CAPABILITY_MATRIX.md` §2.2. It needs three things the app lacked: sources the listener *adds* (several, of one kind), sign-in with secrets kept safe, and unencrypted `http` for servers on the listener's own network without opening cleartext to the internet (D-09).
+- **Decision:**
+  - **Configured sources, provider-neutral** (`sources:api` `SourceSetup.kt`). A `SourceFactory` describes its own `SetupForm` (`SetupField`s: text, URL, secret). Its `connect()` checks the answers with the source (no side effects); `create()` builds the source for a stored `SourceProfile` (id, kind, name, non-secret settings). `ConfiguredSources` restores profiles at startup (before `SourceSettings.apply()`), adds (checks, keeps the secrets, keeps the profile, registers) and removes (unregisters, deletes the secrets, forgets the profile and its on/off and priority choices). Ids are `<kind>-<8 random hex>`, so two servers never share an id, and re-adding a server makes a new one. Settings renders any form without knowing the kind; `SetupProblem` is the only error vocabulary.
+  - **Sign-in is a facet.** `AuthFacet` gains `signInFields`, `signIn(values)` and `signOut()`; `AuthState` is all the UI sees. Settings ▸ Online sources shows "Sign in" for a signed-out or refused source. Holding Center offers Move up/down, Sign out/Sign in, and Remove (configured sources only).
+  - **Secrets live only in the `CredentialStore`.** The app's `KeystoreCredentialStore`: AES-256-GCM, with a 256-bit key generated in, and never leaving, the Android Keystore (alias `podium-credentials`). One sealed value per source (random IV, base64) sits in the private prefs file `credentials`, which only ever holds ciphertext. A value that can't be opened reads as "no credentials", and the source asks to sign in again. Profiles (address, user name, display name) live in `source-profiles`, never in the database, never with a secret. `ConnectResult.Connected` and the server credentials mask secrets in `toString()`.
+  - **Network policy, at every request** (`NetworkPolicy`, D-09).
+    - **Addresses:** `https` anywhere; `http` only to localhost, private or link-local IPv4/IPv6, or `.local` / `.lan` / `.home.arpa` names, and only after the listener confirms ("Connect anyway"). No user info, query or fragment.
+    - **Why it's enforced in-app:** a network-security-config can't name address ranges, so the platform allows cleartext app-wide (`usesCleartextTraffic`). `NetworkPolicy.permits(url)` therefore holds every request to the rule, not just the address typed in:
+      - the server client refuses any other URL;
+      - it follows redirects itself, never from https down to http, never off the listener's network, at most 3 hops;
+      - the player refuses a stream URL from *any* source that is `http` to a host off the listener's network (a per-item refusal that never trips a breaker).
+  - **OpenSubsonic** (`sources:subsonic`, pure Kotlin, `HttpURLConnection` + kotlinx.serialization, no new dependency).
+    - **Auth:** token auth on every request: user name, a fresh 8-byte `SecureRandom` salt, `md5(password + salt)`. The password itself is never sent.
+    - **Facets:** catalogue (search3, song, album, artist, playlist, top songs), discovery (newest, random, frequent, server playlists, genres), recommendations (similar songs, artist radio, related artists), artwork through the source (`podium-art://` refs, so no tokenised URL leaves the module), and direct streams.
+    - **Capabilities:** search, browse, stream and artwork need a signed-in source (otherwise REQUIRES_SIGN_IN with a Sign in action). Recommendations are DEGRADED because they depend on the server's metadata agents. Likes stay on the device; playlists can be played, not edited; downloads come later.
+    - **Name and identity:** the display name is the server's type plus its host ("Navidrome (music.lan)"), shown only in Settings. `Basis.USER_SERVER`, environment ONLINE.
+  - **Miss vs failure for a server:**
+    - Protocol error 70, a missing element or HTTP 404 → miss (the server works, it doesn't have it).
+    - 40/41/44 and 50 → refused credentials. 42/43 → token auth unsupported. Either way the source turns `Rejected` and asks to sign in.
+    - A malformed answer, 5xx, timeouts and network errors → failures.
+    - Before a stream URL is built, `getSong` asks the server about the song, so a vanished song is a miss and a dead server is a failure.
+  - **Hardening found during O11 acceptance and audit:**
+    - **Breaker escalation.** A source asked anyway while its breaker is open (every source down) no longer lengthens its backoff per call; only a failed probe does. On device, a few calls while the server was down had pushed the backoff to 10 min, hiding the recovered server from search.
+    - **Stale stream URLs.** When a source stops serving (turned off, signed out, removed), queued items it served lose their pinned stream URL (which may carry its sign-in) and resolve afresh before they play. The playing item keeps its pin (D-18).
+- **Options considered:** (a) store an OpenSubsonic API key instead of the password (needs the `apiKeyAuthentication` extension, which most servers lack; later, as an option); (b) password-equivalent `t`/`s` pairs stored instead of the password (a replayable credential, and servers expect a fresh salt per request); (c) **the password, sealed by the Keystore** (chosen). For cleartext: a network-security-config per host (can't express ranges; would break every LAN address) versus **app-wide cleartext plus in-app enforcement at every request** (chosen).
+- **Tradeoffs / limits:**
+  - Token auth needs the password at rest (sealed).
+  - `.local` / `.lan` names are trusted by name: a hostile DNS could point one off the network, after the listener has already consented to cleartext.
+  - Same-protocol redirects inside Media3's HTTP data source aren't policy-checked (a listener's own `http` server could redirect a stream to another `http` host).
+  - No "Not encrypted" badge on the source yet, only the warning at setup.
+  - No API-key or OAuth sign-in, no server-side stars or playlist editing, no scrobbling, lyrics, jukebox (S5) or library sync into the local database (D-34 keeps online songs out of the library).
+  - Removing a server keeps its listens, likes and equivalence rows (orphaned under the old id; a re-added server gets a new id).
+  - Self-signed certificates aren't supported.
+  - Device acceptance and the security audit are recorded in `testing-strategy.md` §4.1 and `security.md` §8.

@@ -98,8 +98,27 @@ interface DownloadFacet {
     fun permission(track: Track): DownloadPermission
 }
 
+/**
+ * Signing in to a source (D-37), whatever the source is: what it asks for, its state, and signing
+ * in and out. Secrets go to the source's [CredentialStore] and nowhere else; the UI only ever sees
+ * [AuthState] and the field descriptions.
+ */
 interface AuthFacet {
     val state: StateFlow<AuthState>
+
+    /** What signing in asks for (empty when the source signs in some other way, or not at all). */
+    val signInFields: List<SetupField> get() = emptyList()
+
+    /** Check [values] with the source and, if accepted, keep them for next time. */
+    suspend fun signIn(values: Map<String, String>): SignInResult = SignInResult.Refused(SetupProblem.NOT_SUPPORTED)
+
+    /** Forget the stored credentials. The source stays configured, and asks to sign in again. */
+    suspend fun signOut() {}
+}
+
+sealed interface SignInResult {
+    data object SignedIn : SignInResult
+    data class Refused(val problem: SetupProblem) : SignInResult
 }
 
 sealed interface AuthState {
