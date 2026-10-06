@@ -27,6 +27,11 @@ data class Track(
     val availability: Availability = Availability.Unknown,
     /** Which playback routes this track's source can use for it (kinds only; resolution is later). */
     val routes: Set<PlaybackRoute> = setOf(PlaybackRoute.DIRECT),
+    /**
+     * What kind of recording this is. A catalogue that mixes songs with videos and episodes says so;
+     * nothing silently treats a video as a song (YOUTUBE_MUSIC_ARCHITECTURE.md §4).
+     */
+    val kind: MediaKind = MediaKind.SONG,
 ) {
     init {
         require(id.sourceId == source.sourceId) { "Track id $id must belong to source ${source.sourceId}" }
@@ -130,3 +135,21 @@ sealed interface Availability {
 
 /** How a track can be played (kinds only). See PLAYBACK_TARGETS.md. */
 enum class PlaybackRoute { DIRECT, REMOTE, EMBEDDED }
+
+/**
+ * The kind of a playable item, provider-neutral. A music video and the song's audio release are
+ * different edits; a user-uploaded video or a podcast episode isn't a song at all.
+ */
+enum class MediaKind {
+    /** A song: an audio release (album track, single). Everything on the device is one. */
+    SONG,
+
+    /** The official music video of a song. */
+    MUSIC_VIDEO,
+
+    /** Any other video (a performance, a fan upload). */
+    VIDEO,
+
+    /** A podcast or show episode. */
+    EPISODE,
+}

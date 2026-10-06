@@ -38,15 +38,20 @@ interface DiscoveryFacet {
     suspend fun genre(name: String, offset: Int, limit: Int): Outcome<List<Track>>
 }
 
-/** One curated list. A shelf holds songs or playlists. */
+/** One curated list. A shelf holds songs, playlists (albums are playlists with isAlbum) or artists. */
 data class Shelf(
     val id: String,
     val title: String,
     val tracks: List<Track> = emptyList(),
     val playlists: List<PlaylistSummary> = emptyList(),
+    val artists: List<ArtistSummary> = emptyList(),
 )
 
-data class ShelfPage(val tracks: List<Track> = emptyList(), val playlists: List<PlaylistSummary> = emptyList())
+data class ShelfPage(
+    val tracks: List<Track> = emptyList(),
+    val playlists: List<PlaylistSummary> = emptyList(),
+    val artists: List<ArtistSummary> = emptyList(),
+)
 
 /** The user's own collection at a source (enumerable). */
 interface LibraryFacet {
@@ -60,6 +65,27 @@ interface LibraryFacet {
 interface PlaybackFacet {
     val routes: Set<app.podium.core.model.PlaybackRoute>
     suspend fun resolve(track: Track, quality: QualityRequest, purpose: Purpose): FacetResolution
+
+    /**
+     * For a source whose music plays in another app (a [PlaybackTarget.RemoteProvider]): the
+     * provider key of this source's track that the other app's media session reports as
+     * [sessionMediaId], or null when it isn't recognisable. Lets Podium mirror what plays there
+     * without guessing from titles.
+     */
+    fun remoteTrackKey(sessionMediaId: String): String? = null
+
+    /**
+     * Hand a whole context (an album, a playlist, a radio) to the other app, starting at [start].
+     * Null when the source can only hand over single songs.
+     */
+    fun remoteContext(context: RemoteContext, start: Track?): PlaybackTarget.RemoteProvider? = null
+}
+
+/** A context an app that plays a source's music can start by itself (a playlist, an album, a radio). */
+sealed interface RemoteContext {
+    data class Collection(val id: PlaylistId) : RemoteContext
+    data class Radio(val seed: Track) : RemoteContext
+    data class ArtistRadio(val artist: ArtistId) : RemoteContext
 }
 
 /** Artwork bytes or a local file for an [ArtworkRef] owned by this source. */
@@ -114,6 +140,53 @@ interface AuthFacet {
 
     /** Forget the stored credentials. The source stays configured, and asks to sign in again. */
     suspend fun signOut() {}
+
+    /** Set when signing in happens on the provider's web page instead of a form. */
+    val webSignIn: WebSignIn? get() = null
+}
+
+/**
+ * An online account's own library (YOUTUBE_MUSIC_ARCHITECTURE §7). Lists page by offset; a source
+ * that pages by tokens keeps them itself. The account is the authority: Podium caches, never owns.
+ */
+interface AccountLibraryFacet {
+    suspend fun likedSongs(offset: Int, limit: Int): Outcome<List<Track>>
+    suspend fun playlists(offset: Int, limit: Int): Outcome<List<PlaylistSummary>>
+    suspend fun albums(offset: Int, limit: Int): Outcome<List<AlbumSummary>>
+    suspend fun artists(offset: Int, limit: Int): Outcome<List<ArtistSummary>>
+
+    /** What the account itself recorded, newest first, with the provider's own grouping ("Today"). */
+    suspend fun history(offset: Int, limit: Int): Outcome<List<HistoryEntry>> = Outcome.Failure(PodiumError.Unsupported("history"))
+
+    /** Whether [setLiked] writes to the account. */
+    val canWriteLikes: Boolean get() = false
+
+    suspend fun setLiked(track: Track, liked: Boolean): Outcome<Unit> = Outcome.Failure(PodiumError.Unsupported("likes"))
+}
+
+/** One song in an account's own history. [period] is the provider's label for when ("Today"), if any. */
+data class HistoryEntry(val track: Track, val period: String?)
+
+/**
+ * A sign-in that happens on the provider's own web page (D-37 amended, YOUTUBE_MUSIC_ARCHITECTURE §6):
+ * Podium shows the page in a locked-down web view, never sees the password, and hands the session
+ * the page leaves behind to [AuthFacet.signIn] under [SESSION_KEY]. Everything here is
+ * provider-neutral data; the screen running it never knows which provider it is.
+ */
+data class WebSignIn(
+    val title: String,
+    val startUrl: String,
+    /** Whose cookies make up the session, e.g. "https://example.com". */
+    val cookieOrigin: String,
+    /** Signed in once any of these cookies exists for [cookieOrigin] and the page is on [doneUrlPrefix]. */
+    val doneWhenCookies: Set<String>,
+    val doneUrlPrefix: String,
+    /** The page may only go to these hosts (and their subdomains), over https. */
+    val allowedHostSuffixes: List<String>,
+) {
+    companion object {
+        const val SESSION_KEY = "web-session"
+    }
 }
 
 sealed interface SignInResult {
@@ -125,7 +198,11 @@ sealed interface AuthState {
     data object NotRequired : AuthState
     data object SignedOut : AuthState
     data object SigningIn : AuthState
-    data class SignedIn(val accountName: String) : AuthState
+    /**
+     * [accountKey] keys everything kept for this account (likes, playlists, history caches) so one
+     * account's data never shows under another's; it is an opaque, non-secret value.
+     */
+    data class SignedIn(val accountName: String, val accountKey: String = accountName) : AuthState
     data object Expired : AuthState
     data class Rejected(val reason: String) : AuthState
 }
@@ -138,13 +215,15 @@ data class SearchQuery(
     val kinds: Set<SearchKind> = SearchKind.entries.toSet(),
 )
 
-enum class SearchKind { TRACKS, ARTISTS, ALBUMS, PLAYLISTS }
+enum class SearchKind { TRACKS, ARTISTS, ALBUMS, PLAYLISTS, VIDEOS }
 
 data class SearchResults(
     val tracks: List<Track> = emptyList(),
     val albums: List<AlbumSummary> = emptyList(),
     val artists: List<ArtistSummary> = emptyList(),
     val playlists: List<PlaylistSummary> = emptyList(),
+    /** Music videos and other videos, kept apart from songs (each says its [Track.kind]). */
+    val videos: List<Track> = emptyList(),
 ) {
     companion object {
         val Empty = SearchResults()

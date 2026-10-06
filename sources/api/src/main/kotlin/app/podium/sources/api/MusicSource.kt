@@ -29,4 +29,10 @@ interface MusicSource {
 
     /** For libraries read from storage: which folders are read (D-32). */
     val folders: FolderFacet? get() = null
+
+    /**
+     * The listener's library at an online account: liked songs, saved playlists, albums, artists,
+     * history. Read from the account; never synced into the local library (D-34).
+     */
+    val accountLibrary: AccountLibraryFacet? get() = null
 }

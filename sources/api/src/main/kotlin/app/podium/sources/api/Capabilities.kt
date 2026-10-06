@@ -15,6 +15,12 @@ enum class Capability {
     RECOMMENDATIONS,
     ARTWORK,
     AUTHENTICATION,
+
+    /** An online account's own library (liked songs, playlists, albums, artists). Not LIBRARY: that one is synced to the device. */
+    ACCOUNT_LIBRARY,
+
+    /** The account's own listening history, kept by the provider. */
+    HISTORY,
 }
 
 /**
