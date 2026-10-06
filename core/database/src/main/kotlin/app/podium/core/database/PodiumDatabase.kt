@@ -135,13 +135,26 @@ internal object Fts {
  * Pre-migration safety (ADR-004): before opening a database whose schema will change, copy the file
  * to `podium.db.bak-v<old>` so a failed migration can be undone. Reads the version from the SQLite
  * header without opening the database.
+ *
+ * The database runs in WAL mode. A migration commits into `podium.db-wal`, and until a checkpoint
+ * the file's header still names the old version, so later starts look like upgrades too. A backup,
+ * once taken, is therefore never overwritten: the copy taken before migrating is the one kept.
+ * Recent writes may still be in the WAL, so it goes along as the backup's own `-wal` (SQLite replays
+ * it when the backup is opened). The copy only appears once complete.
  */
 internal object DatabaseBackup {
     fun beforeOpen(file: File, targetVersion: Int) {
         val current = userVersion(file) ?: return
-        if (current in 1 until targetVersion) {
-            file.copyTo(File(file.parentFile, "${file.name}.bak-v$current"), overwrite = true)
-        }
+        if (current !in 1 until targetVersion) return
+        val backup = File(file.parentFile, "${file.name}.bak-v$current")
+        if (backup.exists()) return
+        val wal = File(file.parentFile, "${file.name}-wal")
+        val backupWal = File(file.parentFile, "${backup.name}-wal")
+        backupWal.delete() // never pair the copy with another file's WAL
+        if (wal.isFile && wal.length() > 0) wal.copyTo(backupWal)
+        val partial = File(file.parentFile, "${backup.name}.partial")
+        file.copyTo(partial, overwrite = true)
+        partial.renameTo(backup)
     }
 
     /** SQLite stores `user_version` big-endian at byte offset 60 of the header. */

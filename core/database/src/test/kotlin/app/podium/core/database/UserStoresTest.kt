@@ -148,6 +148,34 @@ class UserStoresTest {
         assertTrue(File(dir, "podium.db.bak-v1").isFile)
         dir.deleteRecursively()
     }
+
+    @Test
+    fun `the backup taken before migrating is kept, with its WAL, and never overwritten`() {
+        val dir = Files.createTempDirectory("podium-db").toFile()
+        val file = File(dir, "podium.db")
+        val header = ByteArray(100).also {
+            "SQLite format 3\u0000".toByteArray(Charsets.US_ASCII).copyInto(it)
+            it[63] = 1 // user_version = 1
+        }
+        val before = header + ByteArray(400) { 1 }
+        file.writeBytes(before)
+        File(dir, "podium.db-wal").writeBytes(ByteArray(64) { 7 })
+        File(dir, "podium.db.bak-v1-wal").writeBytes(ByteArray(8) { 9 }) // left over from elsewhere
+
+        DatabaseBackup.beforeOpen(file, targetVersion = 2)
+        assertTrue(File(dir, "podium.db.bak-v1").readBytes().contentEquals(before))
+        assertTrue(File(dir, "podium.db.bak-v1-wal").readBytes().contentEquals(ByteArray(64) { 7 }), "the WAL goes with it, never a stale one")
+
+        // Migrated, but not yet checkpointed: the header still says 1. The next start must not
+        // replace the pre-migration copy with this file.
+        file.writeBytes(header + ByteArray(400) { 2 })
+        File(dir, "podium.db-wal").writeBytes(ByteArray(64) { 3 })
+        DatabaseBackup.beforeOpen(file, targetVersion = 2)
+        assertTrue(File(dir, "podium.db.bak-v1").readBytes().contentEquals(before))
+        assertTrue(File(dir, "podium.db.bak-v1-wal").readBytes().contentEquals(ByteArray(64) { 7 }))
+        assertTrue(dir.listFiles()!!.none { it.name.endsWith(".partial") })
+        dir.deleteRecursively()
+    }
 }
 
 /** The database works on real threads: wait in real time, not the test scheduler's virtual time. */
