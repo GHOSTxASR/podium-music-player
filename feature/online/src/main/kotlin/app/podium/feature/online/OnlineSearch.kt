@@ -32,6 +32,7 @@ import app.podium.core.common.Outcome
 import app.podium.core.common.PodiumError
 import app.podium.core.designsystem.component.FocusList
 import app.podium.core.designsystem.component.ListInputEffect
+import app.podium.core.designsystem.component.LoadingRow
 import app.podium.core.designsystem.component.LocalRowPadding
 import app.podium.core.designsystem.component.LocalScreenInsets
 import app.podium.core.designsystem.component.MenuPreview
@@ -64,6 +65,9 @@ private sealed interface SearchRow {
     data class Album(val album: AlbumSummary) : SearchRow
     data class Playlist(val playlist: PlaylistSummary) : SearchRow
     data class Message(val text: String) : SearchRow
+
+    /** Results on their way. */
+    data object Loading : SearchRow
 }
 
 /**
@@ -120,7 +124,7 @@ fun OnlineSearchScreen(repository: OnlineRepository, actions: OnlineActions, nav
             add(SearchRow.Field)
             when (val r = results) {
                 null -> Unit
-                Remote.Loading -> Unit
+                Remote.Loading -> add(SearchRow.Loading)
                 is Remote.Failed -> add(SearchRow.Message(failureText(r.error)))
                 is Remote.Ready -> {
                     val v = r.value
@@ -205,12 +209,13 @@ fun OnlineSearchScreen(repository: OnlineRepository, actions: OnlineActions, nav
                 is SearchRow.Album -> "album:${it.album.id.value}"
                 is SearchRow.Playlist -> "playlist:${it.playlist.id.value}"
                 is SearchRow.Message -> "message"
+                SearchRow.Loading -> "loading"
             }
         },
         contentPadding = LocalScreenInsets.current.listPadding(),
         onActivate = activate,
         onLongPress = longPress,
-        focusable = { it !is SearchRow.Section && it !is SearchRow.Message },
+        focusable = { it !is SearchRow.Section && it !is SearchRow.Message && it !is SearchRow.Loading },
         preview = { row ->
             when (row) {
                 is SearchRow.Song -> MenuPreview.Artwork(listOfNotNull(row.track.artwork?.uri))
@@ -233,6 +238,7 @@ fun OnlineSearchScreen(repository: OnlineRepository, actions: OnlineActions, nav
             is SearchRow.Album -> TrackRow(row.album.title, row.album.artistDisplay, focused, row.album.artwork?.uri, trailing = row.album.year?.toString())
             is SearchRow.Playlist -> TrackRow(row.playlist.title, row.playlist.ownerName, focused, row.playlist.artwork?.uri, trailing = row.playlist.trackCount?.toString())
             is SearchRow.Message -> SectionLabel(row.text)
+            SearchRow.Loading -> LoadingRow("Searching")
         }
     }
 }

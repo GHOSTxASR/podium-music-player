@@ -43,6 +43,7 @@ import app.podium.core.designsystem.artwork.ArtworkImage
 import app.podium.core.designsystem.component.DetailHeader
 import app.podium.core.designsystem.component.FocusList
 import app.podium.core.designsystem.component.ListInputEffect
+import app.podium.core.designsystem.component.LoadingScreen
 import app.podium.core.designsystem.component.LocalMiniatureFocusKey
 import app.podium.core.designsystem.component.LocalOverlayHost
 import app.podium.core.designsystem.component.LocalRowPadding
@@ -116,7 +117,7 @@ fun AlbumsScreen(repository: LibraryRepository, onOpen: (AlbumId) -> Unit) {
     val focus = rememberFocusListState("albums")
     ListInputEffect(focus, onActivate = { albums.getOrNull(it)?.let { a -> onOpen(a.id) } })
     when {
-        loaded == null -> Unit
+        loaded == null -> LoadingScreen()
         albums.isEmpty() -> EmptyState(PodiumSymbol.Album, "No albums yet", NoMusic)
         else -> FocusList(
             items = albums,
@@ -156,7 +157,7 @@ fun AlbumScreen(
     val activate: (Int) -> Unit = { i -> (rows.getOrNull(i) as? AlbumRow.Song)?.let { album?.let { a -> onPlay(songs, it.index, a.title) } } }
     ListInputEffect(focus, onActivate = activate, onLongPress = { i -> (rows.getOrNull(i) as? AlbumRow.Song)?.let { menu(it.track) } })
     when {
-        loaded == null -> Unit
+        loaded == null -> LoadingScreen()
         album == null -> EmptyState(PodiumSymbol.Album, "This album isn't here anymore", "Its songs may have been removed. Go back to Albums.")
         else -> FocusList(
             items = rows,
@@ -196,7 +197,7 @@ fun ArtistsScreen(repository: LibraryRepository, onOpen: (ArtistId) -> Unit) {
     val focus = rememberFocusListState("artists")
     ListInputEffect(focus, onActivate = { artists.getOrNull(it)?.let { a -> onOpen(a.id) } })
     when {
-        loaded == null -> Unit
+        loaded == null -> LoadingScreen()
         artists.isEmpty() -> EmptyState(PodiumSymbol.Person, "No artists yet", NoMusic)
         else -> FocusList(
             items = artists,
@@ -242,7 +243,7 @@ fun ArtistScreen(repository: LibraryRepository, artistId: ArtistId, onOpenAlbum:
     }
     ListInputEffect(focus, onActivate = activate)
     when {
-        loaded == null -> Unit
+        loaded == null -> LoadingScreen()
         artist == null -> EmptyState(PodiumSymbol.Person, "This artist isn't here anymore", "Their songs may have been removed. Go back to Artists.")
         else -> FocusList(
             items = rows,
@@ -296,7 +297,7 @@ fun FavoritesScreen(
     val menu = songMenu(tracks, onPlayNext, onAddToQueue)
     ListInputEffect(focus, onActivate = { onPlay(songs, it, "Favorites") }, onLongPress = { menu(songs[it]) })
     when {
-        loading -> Unit
+        loading -> LoadingScreen()
         songs.isEmpty() -> EmptyState(PodiumSymbol.Favorite, "No favorites yet", "On Now Playing, choose the heart or More to add a song.")
         else -> FocusList(
             items = songs,

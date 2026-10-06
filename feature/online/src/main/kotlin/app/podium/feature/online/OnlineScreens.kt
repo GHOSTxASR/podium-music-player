@@ -14,6 +14,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.podium.core.common.Outcome
 import app.podium.core.designsystem.component.FocusList
 import app.podium.core.designsystem.component.ListInputEffect
+import app.podium.core.designsystem.component.LoadingScreen
 import app.podium.core.designsystem.component.LocalScreenInsets
 import app.podium.core.designsystem.component.MenuPreview
 import app.podium.core.designsystem.component.MenuRow
@@ -108,7 +109,7 @@ fun OnlineHomeScreen(repository: OnlineRepository, navigate: (OnlinePlace) -> Un
     val liked by repository.likedTracks.collectAsStateWithLifecycle(initialValue = emptyList())
     val recent by repository.recentlyPlayed.collectAsStateWithLifecycle(initialValue = emptyList())
     when (shelves) {
-        Remote.Loading -> Unit
+        Remote.Loading -> LoadingScreen()
         is Remote.Failed -> OnlineMessage(shelves.error)
         is Remote.Ready -> {
             val entries = buildList {
@@ -161,7 +162,7 @@ fun OnlineShelfScreen(place: OnlinePlace.Shelf, repository: OnlineRepository, ac
     }
     LaunchedEffect(place.id) { loadMore() }
     when (val s = state) {
-        Remote.Loading -> Unit
+        Remote.Loading -> LoadingScreen()
         is Remote.Failed -> OnlineMessage(s.error)
         is Remote.Ready -> when {
             playlists.isNotEmpty() -> PlaylistList(playlists, "shelf:${place.id}", navigate, onNearEnd = loadMore, exhausted = exhausted)
@@ -176,7 +177,7 @@ fun OnlineShelfScreen(place: OnlinePlace.Shelf, repository: OnlineRepository, ac
 fun OnlineExploreScreen(repository: OnlineRepository, navigate: (OnlinePlace) -> Unit) {
     val genres = rememberRemote(Unit) { repository.genres() }
     when (genres) {
-        Remote.Loading -> Unit
+        Remote.Loading -> LoadingScreen()
         is Remote.Failed -> OnlineMessage(genres.error)
         is Remote.Ready -> OnlinePaperMenu(genres.value.map { g -> OnlineEntry(g, MenuPreview.None) { navigate(OnlinePlace.Genre(g)) } }, "online-explore")
     }
@@ -210,7 +211,7 @@ fun OnlineGenreScreen(genre: String, repository: OnlineRepository, actions: Onli
     }
     LaunchedEffect(genre) { loadMore() }
     when (val s = state) {
-        Remote.Loading -> Unit
+        Remote.Loading -> LoadingScreen()
         is Remote.Failed -> OnlineMessage(s.error)
         is Remote.Ready -> OnlineTrackList(
             tracks, "genre:$genre", genre, repository, actions, navigate,

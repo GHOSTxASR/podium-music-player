@@ -11,6 +11,7 @@ import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.podium.core.designsystem.component.FocusList
 import app.podium.core.designsystem.component.ListInputEffect
+import app.podium.core.designsystem.component.LoadingScreen
 import app.podium.core.designsystem.component.LocalOverlayHost
 import app.podium.core.designsystem.component.LocalScreenInsets
 import app.podium.core.designsystem.component.MenuAction
@@ -147,7 +148,7 @@ fun SongsScreen(
     ListInputEffect(focus, onActivate = { onPlay(tracks, it) }, onLongPress = showMenu)
 
     when {
-        state is LibraryState.Loading -> Unit
+        state is LibraryState.Loading -> LoadingScreen("Reading your music")
         tracks.isEmpty() -> Box(Modifier.fillMaxSize().padding(top = insets.top, bottom = insets.bottom), contentAlignment = Alignment.Center) {
             MessageState(PodiumSymbol.Note, "No songs yet", "Allow access to music on this phone from Music, or add a source.")
         }

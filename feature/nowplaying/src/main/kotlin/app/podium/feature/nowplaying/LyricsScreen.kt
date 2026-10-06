@@ -39,6 +39,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import app.podium.core.designsystem.component.Pinwheel
 import app.podium.core.designsystem.theme.BoneColors
 import app.podium.core.designsystem.theme.CarbonColors
 import app.podium.core.designsystem.theme.PodiumTheme
@@ -202,7 +203,7 @@ fun LyricsScreen(controller: PlaybackController, gateway: LyricsGateway) {
     ) {
         when {
             item == null -> Message("Nothing playing", "Choose a song, then open its lyrics.", ink, quiet)
-            result == null -> Message("Finding lyrics", null, ink, quiet)
+            result == null -> Finding(ink, quiet)
             result == LyricsResult.NeedsConsent -> Message(
                 "Find lyrics online?",
                 "Podium sends the song title, artist, album and length to ${gateway.attribution.name}. Press Center to allow. Menu goes back.",
@@ -298,6 +299,19 @@ private fun Lyric(text: String, color: Color, quiet: Color, shown: Int) {
                 if (waiting) drawText(dots, topLeft = Offset((size.width - dots.size.width) / 2f, (size.height - dots.size.height) / 2f))
             }
         }
+    }
+}
+
+/** Looking for the words: the loading pinwheel in the lyric paper's own ink (D-43). */
+@Composable
+private fun Finding(ink: Color, quiet: Color) {
+    Column(
+        Modifier.fillMaxSize().semantics { contentDescription = "Finding lyrics" },
+        verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Pinwheel(size = 34.dp, color = ink)
+        PodiumText("Finding lyrics", PodiumTheme.type.footnote, quiet, modifier = Modifier.padding(top = 14.dp))
     }
 }
 

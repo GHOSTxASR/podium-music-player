@@ -14,6 +14,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.podium.core.common.Outcome
 import app.podium.core.designsystem.component.FocusList
 import app.podium.core.designsystem.component.ListInputEffect
+import app.podium.core.designsystem.component.LoadingScreen
 import app.podium.core.designsystem.component.LocalScreenInsets
 import app.podium.core.designsystem.component.MenuPreview
 import app.podium.core.designsystem.component.MenuRow
@@ -123,7 +124,7 @@ private fun <T> PagedLibraryList(
     ListInputEffect(focus, onActivate = open)
     PageNearEnd(focus, items.size, exhausted, loadMore)
     when (val s = state) {
-        Remote.Loading -> Unit
+        Remote.Loading -> LoadingScreen()
         is Remote.Failed -> OnlineMessage(s.error)
         is Remote.Ready -> if (items.isEmpty()) {
             CenteredMessage(PodiumSymbol.Library, empty.first, empty.second)
@@ -185,7 +186,10 @@ fun OnlineAccountHistoryScreen(repository: OnlineRepository, actions: OnlineActi
     }
     ListInputEffect(focus, onActivate = activate, onLongPress = longPress)
     when (history) {
-        Remote.Loading -> return
+        Remote.Loading -> {
+            LoadingScreen()
+            return
+        }
         is Remote.Failed -> {
             OnlineMessage(history.error)
             return

@@ -10,6 +10,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.podium.core.designsystem.component.DetailHeader
 import app.podium.core.designsystem.component.FocusList
 import app.podium.core.designsystem.component.ListInputEffect
+import app.podium.core.designsystem.component.LoadingScreen
 import app.podium.core.designsystem.component.LocalRowPadding
 import app.podium.core.designsystem.component.LocalScreenInsets
 import app.podium.core.designsystem.component.MenuPreview
@@ -92,7 +93,10 @@ fun OnlineArtistScreen(place: OnlinePlace.Artist, repository: OnlineRepository, 
     }
     ListInputEffect(focus, onActivate = activate, onLongPress = longPress)
     when (detail) {
-        Remote.Loading -> return
+        Remote.Loading -> {
+            LoadingScreen()
+            return
+        }
         is Remote.Failed -> {
             OnlineMessage(detail.error)
             return
@@ -196,7 +200,10 @@ fun OnlineCollectionScreen(place: OnlinePlace.Collection, repository: OnlineRepo
     }
     ListInputEffect(focus, onActivate = activate, onLongPress = longPress)
     when (detail) {
-        Remote.Loading -> return
+        Remote.Loading -> {
+            LoadingScreen()
+            return
+        }
         is Remote.Failed -> {
             OnlineMessage(detail.error)
             return
