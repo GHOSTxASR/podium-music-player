@@ -156,7 +156,7 @@ questions only the phone can answer (A-1, U1–U6) and the 28 steps, is
 
 ## 21. Test count
 
-`./gradlew test`: **454 tests, 0 failures, 0 errors, 0 skipped** (JVM unit tests and Robolectric
+`./gradlew test`: **461 tests, 0 failures, 0 errors, 0 skipped** (JVM unit tests and Robolectric
 tests; there are no instrumented `androidTest` suites).
 
 | Module | Tests |
@@ -176,7 +176,7 @@ tests; there are no instrumented `androidTest` suites).
 | feature:online | 7 |
 | sources:local | 7 |
 | player:remote | 4 |
-| feature:settings | 3 |
+| feature:settings | 10 |
 
 ## 22. Known limitations
 
@@ -212,7 +212,10 @@ tests; there are no instrumented `androidTest` suites).
 | `83b10d0` | docs: YouTube Music architecture, implementation notes, device plan; security audit |
 | `ba74ce2` | docs: YouTube Music final report |
 | `992ad0a` | build: add verified debug APK artifact |
-| (next) | docs: record the APK commit in the final report |
+| `1ed91b7` | docs: record the APK commit in the final report |
+| `ae65bf2` | fix(settings): row labels keep their room; Appearance fits the narrow paper |
+| `10028f5` | build: update verified debug APK artifact |
+| (next) | docs: final report for the updated APK |
 
 ## 25. GitHub branch
 
@@ -242,9 +245,9 @@ export ANDROID_HOME=/path/to/android-sdk   # or sdk.dir in local.properties
 | applicationId | `app.podium.debug` |
 | versionName / versionCode | 0.1.0 / 1 |
 | Size | 50,374,931 bytes |
-| SHA-256 | `34ea52a55b31830abc3b1231c6c9a72eb1b39d5667482ea573fa59f842188a9e` |
+| SHA-256 | `e551e02c99489baf82889656b5aab1ba93fc83e5b60db15b0b6036d7c9f69b34` |
 | Signature | Android debug certificate (SHA-256 `e68e65c9…0d4e11`), verified with `apksigner` |
-| Built from | `83b10d0` (later commits change only documentation and the artifact) |
+| Built from | `ae65bf2` (later commits change only documentation and the artifact) |
 | Secret scan of the APK | clean (no API keys, OAuth tokens, private keys, session cookies, test fixtures) |
 | Installed on a device | **no** |
 | Smoke test on a device | **no** (rendered-UI tests only) |
@@ -259,7 +262,7 @@ BUILD TASK:        ./gradlew :app:assembleDebug
 BUILD TYPE:        debug
 VERSION NAME:      0.1.0
 VERSION CODE:      1
-COMMIT:            992ad0a (artifact commit; built from code at 83b10d0)
+COMMIT:            10028f5 (artifact commit; built from code at ae65bf2; first artifact 992ad0a superseded)
 BRANCH:            ccr-fcca9ac9-6juw47 (verified on origin: blob size and SHA-256 match)
 DEVICE INSTALL:    NOT AVAILABLE (no device reachable from the build container)
 DEVICE SMOKE TEST: NOT RUN
@@ -270,7 +273,7 @@ DEVICE SMOKE TEST: NOT RUN
 | Criterion | Status |
 |---|---|
 | Build | PASS |
-| Unit tests | PASS (454/454) |
+| Unit tests | PASS (461/461) |
 | Integration tests | PASS for Robolectric/JVM integration tests; no instrumented suite exists |
 | Device build | PASS (debug APK built, signed, inspected); not installed |
 | Offline playback / regression | automated PASS; not verified on device |
@@ -286,6 +289,7 @@ DEVICE SMOKE TEST: NOT RUN
 
 ## Secondary mission (UI, customization, lyrics)
 
+- **Settings layout:** rendering the new Appearance screens showed `MenuRow` squeezing labels ("Vi…") because its value was measured first; labels now keep their room and Appearance rows carry no redundant values (`AppearanceLayoutTest`).
 - **Focus list (D-40):** root causes found in rendered device frames — rows bent along the arc were
   clipped by the list's bounds ("tem 1"), the marquee clipped the focused title's glow, keep-in-view
   exempted the first/last rows, the lens was clamped to a band, short lists were centred and ends
