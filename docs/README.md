@@ -9,6 +9,7 @@ Foundation written 2026-10-02 (Phases 0–2 and source research S0). Read in thi
 5. [architecture/MUSIC_SOURCE_ARCHITECTURE.md](architecture/MUSIC_SOURCE_ARCHITECTURE.md) — provider-independent source model (facets, capabilities, matcher, resolver, health)
    - [architecture/PLAYBACK_TARGETS.md](architecture/PLAYBACK_TARGETS.md) — direct streams vs remote providers vs embedded players
    - [architecture/SOURCE_CAPABILITY_MATRIX.md](architecture/SOURCE_CAPABILITY_MATRIX.md) — what each provider officially allows, and Podium's positions
+   - [architecture/YOUTUBE_MUSIC_TRANSITION.md](architecture/YOUTUBE_MUSIC_TRANSITION.md) — proposal: replacing Online with YouTube Music while Offline stays frozen (2026-10-06)
    - [music-source-analysis.md](music-source-analysis.md) — original source analysis (technical vs. authorised vs. distributable)
 6. [design-system.md](design-system.md) — tokens, glass materials, components, copy
 7. [interaction-model.md](interaction-model.md) — the Wheel, contexts, inputs, haptics
