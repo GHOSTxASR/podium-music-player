@@ -130,7 +130,7 @@ class LocalMusicSource(context: Context, private val scope: CoroutineScope) : Mu
         } else {
             val state = CapabilityState(
                 CapabilityStatus.REQUIRES_PERMISSION,
-                note = "Allow access to music on this phone",
+                note = "Allow music access",
                 action = CapabilityAction.RequestPermission(permission, "Allow access"),
             )
             SourceCapabilities(offered.associateWith { state })

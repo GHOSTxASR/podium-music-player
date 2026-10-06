@@ -111,7 +111,7 @@ fun MusicFoldersScreen(settings: MusicFolderSettings, path: String, onOpen: (Str
     if (list == null) {
         val insets = LocalScreenInsets.current
         Box(Modifier.fillMaxSize().padding(top = insets.top, bottom = insets.bottom), contentAlignment = Alignment.Center) {
-            MessageState(PodiumSymbol.Library, "No folders to choose yet", "Allow access to music on this phone from Music, then come back.")
+            MessageState(PodiumSymbol.Library, "No folders to choose yet", "Allow music access from Home, then come back.")
         }
         return
     }

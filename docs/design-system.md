@@ -148,7 +148,7 @@ Atmosphere follows the **now-playing** artwork app-wide; on album/artist screens
 Font scale: honoured to 200% (Android nonlinear scaling). Rows grow (`minHeight`, never fixed height). Wheel legends cap at 1.3× (fixed geometry; semantics carry the label). Bold-text (`fontWeightAdjustment`) adds +100 to weights (cap 700).
 
 ### 3.3 Truncation
-Titles: end ellipsis; Now Playing: narrow width → wrap to 2 lines → ellipsis. Only the focused list row may scroll its title, slowly, after 0.9 s, when it doesn't fit (as the original iPod did; it follows the user's own focus, and is off with reduced motion). No other marquees. The scrolling title may draw 8 dp beyond its box on every side (layout keeps its own size), so neither Carbon's glow nor a glyph reaching outside its line box is cut into a hard edge, and its ends fade over the last 12 dp instead of stopping mid-letter.
+Titles: end ellipsis; Now Playing: narrow width → wrap to 2 lines → ellipsis. Only the focused list row may scroll its title, and only when it doesn't fit (as the original iPod did; it follows the user's own focus, and is off with reduced motion). It rests at its start for 1.4 s, then eases into the scroll and eases out as the next copy arrives where it began (about 28 dp/s on average), rests 2 s and goes round again (D-46). No other marquees. The scrolling title may draw 8 dp beyond its box on every side (layout keeps its own size), so neither Carbon's glow nor a glyph reaching outside its line box is cut into a hard edge, and its ends fade over the last 12 dp instead of stopping mid-letter. A title that fits is drawn as it is, with no fade. Row labels that are calls to action are written to fit ("Allow music access"), so they never scroll.
 
 ---
 

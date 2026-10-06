@@ -37,6 +37,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.After
@@ -90,6 +91,24 @@ class DatabaseLibraryRepositoryTest {
         assertIs<LibraryState.Loading>(library.songs.value)
         phone.emit(emptyList())
         eventually(library.songs) { it == LibraryState.Ready(emptyList()) }
+    }
+
+    @Test
+    fun `albums and artists never say none before the first sync`() {
+        val phone = LibrarySourceStub("phone", emptyList(), emitted = false)
+        registry.register(phone)
+        val library = repository()
+        val albums = java.util.Collections.synchronizedList(mutableListOf<Int>())
+        val artists = java.util.Collections.synchronizedList(mutableListOf<Int>())
+        scope.launch { library.albums().collect { albums += it.size } }
+        scope.launch { library.artists().collect { artists += it.size } }
+        runBlocking { kotlinx.coroutines.delay(300) }
+        assertEquals(emptyList<Int>(), albums, "no answer yet, rather than an empty list")
+        assertEquals(emptyList<Int>(), artists)
+        phone.emit(listOf(song("phone", "Alpha")))
+        eventually(library.albums()) { it.size == 1 }
+        eventually(library.artists()) { it.size == 1 }
+        assertTrue(0 !in albums && 0 !in artists, "never empty on the way: $albums $artists")
     }
 
     @Test

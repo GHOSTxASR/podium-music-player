@@ -1,7 +1,8 @@
 package app.podium.core.designsystem.component
 
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.basicMarquee
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,9 +15,16 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.BlendMode
@@ -27,6 +35,7 @@ import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
@@ -39,6 +48,8 @@ import app.podium.core.designsystem.symbol.Symbol
 import app.podium.core.designsystem.theme.PodiumTheme
 import app.podium.core.designsystem.theme.Spacing
 import app.podium.core.designsystem.type.PodiumText
+import kotlinx.coroutines.delay
+import kotlin.math.roundToInt
 
 /** Text colour for a row: white on the Solid-tier focus bar, otherwise the given colour. */
 @Composable
@@ -245,50 +256,95 @@ fun formatDuration(ms: Long?): String? {
  * The focused row's text scrolls slowly when it doesn't fit, as on the original iPod, so long
  * titles are readable without widening the column. Other rows ellipsize. Off with reduced motion.
  *
- * A marquee clips to its own bounds. Clipped at the text's box, that cut the focused text's glow
+ * It rests at its start first, then eases into the scroll and eases out as the next copy arrives
+ * where it began, rests and goes round again. A constant-speed ticker started at full speed, which
+ * read as text sitting in the middle of the row and then jumping to the side.
+ *
+ * Scrolling text is clipped to its row. Clipped at the text's box, that cut the focused text's glow
  * (Carbon) into a hard rectangle and could shave a glyph that reaches outside its line box (an
  * accent, a tall script, a display font with deep descenders), and a long title stopped mid-letter
- * at the right edge. So the scrolling text borrows [TextBleed] of room on every side — for drawing
- * only, the layout keeps the text's own size — and its ends fade instead of cutting.
+ * at the right edge. So the text borrows [TextBleed] of room on every side, for drawing only (the
+ * layout keeps the text's own size), and only text that overflows fades at its ends.
  */
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun Modifier.scrollsWhenFocused(focused: Boolean): Modifier =
-    if (focused && !PodiumTheme.motion.reduced) {
-        this
-            .layout { measurable, constraints ->
-                val bleed = TextBleed.roundToPx()
-                val placeable = measurable.measure(constraints.offset(horizontal = bleed * 2, vertical = bleed * 2))
-                layout((placeable.width - bleed * 2).coerceAtLeast(0), (placeable.height - bleed * 2).coerceAtLeast(0)) {
-                    placeable.place(-bleed, -bleed)
-                }
-            }
-            .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
-            .drawWithContent {
+private fun Modifier.scrollsWhenFocused(focused: Boolean): Modifier {
+    if (!focused || PodiumTheme.motion.reduced) return this
+    val density = LocalDensity.current
+    val offset = remember { Animatable(0f) }
+    // Measured: the room the row gives the text, how much more the text needs, one lap of the scroll.
+    var box by remember { mutableIntStateOf(0) }
+    var overflow by remember { mutableIntStateOf(0) }
+    var lap by remember { mutableIntStateOf(0) }
+    val scrolls = overflow > 0
+    LaunchedEffect(scrolls, lap) {
+        offset.snapTo(0f)
+        if (!scrolls) return@LaunchedEffect
+        val millis = (lap / with(density) { MarqueeSpeed.toPx() } * 1_000).roundToInt()
+        delay(MarqueeFirstRestMs)
+        while (true) {
+            offset.animateTo(lap.toFloat(), tween(millis, easing = MarqueeEasing))
+            offset.snapTo(0f)
+            delay(MarqueeRestMs)
+        }
+    }
+    return this
+        .layout { measurable, constraints ->
+            val bleed = TextBleed.roundToPx()
+            // The whole text, never ellipsized, with room for its glow above, below and at the ends.
+            val placeable = measurable.measure(constraints.offset(vertical = bleed * 2).copy(minWidth = 0, maxWidth = Constraints.Infinity))
+            val text = placeable.width - bleed * 2
+            val width = text.coerceIn(constraints.minWidth, constraints.maxWidth)
+            box = width
+            overflow = (text - width).coerceAtLeast(0)
+            lap = text + maxOf(width / 3, MarqueeGap.roundToPx())
+            layout(width, (placeable.height - bleed * 2).coerceAtLeast(0)) { placeable.place(-bleed, -bleed) }
+        }
+        .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+        .drawWithContent {
+            if (overflow <= 0) {
                 drawContent()
-                val bleed = TextBleed.toPx()
-                val fade = bleed + TextEdgeFade.toPx()
-                drawRect(
-                    Brush.horizontalGradient(0f to Color.Transparent, 1f to Color.Black, startX = 0f, endX = bleed),
-                    size = Size(bleed, size.height),
-                    blendMode = BlendMode.DstIn,
-                )
-                drawRect(
-                    Brush.horizontalGradient(0f to Color.Black, 1f to Color.Transparent, startX = size.width - fade, endX = size.width),
-                    topLeft = Offset(size.width - fade, 0f),
-                    size = Size(fade, size.height),
-                    blendMode = BlendMode.DstIn,
-                )
+                return@drawWithContent
             }
-            .basicMarquee(initialDelayMillis = 900, repeatDelayMillis = 1_800)
-            .padding(TextBleed)
-    } else this
+            val bleed = TextBleed.toPx()
+            val visible = box + bleed * 2
+            clipRect(right = visible) {
+                translate(left = -offset.value) { this@drawWithContent.drawContent() }
+                translate(left = lap - offset.value) { this@drawWithContent.drawContent() }
+            }
+            val fade = bleed + TextEdgeFade.toPx()
+            drawRect(
+                Brush.horizontalGradient(0f to Color.Transparent, 1f to Color.Black, startX = 0f, endX = bleed),
+                size = Size(bleed, size.height),
+                blendMode = BlendMode.DstIn,
+            )
+            drawRect(
+                Brush.horizontalGradient(0f to Color.Black, 1f to Color.Transparent, startX = visible - fade, endX = visible),
+                topLeft = Offset(visible - fade, 0f),
+                size = Size(fade, size.height),
+                blendMode = BlendMode.DstIn,
+            )
+        }
+        .padding(TextBleed)
+}
 
 /** Room the scrolling title may draw beyond its box (covers Carbon's glow, ~7 dp). */
 private val TextBleed = 8.dp
 
 /** How far into the box the scrolling title's right end fades. */
 private val TextEdgeFade = 4.dp
+
+/** The scroll's average speed, per second (the peak is about half again). */
+private val MarqueeSpeed = 28.dp
+
+/** Space between the end of the text and its next copy (at least; a third of the row if wider). */
+private val MarqueeGap = 24.dp
+
+/** Rest before the first scroll, so the start of the title is read first, and between laps. */
+private const val MarqueeFirstRestMs = 1_400L
+private const val MarqueeRestMs = 2_000L
+
+/** Ease in and out (sine-like): the text gathers speed and settles, never starts at full speed. */
+private val MarqueeEasing = CubicBezierEasing(0.37f, 0f, 0.63f, 1f)
 
 
 /** Cover, title and quiet details at the top of an album, artist or playlist page. Not focusable. */

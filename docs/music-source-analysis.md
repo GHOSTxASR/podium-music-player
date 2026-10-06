@@ -57,7 +57,7 @@ Nothing in Podium's core assumes YouTube; the matcher-based design keeps provide
 
 ### 3.1 On This Device (`sources:local`) — Library
 - **Discovery:** `MediaStore.Audio.Media` with `IS_MUSIC=1`; incremental sync by `MediaStore.getGeneration()` (API 30+) / `DATE_MODIFIED` (29); `ContentObserver` triggers resync.
-- **Permissions:** `READ_MEDIA_AUDIO` (33+) / `READ_EXTERNAL_STORAGE` (29–32). Denied → the source shows a "Grant access" state; the app works without it.
+- **Permissions:** `READ_MEDIA_AUDIO` (33+) / `READ_EXTERNAL_STORAGE` (29–32). Asked once when Podium first switches on; denied → Home and Music offer "Allow music access" (the system settings page once Android stops asking, D-47); the app works without it.
 - **Metadata:** MediaStore columns + `MediaMetadataRetriever`/Media3 `MetadataRetriever` on demand for bit depth / sample rate / embedded artwork (cached in `artwork_cache` keyed by album).
 - **Format:** measured from the file (extractor `Format`: `sampleMimeType`, `sampleRate`, `pcmEncoding` → bit depth, `channelCount`; bitrate computed from size/duration for VBR files when the container lacks it).
 - **Lyrics:** embedded tags where Media3 exposes them; sidecar `.lrc` via an optional user-granted SAF folder (P1).

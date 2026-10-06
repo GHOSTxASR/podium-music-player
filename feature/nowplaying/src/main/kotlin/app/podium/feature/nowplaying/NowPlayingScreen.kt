@@ -871,6 +871,6 @@ internal fun errorCopy(error: PodiumError): String = when (error) {
     is PodiumError.NotFound -> "This song isn't available right now. Skipping to the next one."
     is PodiumError.Network, PodiumError.Offline -> "Can't reach the music source. Check your connection."
     is PodiumError.AuthRequired -> "Sign in to this source again to keep listening."
-    is PodiumError.PermissionRequired -> "Allow access to music on this phone to play this song."
+    is PodiumError.PermissionRequired -> "Allow music access from Home to play this song."
     else -> "Something went wrong playing this song."
 }

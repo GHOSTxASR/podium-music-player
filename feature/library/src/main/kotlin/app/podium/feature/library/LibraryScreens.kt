@@ -69,12 +69,16 @@ fun HomeScreen(
     /** ONLINE (D-34), when an online source is connected; [onlineArtwork] previews it. */
     onOnline: (() -> Unit)? = null,
     onlineArtwork: List<String> = emptyList(),
+    /** A source that needs the listener (music access) offers its action first, as in Music. */
+    onSourceAction: (CapabilityAction) -> Unit = {},
 ) {
     val songs by repository.songs.collectAsStateWithLifecycle()
+    val actions by repository.pendingActions.collectAsStateWithLifecycle()
     val tracks = (songs as? LibraryState.Ready)?.tracks.orEmpty()
     val art = remember(tracks) { LibraryIndex.artwork(tracks) }
     val shuffled = remember(art) { art.shuffled() }
     val entries = buildList {
+        actions.forEach { add(MenuEntry(it.note, MenuPreview.None, { onSourceAction(it.action) }, leading = PodiumSymbol.Lock, chevron = false)) }
         add(MenuEntry("Music", MenuPreview.Artwork(art), onMusic))
         if (onOnline != null) add(MenuEntry("Online", if (onlineArtwork.isEmpty()) MenuPreview.None else MenuPreview.Carousel(onlineArtwork), onOnline))
         add(MenuEntry("Shuffle songs", MenuPreview.Carousel(shuffled), onShuffleSongs, chevron = false))
@@ -129,6 +133,7 @@ fun SongsScreen(
     onAddToQueue: (Track) -> Unit,
 ) {
     val state by repository.songs.collectAsStateWithLifecycle()
+    val actions by repository.pendingActions.collectAsStateWithLifecycle()
     val insets = LocalScreenInsets.current
     val overlay = LocalOverlayHost.current
     val tracks = (state as? LibraryState.Ready)?.tracks.orEmpty()
@@ -150,7 +155,7 @@ fun SongsScreen(
     when {
         state is LibraryState.Loading -> LoadingScreen("Reading your music")
         tracks.isEmpty() -> Box(Modifier.fillMaxSize().padding(top = insets.top, bottom = insets.bottom), contentAlignment = Alignment.Center) {
-            MessageState(PodiumSymbol.Note, "No songs yet", "Allow access to music on this phone from Music, or add a source.")
+            MessageState(PodiumSymbol.Note, "No songs yet", noMusicMessage(actions.isNotEmpty()))
         }
         else -> FocusList(
             items = tracks,

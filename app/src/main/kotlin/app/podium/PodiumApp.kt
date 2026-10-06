@@ -628,6 +628,7 @@ private fun ScreenContent(
                 onSettings = { navigator.push(Dest.Settings) },
                 onOnline = if (onlineStatus != null) ({ navigator.push(Dest.Online(OnlinePlace.Menu)) }) else null,
                 onlineArtwork = onlineRecent.mapNotNull { it.artwork?.uri }.distinct().take(10),
+                onSourceAction = onSourceAction,
             )
         }
         Dest.Music -> MusicScreen(

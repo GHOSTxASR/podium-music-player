@@ -98,7 +98,19 @@ private fun EmptyState(symbol: PodiumSymbol, title: String, message: String) {
     }
 }
 
-private const val NoMusic = "Allow access to music on this phone from Music, or add a source."
+/**
+ * Why a library list is empty, with the next step: music access is missing, or there's no music
+ * in the folders Podium reads.
+ */
+internal fun noMusicMessage(accessMissing: Boolean): String =
+    if (accessMissing) "Allow music access from Home, and the music on this phone appears here."
+    else "No music found on this phone. Add some songs, or pick other folders in Settings."
+
+@Composable
+private fun noMusic(repository: LibraryRepository): String {
+    val actions by repository.pendingActions.collectAsStateWithLifecycle()
+    return noMusicMessage(actions.isNotEmpty())
+}
 
 /** Long-press menu for a song, shared by every song list. */
 @Composable
@@ -118,7 +130,7 @@ fun AlbumsScreen(repository: LibraryRepository, onOpen: (AlbumId) -> Unit) {
     ListInputEffect(focus, onActivate = { albums.getOrNull(it)?.let { a -> onOpen(a.id) } })
     when {
         loaded == null -> LoadingScreen()
-        albums.isEmpty() -> EmptyState(PodiumSymbol.Album, "No albums yet", NoMusic)
+        albums.isEmpty() -> EmptyState(PodiumSymbol.Album, "No albums yet", noMusic(repository))
         else -> FocusList(
             items = albums,
             state = focus,
@@ -198,7 +210,7 @@ fun ArtistsScreen(repository: LibraryRepository, onOpen: (ArtistId) -> Unit) {
     ListInputEffect(focus, onActivate = { artists.getOrNull(it)?.let { a -> onOpen(a.id) } })
     when {
         loaded == null -> LoadingScreen()
-        artists.isEmpty() -> EmptyState(PodiumSymbol.Person, "No artists yet", NoMusic)
+        artists.isEmpty() -> EmptyState(PodiumSymbol.Person, "No artists yet", noMusic(repository))
         else -> FocusList(
             items = artists,
             state = focus,
@@ -334,7 +346,7 @@ fun CoverFlowScreen(repository: LibraryRepository, onOpen: (AlbumId) -> Unit) {
     ListInputEffect(focus, onActivate = { albums.getOrNull(it)?.let { a -> onOpen(a.id) } })
     if (loading) return
     if (albums.isEmpty()) {
-        EmptyState(PodiumSymbol.Album, "No albums yet", NoMusic)
+        EmptyState(PodiumSymbol.Album, "No albums yet", noMusic(repository))
         return
     }
 

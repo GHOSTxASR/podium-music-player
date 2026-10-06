@@ -29,7 +29,7 @@ On the device:
 | 1.4 | Spin fast to the top | the list jumps, never lags; the first row ends flush under the title, the top end crisp (nothing above) |
 | 1.5 | A settings picker with 2–3 rows | rows start at the top, crisp, the lens on the right row |
 | 1.6 | Drag the list with a finger, then turn the Wheel | the lens rides with its row while dragging and hides under the title rather than clamping; the next detent snaps focus back into view |
-| 1.7 | Focus a long title on Carbon | the glow is soft all round (no rectangle), the title fades at the right, scrolls after ~1 s |
+| 1.7 | Focus a long title on Carbon | the glow is soft all round (no rectangle), the title fades at the right; it stays at its start for about a second and a half, then eases into the scroll (never sits mid-row and jumps) (D-46) |
 | 1.8 | Long titles with descenders and accents (e.g. "Björk — Jóga", "gypsy"), CJK and Cyrillic titles | nothing cut at the top, bottom or sides |
 | 1.9 | Settings ▸ Accessibility font size at 200 % | rows grow; first/last flush; nothing clipped |
 | 1.10 | Rotate to landscape | same behaviour in the landscape layout |
@@ -127,3 +127,17 @@ Automated (`LoadingScreenTest`): the pinwheel and word in each theme; nothing fo
 | 5.3 | A fast answer (cached) | no flash of the loading screen |
 | 5.4 | First open of the local library | "Reading your music" |
 | 5.5 | Reduced motion | the pinwheel stands still; the word remains |
+
+## 6. Music access (D-47)
+
+Automated (`PermissionAsksTest`, `AppShellTest`): asking once, refusals Android will and won't ask
+about again; without access Home leads with "Allow music access" and the row holds still.
+
+| # | Step | Expect |
+|---|---|---|
+| 6.1 | Fresh install (or Settings ▸ Apps ▸ Podium ▸ Storage ▸ Clear storage); open Podium | after the startup screen, Android asks to allow access to music and audio, once |
+| 6.2 | Allow | Music fills with the phone's songs; Home's "Allow music access" row disappears |
+| 6.3 | Clear storage again; deny | Home and Music lead with "Allow music access"; Albums says how to allow it |
+| 6.4 | Press "Allow music access"; deny again | the question showed again; after this Android won't ask any more |
+| 6.5 | Press "Allow music access" | Podium's page in the system settings opens; Permissions ▸ Music and audio ▸ Allow; back to Podium: the library fills |
+| 6.6 | Revoke access in system settings, return | the library hides the phone's songs and the row comes back |

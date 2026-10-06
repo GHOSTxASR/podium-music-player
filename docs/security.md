@@ -40,7 +40,7 @@
 | `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_MEDIA_PLAYBACK` | Background playback | install-time |
 | `FOREGROUND_SERVICE_DATA_SYNC` | Downloads on API 29–33 | install-time |
 | `RUN_USER_INITIATED_JOBS` | Downloads on API 34+ | install-time |
-| `READ_MEDIA_AUDIO` (33+) / `READ_EXTERNAL_STORAGE` (≤ 32) | On This Device source | When the user enables that source |
+| `READ_MEDIA_AUDIO` (33+) / `READ_EXTERNAL_STORAGE` (≤ 32) | On This Device source | Once by itself when Podium first switches on without it; then from "Allow music access" on Home or Music. If Android stops showing the question, that row opens Podium's page in the system settings (D-47). |
 | `POST_NOTIFICATIONS` (33+) | Download progress/completion | First download, with rationale |
 | `WAKE_LOCK` | Media3 wake mode | install-time |
 No location, contacts, microphone, or phone permissions.
