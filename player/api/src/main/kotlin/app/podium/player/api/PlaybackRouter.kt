@@ -52,5 +52,17 @@ class PlaybackRouter(engines: List<PlaybackEngine>) {
         return next
     }
 
+    /**
+     * Hand playback to the engine for [route] without preparing a target there (an engine that keeps
+     * its own queue, like Podium's own player): the other engine is stopped first, as always.
+     */
+    fun handOver(route: PlaybackRoute): PlaybackEngine {
+        val next = engines[route] ?: throw UnsupportedRouteException(route)
+        val previous = active
+        if (previous != null && previous !== next) previous.stop()
+        active = next
+        return next
+    }
+
     val controls: ControlSet get() = active?.controls ?: ControlSet()
 }

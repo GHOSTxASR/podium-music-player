@@ -105,8 +105,36 @@ data class PlaybackSnapshot(
     val owner: PlaybackOwner = PlaybackOwner.Podium,
     val controls: ControlSet = ControlSet(),
     val quality: QualityReport = QualityReport(),
+    /** Set while another app plays (owner is [PlaybackOwner.Remote]): what Podium can do about it. */
+    val remote: RemoteStatus? = null,
+    /** The local queue is still there, paused, while another owner plays: "Back to my music" can resume it. */
+    val canResumeLocal: Boolean = false,
 ) {
     val isActive: Boolean get() = item != null
+}
+
+/** Remote playback as the UI shows it, provider-neutral (YOUTUBE_MUSIC_ARCHITECTURE.md §8.4). */
+data class RemoteStatus(
+    /** Podium sees and controls the app's playback; false = it can only open the app. */
+    val controllable: Boolean,
+    /** Why it isn't controllable or didn't start, when that's the case. */
+    val problem: RemoteProblem? = null,
+    /** Podium is waiting for the app to start the song. */
+    val starting: Boolean = false,
+)
+
+enum class RemoteProblem {
+    /** Podium may not see the app's playback: the listener can allow it in Settings. */
+    NEEDS_ACCESS,
+
+    /** The app that plays this music isn't installed. */
+    NO_APP,
+
+    /** The app didn't start the song in time. */
+    DID_NOT_START,
+
+    /** The app's playback ended or it closed. */
+    ENDED,
 }
 
 /** One row of Up Next as the UI sees it. */
@@ -125,6 +153,12 @@ data class QueueView(
     val entries: List<QueueEntry> = emptyList(),
     val currentIndex: Int = -1,
     val contextLabel: String? = null,
+    /**
+     * Another app owns this queue (remote playback): Podium shows what it reports and can't edit it.
+     * When the app doesn't report it at all, [entries] is empty and [hidden] is true.
+     */
+    val readOnly: Boolean = false,
+    val hidden: Boolean = false,
 ) {
     val upNext: List<QueueEntry> get() = if (currentIndex < 0) entries else entries.drop(currentIndex + 1)
     /** Contiguous runs of the same origin, in play order. */

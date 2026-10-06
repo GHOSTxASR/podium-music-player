@@ -25,10 +25,9 @@ include(":player:api")
 
 // Android modules
 include(":player:service")
+include(":player:remote")
 include(":sources:test")
 include(":sources:local")
-include(":sources:audius")
-include(":sources:subsonic")
 include(":sources:youtubemusic")
 include(":core:database")
 include(":core:interaction")

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application>
+        <!-- Remote playback (YOUTUBE_MUSIC_ARCHITECTURE.md §8): the system binds this listener only
+             after the listener grants Podium notification access. Podium uses that grant for one
+             thing — seeing and controlling the music app's media session. The service reads no
+             notifications at all. -->
+        <service
+            android:name="app.podium.player.remote.MediaSessionAccessService"
+            android:exported="true"
+            android:label="Podium media controls"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+    </application>
+</manifest>
