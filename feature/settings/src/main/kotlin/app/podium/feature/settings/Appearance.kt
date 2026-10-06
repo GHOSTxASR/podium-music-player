@@ -29,7 +29,6 @@ import app.podium.core.designsystem.component.MenuRow
 import app.podium.core.designsystem.component.MessageState
 import app.podium.core.designsystem.component.ProgressBar
 import app.podium.core.designsystem.shell.DeviceAppearance
-import app.podium.core.designsystem.shell.formatHex
 import app.podium.core.designsystem.symbol.PodiumSymbol
 import app.podium.core.designsystem.theme.DisplayBackground
 import app.podium.core.designsystem.theme.LocalPodiumType
@@ -134,16 +133,11 @@ fun AppearanceScreen(repository: DeviceSettingsRepository, onDeviceBody: () -> U
         modifier = Modifier.fillMaxSize(),
     ) { row, _, focused ->
         when (row) {
-            AppearanceRow.DeviceBody -> MenuRow("Device body", focused, value = bodySummary(appearance))
-            AppearanceRow.VirtualDisplay -> MenuRow("Virtual display", focused, value = "${appearance.display.label}, ${appearance.screen.font.label}")
+            // The glimpse beyond the arc shows each half; the paper column is too narrow for summaries.
+            AppearanceRow.DeviceBody -> MenuRow("Device body", focused)
+            AppearanceRow.VirtualDisplay -> MenuRow("Virtual display", focused)
         }
     }
-}
-
-private fun bodySummary(a: DeviceAppearance): String = when {
-    a.display.isIndustrial -> if (a.glitter.enabled) "Matte black, glitter" else "Matte black"
-    a.glitter.enabled && !a.isGlass -> "${a.preset.label}, glitter"
-    else -> a.preset.label
 }
 
 private enum class BodyRow { Finish, CustomColor, Grain, Glitter, GlitterAmount, GlitterDensity, GlitterSize, GlitterOpacity, GlitterAnimation }
@@ -203,14 +197,14 @@ fun DeviceBodyScreen(
             BodyRow.Finish -> MenuRow(
                 "Finish",
                 focused,
-                value = if (industrial) "Matte black with ${appearance.display.label}" else appearance.preset.label,
+                // Carbon, Bone and Custom come in matte black hardware (D-29).
+                value = if (industrial) "Matte black" else appearance.preset.label,
                 enabled = !industrial,
                 showChevron = !industrial,
             )
             BodyRow.CustomColor -> MenuRow(
                 "Custom color",
                 focused,
-                value = formatHex(appearance.customArgb),
                 leadingContent = { Swatch(Color(appearance.customArgb)) },
                 enabled = !industrial,
                 showChevron = !industrial,
@@ -238,7 +232,7 @@ fun DeviceBodyScreen(
     }
 }
 
-private enum class DisplayRow { Theme, Font, Background, BackgroundColor, BackgroundOpacity, TextContrast }
+private enum class DisplayRow { Theme, Font, Background, BackgroundColor, BackgroundOpacity, NoBackground, TextContrast }
 
 /** Settings ▸ Appearance ▸ Virtual display: theme, font, background and contrast. */
 @Composable
@@ -253,13 +247,20 @@ fun VirtualDisplayScreen(
 ) {
     val appearance by repository.appearance.collectAsStateWithLifecycle()
     val haptics = rememberPodiumHaptics()
-    val rows = DisplayRow.entries
     val focus = rememberFocusListState("virtual-display")
     val screen = appearance.screen
-    // Carbon and Bone keep their own display (D-29).
+    // Carbon and Bone keep their own display (D-29): one row says so instead of three that can't be used.
     val ownDisplay = appearance.display == app.podium.core.designsystem.theme.DisplayTheme.CARBON ||
         appearance.display == app.podium.core.designsystem.theme.DisplayTheme.BONE
     val shown = screen.backgroundFor(appearance.display)
+    val rows = DisplayRow.entries.filter { row ->
+        when (row) {
+            DisplayRow.Background, DisplayRow.BackgroundColor -> !ownDisplay
+            DisplayRow.BackgroundOpacity -> !ownDisplay && shown == DisplayBackground.IMAGE
+            DisplayRow.NoBackground -> ownDisplay
+            else -> true
+        }
+    }
     val canvas = PodiumTheme.colors.canvas
     val activate: (Int) -> Unit = { index ->
         when (rows[index]) {
@@ -268,6 +269,7 @@ fun VirtualDisplayScreen(
             DisplayRow.Background -> if (ownDisplay) haptics.reject() else onBackground()
             DisplayRow.BackgroundColor -> if (ownDisplay) haptics.reject() else onBackgroundColor()
             DisplayRow.BackgroundOpacity -> if (AppearanceLevel.BackgroundOpacity.unavailable(appearance) != null) haptics.reject() else onLevel(AppearanceLevel.BackgroundOpacity)
+            DisplayRow.NoBackground -> haptics.reject()
             DisplayRow.TextContrast -> {
                 haptics.confirm()
                 val next = if (screen.contrast == TextContrast.STANDARD) TextContrast.HIGH else TextContrast.STANDARD
@@ -290,34 +292,18 @@ fun VirtualDisplayScreen(
         },
         modifier = Modifier.fillMaxSize(),
     ) { row, _, focused ->
-        val notHere = "Not with ${appearance.display.label}"
         when (row) {
             DisplayRow.Theme -> MenuRow("Theme", focused, value = appearance.display.label)
             DisplayRow.Font -> MenuRow("Font", focused, value = screen.font.label)
             DisplayRow.Background -> MenuRow(
                 "Background",
                 focused,
-                value = when {
-                    ownDisplay -> notHere
-                    shown == DisplayBackground.IMAGE && imageStatus == BackgroundImageStatus.UNAVAILABLE -> "Picture unavailable"
-                    else -> shown.label
-                },
-                enabled = !ownDisplay,
-                showChevron = !ownDisplay,
+                value = if (shown == DisplayBackground.IMAGE && imageStatus == BackgroundImageStatus.UNAVAILABLE) "Unavailable" else shown.label,
             )
-            DisplayRow.BackgroundColor -> MenuRow(
-                "Background color",
-                focused,
-                value = if (ownDisplay) notHere else formatHex(screen.solidArgb),
-                leadingContent = if (ownDisplay) null else { { Swatch(Color(screen.solidArgb)) } },
-                enabled = !ownDisplay,
-                showChevron = !ownDisplay,
-            )
-            DisplayRow.BackgroundOpacity -> {
-                val adjustable = AppearanceLevel.BackgroundOpacity.unavailable(appearance) == null
-                MenuRow("Background opacity", focused, value = if (adjustable) percent(screen.imageOpacity) else "With a picture", enabled = adjustable, showChevron = adjustable)
-            }
-            DisplayRow.TextContrast -> MenuRow("Text contrast", focused, value = screen.contrast.label, showChevron = false)
+            DisplayRow.BackgroundColor -> MenuRow("Background color", focused, leadingContent = { Swatch(Color(screen.solidArgb)) })
+            DisplayRow.BackgroundOpacity -> MenuRow("Background opacity", focused, value = percent(screen.imageOpacity))
+            DisplayRow.NoBackground -> MenuRow("Backgrounds come with Glass and Custom", focused, enabled = false, showChevron = false)
+            DisplayRow.TextContrast -> MenuRow("Contrast", focused, value = screen.contrast.label, showChevron = false)
         }
     }
 }
@@ -412,11 +398,10 @@ fun BackgroundScreen(repository: DeviceSettingsRepository, imageStatus: Backgrou
         modifier = Modifier.fillMaxSize(),
     ) { row, _, focused ->
         when (row) {
-            BackgroundRow.None -> MenuRow("None", focused, value = "The theme's own", selected = screen.background == DisplayBackground.NONE, showChevron = false)
+            BackgroundRow.None -> MenuRow("None", focused, selected = screen.background == DisplayBackground.NONE, showChevron = false)
             BackgroundRow.Solid -> MenuRow(
                 "Solid",
                 focused,
-                value = formatHex(screen.solidArgb),
                 leadingContent = { Swatch(Color(screen.solidArgb)) },
                 selected = screen.background == DisplayBackground.SOLID,
                 showChevron = false,
@@ -424,11 +409,7 @@ fun BackgroundScreen(repository: DeviceSettingsRepository, imageStatus: Backgrou
             BackgroundRow.Image -> MenuRow(
                 if (hasImage) "Picture" else "Choose a picture",
                 focused,
-                value = when {
-                    !hasImage -> null
-                    imageStatus == BackgroundImageStatus.UNAVAILABLE -> "Unavailable, showing the solid color"
-                    else -> null
-                },
+                value = if (hasImage && imageStatus == BackgroundImageStatus.UNAVAILABLE) "Unavailable" else null,
                 selected = hasImage && screen.background == DisplayBackground.IMAGE,
                 showChevron = !hasImage,
             )
@@ -498,7 +479,13 @@ fun LevelScreen(repository: DeviceSettingsRepository, level: AppearanceLevel) {
         Spacer(Modifier.height(Spacing.l))
         ProgressBar({ value }, running = false, emphasized = true)
         Spacer(Modifier.height(Spacing.l))
-        PodiumText("Turn the wheel to adjust. Press the center to keep it.", type.footnote, colors.labelSecondary)
+        PodiumText(
+            "Turn the wheel to adjust. Press the center to keep it.",
+            type.footnote,
+            colors.labelSecondary,
+            maxLines = 2,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+        )
     }
 }
 

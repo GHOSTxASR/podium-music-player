@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -26,10 +25,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.offset
 import app.podium.core.designsystem.artwork.ArtworkImage
@@ -102,11 +103,11 @@ fun MenuRow(
             leadingContent()
             Spacer(Modifier.width(Spacing.m))
         }
-        PodiumText(label, illuminated(if (focused) type.rowFocused else type.row, focused), primary, Modifier.weight(1f).scrollsWhenFocused(focused))
-        if (value != null) {
-            // The label keeps its room; a long value gives way first.
-            PodiumText(value, type.footnote, secondary, Modifier.padding(start = Spacing.s).widthIn(max = 132.dp))
-        }
+        LabelAndValue(
+            label = { PodiumText(label, illuminated(if (focused) type.rowFocused else type.row, focused), primary, Modifier.scrollsWhenFocused(focused)) },
+            value = value?.let { v -> { PodiumText(v, type.footnote, secondary) } },
+            modifier = Modifier.weight(1f),
+        )
         if (selected) {
             Spacer(Modifier.width(Spacing.s))
             Symbol(PodiumSymbol.Check, if (focused) primary else colors.highlightText, size = 20.dp, weight = 600)
@@ -121,6 +122,51 @@ fun MenuRow(
         }
     }
 }
+
+/**
+ * A row's label and its value, side by side. The label keeps its room and a long value gives way
+ * first: the value gets what the label leaves (up to [ValueMax]) and ellipsizes; only when the
+ * label alone would crowd the value below [ValueMin] does the label give way too. (A plain Row
+ * measures the fixed-width value first, which squeezed labels to "Vi…" in the narrow paper column.)
+ */
+@Composable
+private fun LabelAndValue(label: @Composable () -> Unit, value: (@Composable () -> Unit)?, modifier: Modifier = Modifier) {
+    Layout(content = { label(); value?.invoke() }, modifier = modifier) { measurables, constraints ->
+        val width = constraints.maxWidth
+        val labelM = measurables[0]
+        val valueM = measurables.getOrNull(1)
+        if (valueM == null || width == Constraints.Infinity) {
+            val l = labelM.measure(constraints.copy(minWidth = 0))
+            val v = valueM?.measure(Constraints())
+            val h = maxOf(l.height, v?.height ?: 0)
+            return@Layout layout(if (width == Constraints.Infinity) l.width + (v?.width ?: 0) else width, h) {
+                l.placeRelative(0, (h - l.height) / 2)
+                v?.placeRelative(l.width, (h - v.height) / 2)
+            }
+        }
+        val gap = Spacing.s.roundToPx()
+        val valueWant = minOf(valueM.maxIntrinsicWidth(constraints.maxHeight), ValueMax.roundToPx())
+        val labelWant = labelM.maxIntrinsicWidth(constraints.maxHeight)
+        val valueFloor = minOf(valueWant, ValueMin.roundToPx())
+        val labelWidth = minOf(labelWant, (width - gap - valueFloor).coerceAtLeast(0))
+        val valueWidth = minOf(valueWant, (width - gap - labelWidth).coerceAtLeast(0))
+        // The label takes all the room the value doesn't need, so a focused title can scroll in it.
+        val labelBox = (width - (if (valueWidth > 0) gap + valueWidth else 0)).coerceAtLeast(0)
+        val l = labelM.measure(Constraints.fixedWidth(labelBox).copy(minHeight = 0, maxHeight = constraints.maxHeight))
+        val v = valueM.measure(Constraints(maxWidth = valueWidth, maxHeight = constraints.maxHeight))
+        val h = maxOf(l.height, v.height).coerceIn(constraints.minHeight, constraints.maxHeight)
+        layout(width, h) {
+            l.placeRelative(0, (h - l.height) / 2)
+            if (valueWidth > 0) v.placeRelative(width - v.width, (h - v.height) / 2)
+        }
+    }
+}
+
+/** A row's value never takes more than this… */
+private val ValueMax = 132.dp
+
+/** …and keeps at least this much (or all it needs, if less) before the label gives way. */
+private val ValueMin = 56.dp
 
 /** A track row: artwork, title over artist, trailing duration. */
 @Composable

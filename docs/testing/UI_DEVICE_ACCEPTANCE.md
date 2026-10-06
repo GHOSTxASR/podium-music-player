@@ -56,10 +56,10 @@ On the device:
 | 2.6 | Pixel and Mono with long titles, CJK, Cyrillic and Greek titles | uncovered strings in Inter, whole; nothing clipped |
 | 2.7 | Theme ▸ Custom; Background color: walk the hue all the way round | text readable at every colour |
 | 2.8 | Background ▸ Choose a picture (system picker opens; no permission prompt) | the picture shows under a veil; text readable |
-| 2.9 | Background opacity 0 → 100 % | the picture strengthens; text stays readable; High contrast tones it down |
+| 2.9 | Background opacity 0 → 100 % | the picture strengthens; text stays readable; Contrast: High tones it down |
 | 2.10 | Force stop, reopen; reboot, reopen | every choice is kept, the picture still shows |
 | 2.11 | Delete the picture in the gallery, reopen Podium | the background colour shows; Settings says the picture is unavailable |
-| 2.12 | Theme ▸ Carbon with a picture chosen | Carbon's black display; Background rows say "Not with Carbon" |
+| 2.12 | Theme ▸ Carbon with a picture chosen | Carbon's black display; Virtual display shows "Backgrounds come with Glass and Custom" instead of the background rows |
 | 2.13 | TalkBack through Appearance | every row and value is read |
 
 ## 3. Lyrics (D-39)

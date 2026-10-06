@@ -81,8 +81,8 @@ font or a colour on its own.
   decodes it off the main thread, downsampled to at most 1600 px on its long edge, and measures its
   average luminance (16 × 16 sample).
 - **A picture that disappears** (deleted, access revoked, unreadable): the display shows the
-  background colour instead, nothing crashes, and Settings says "Picture unavailable" (Virtual
-  display) and "Unavailable, showing the solid color" (Background). Nothing is logged except the
+  background colour instead, nothing crashes, and Settings shows "Unavailable" for the background
+  (Virtual display) and for the picture (Background). Nothing is logged except the
   exception class.
 - **Drawing:** one bitmap draw per frame of the display (cropped to fill, centred), then the veil.
   Glass's artwork atmosphere is not drawn under your own background.
@@ -101,7 +101,7 @@ font or a colour on its own.
   veil; the veil (22 %, or 40 % with High contrast) always tones the picture down; quieter inks stay
   nearer the primary; text gets a soft halo of the display's colour (`PodiumText`, only while a
   picture shows).
-- **Text contrast: High** brings secondary and tertiary text toward primary, strengthens
+- **Contrast: High** (Settings ▸ Virtual display ▸ Contrast) brings secondary and tertiary text toward primary, strengthens
   separators, and keeps 60 % of the picture's opacity.
 
 ## 6. Glitter
@@ -149,12 +149,14 @@ Settings
         ├── Font ▸ (Classic, Clean, Industrial, Mono, Pixel, Condensed)
         ├── Background ▸ (None, Solid, Picture / Choose a picture, Choose another picture)
         ├── Background color ▸ (hex or Wheel hue walk)
-        ├── Background opacity ▸ (level; with a picture)
-        └── Text contrast (Standard / High)
+        ├── Background opacity ▸ (level; only with a picture)
+        └── Contrast (Standard / High)
 ```
 
-Rows that don't apply say why in their value ("Solid finishes only", "Not with Carbon", "With a
-picture") and reject with a haptic. Levels are edited by `LevelScreen` (Wheel ±, live preview,
+Rows that don't apply say why ("Solid finishes only"; on Carbon and Bone one row, "Backgrounds come
+with Glass and Custom", replaces the background rows; Background opacity appears only with a
+picture) and reject with a haptic. The paper column is narrow, so rows carry no redundant values
+(a swatch instead of a hex code), and a row's label keeps its room before its value (`MenuRow`). Levels are edited by `LevelScreen` (Wheel ±, live preview,
 Center keeps) and explain when they can't be adjusted yet.
 
 ## 9. Tests
