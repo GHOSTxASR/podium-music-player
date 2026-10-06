@@ -83,6 +83,24 @@ class UserStoresTest {
     }
 
     @Test
+    fun `a mixed-source queue comes back with every song's own source, preferred source and fallback`() = runTest {
+        val a = song("Alpha", source = app.podium.core.model.SourceId("audius"), key = "1")
+        val b = song("Bravo", source = app.podium.core.model.SourceId("other"), key = "1") // same provider key, other source
+        val c = song("Charlie", source = app.podium.core.model.SourceId("audius"), key = "3")
+        val store = DatabaseQueueStore(db)
+        store.save(QueueState(listOf(a, b, c).mapIndexed { i, t -> QueueItem(QueueUid("q$i"), t, QueueOrigin.CONTEXT, originalOrder = i) }, 1), 0)
+        val restored = assertNotNull(store.load())
+        assertEquals(listOf(a.id, b.id, c.id), restored.items.map { it.track.id })
+        // What the restored items are rebuilt with: each one's own source, EXACT-only fallback.
+        val queue = app.podium.player.api.QueueManager()
+        queue.restore(restored)
+        val items = queue.state.value.items
+        assertEquals(listOf("audius", "other", "audius"), items.map { it.preferredSource.value })
+        assertTrue(items.all { it.fallbackPolicy == app.podium.sources.api.resolve.FallbackPolicy.EXACT_ONLY })
+        assertTrue(items.all { it.selection == null }, "resolutions are never saved: each play resolves afresh")
+    }
+
+    @Test
     fun `saving the queue never overwrites the library's copy of a song`() = runTest {
         val library = LibraryStore(db)
         library.sync(Local, "This phone", listOf(song("Alpha")), emptyMap())

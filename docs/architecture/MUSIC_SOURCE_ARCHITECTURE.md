@@ -106,7 +106,7 @@ The UI renders from this; e.g., the Download item shows disabled with the provid
 ## 4. Canonical domain model (`core:model`)
 
 ```kotlin
-@JvmInline value class TrackId(val value: String)        // "<sourceId>:<opaque provider track key>"
+@JvmInline value class TrackId(val value: String)        // "<sourceId>|<opaque provider track key>" (separator `|`, as in code)
 
 data class Track(
     val id: TrackId,
@@ -281,10 +281,10 @@ Independent Podium design (ADR-014). Lexicon derived from MusicBrainz's publishe
 | Use | Minimum tier | Behaviour |
 |---|---|---|
 | Automatic playback fallback (§8.1 step 3/5) | `EXACT` | Silent switch **of source** only, always surfaced as "Playing from Home server" |
-| Same, with setting "Allow close matches" | `STRONG` | Surfaced; first time per source pair asks for confirmation |
-| Cross-source duplicate grouping in lists/search | `STRONG` | One row "Available from 2 sources" |
+| ~~Same, with setting "Allow close matches"~~ | — | **Not built.** D-17 (revised): automatic fallback is EXACT only, with no setting |
+| Cross-source duplicate grouping in lists/search | `EXACT` (D-35; stricter than the original `STRONG`) | One row per recording; every member is a safe fallback for every other. Never names the sources |
 | Playlist import / migration | `STRONG` auto; `PROBABLE` to review list | User confirms probable ones |
-| Autoplay de-duplication | `STRONG` | Avoid re-suggesting the same recording from another source |
+| Autoplay de-duplication | `EXACT` (as implemented) | Avoid re-suggesting the same recording from another source |
 | Never | `PROBABLE` or `AMBIGUOUS` for automatic playback | — |
 
 ### 9.2 Normalization (`TrackNormalizer`)
@@ -340,8 +340,28 @@ Debug builds show the evidence in Song info; decisions persist in `track_equival
 ### 11.1 Online (D-34, implemented)
 - `SourceDescriptor.environment` (`MusicEnvironment.LOCAL` / `ONLINE`, defaulting from `Basis`) places every source in one of Podium's two worlds. Features branch on environment and capabilities — never on provider identity.
 - `DiscoveryFacet` (shelves with a first page, `shelf(id, offset, limit)`, `genres()`, `genre(name, offset, limit)`), `RecommendationFacet` (`related(seeds, limit, exclude)`, `artistRadio`, `relatedArtists`), `CatalogFacet.playlist(id)`, paged `SearchQuery(offset, kinds)` and `SearchResults.playlists`, `PlaylistSummary`/`PlaylistDetail`, `PlaylistId` in `core:model`.
-- `player:api`: `RecommendationEngine` (provider-neutral; `SourceRecommendationEngine` asks only the seeds' own source), `AutoplayEngine` (when and what to append), `AutoplaySettings`, `RecommendationStrategy`. `QueueOrigin.RADIO`.
+- `player:api`: `RecommendationEngine` (provider-neutral; see §11.2 for how sources are asked), `AutoplayEngine` (when and what to append), `AutoplaySettings`, `RecommendationStrategy`. `QueueOrigin.RADIO`.
 - First online source: `sources:audius` (`AudiusMusicSource`, pure Kotlin, HttpURLConnection + kotlinx.serialization); adapter-private data (genre, artist id) rides in `SourceRef.providerData`.
+
+### 11.2 Online is multi-source (D-35, implemented)
+ONLINE is every enabled online source at once; the listener sees music, never sources. Adding a source means implementing the facets in its own `sources:<provider>` module and registering it in `AppGraph`. No screen changes.
+
+| Piece | Where | What it does |
+|---|---|---|
+| **Registry** (the only list of sources) | `SourceRegistry` | Registration, enabled state, priority, capabilities, environment (`ordered(environment)`, `registered(environment)`), health. Re-enabling a source clears its breaker. Nothing else keeps a list of sources |
+| **Choices** | `SourceSettings` + `SourcePreferencesStore` (app: `SharedPrefsSourcePreferences`) | The one way enablement and priority change. Stores only explicit choices, so a source added later keeps its default. Applied after registration; survives restarts and process death |
+| **Identity** | `TrackId` / `ArtistId` / `AlbumId` / `PlaylistId` = `<sourceId>\|<key>`; `ScopedKey` for shelves | The same provider key on two sources never collides. Navigation, likes, history, playlists and the queue all carry these ids |
+| **Fan-out** | `aggregate/SourceFanOut` | Asks sources concurrently, each with a timeout (8 s). Calls run detached from the caller: a source stuck in blocking I/O is abandoned, not awaited. Cancelling the collector cancels them. Skips sources whose breaker is open, or that are rate-limited or rejected (asks anyway if every breaker is open). Records health: an answer or a miss is healthy; network/server failures and timeouts count; offline counts against no source; "not authorised" is `AUTH_FAILURE` only for a source that signs in |
+| **Grouping** ("one song, many sources") | `aggregate/TrackGrouper`, `TrackGroup` | One row per recording: **EXACT only** (the matcher's rules for versions, explicitness, covers and length), one copy per source, and ambiguity keeps rows apart. Order is deterministic: results interleaved by rank, sources by priority. The row shows the most preferred source's playable copy; every copy is kept (`alternates`) |
+| **Catalogue** | `aggregate/MultiSourceCatalog` (per environment) | **Search** is progressive: it emits as sources answer, and the final view is complete. It fails only when no source could answer. **Shelves** with the same name merge; the shelf id names every member source. **Genres** appear once; a genre asks only the sources that have it. **Paging**: each source continues from its own place, and a later copy of a shown song joins its row. **Artists, albums and playlists** go to their own source by id, never "the current one"; a disabled source's item says so |
+| **Equivalence** | `resolve/Equivalence.kt` (`InMemoryEquivalenceStore`, bounded) | Groups are remembered as EXACT decisions, with the copies themselves. The user's rejections are permanent |
+| **Resolution** | `StreamResolver` | Same pipeline. In the EXACT-fallback step, a copy already known to be EXACT on a source is used directly; otherwise that source is searched and the matcher decides. A miss moves on and never trips a breaker; failures count. No STRONG/POSSIBLE fallback (D-17); never mid-track (D-18) |
+| **Recommendations / autoplay** | `SourceRecommendationEngine`, `AutoplayEngine` | Each recommending source of the seeds' environment is asked about the seeds it holds (its own copies or known EXACT twins). The current song's source leads; suggestions interleave. Autoplay takes any source of the current song's environment, never another (D-34), and drops a candidate whose twin is queued or was just played |
+| **Online repository** | `AppOnlineRepository` | `status` (what ONLINE can do across sources; null when none is on), `canStartRadio(track)`, `canRelate(artist)`, search as a `Flow`. Liked songs and history show each recording once; every record keeps its own copy and source |
+| **History** | `online_history.served_by` (schema v3) | A listen records the song chosen (its own source and provider id) and, when another source's EXACT copy played it, that source |
+| **Settings** | Settings ▸ Online sources (`OnlineSourcesScreen`, `OnlineSourceSettings`) | Each registered online source: its name, On/Off, and a note when it needs the listener. With more than one, hold Center to move it up or down. Shown only when the build has online sources |
+
+Search and playback priority are related but distinct. Search collects useful results from every source; priority only orders them and picks the copy shown. Playback picks the best eligible copy: the song's own source, then EXACT copies elsewhere in priority order.
 
 ## 12. UI independence — what the UI may ask
 | UI need | Ask | Never |

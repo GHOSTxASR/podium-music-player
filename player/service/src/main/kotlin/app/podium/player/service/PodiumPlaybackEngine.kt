@@ -80,7 +80,11 @@ class PodiumPlaybackEngine(
     private var consecutiveErrors = 0
 
     // Declared before init: the watchers started there run immediately (main dispatcher).
-    private val autoplay = AutoplayEngine()
+    private val autoplay = AutoplayEngine(
+        // Suggestions may come from any source of the current song's environment, never another (D-34, D-35).
+        sameEnvironment = { a, b -> deps.registry.get(a)?.descriptor?.environment == deps.registry.get(b)?.descriptor?.environment },
+        equivalents = { deps.equivalence?.exactEquivalents(it).orEmpty() },
+    )
     private var autoplayJob: Job? = null
     private var positionJob: Job? = null
     private var skipJob: Job? = null
@@ -403,6 +407,7 @@ class PodiumPlaybackEngine(
         val extras = Bundle().apply {
             putString(PodiumExtras.CURRENT_UID, current?.uid?.value)
             putString(PodiumExtras.SERVED_BY, selection?.servedBy?.let { deps.registry.get(it)?.descriptor?.displayName })
+            putString(PodiumExtras.SERVED_BY_ID, selection?.servedBy?.value)
             putString(PodiumExtras.RESOLUTION_PATH, selection?.path?.name)
             putString(PodiumExtras.CLAIMED_CODEC, claimed?.codec?.name)
             claimed?.bitrateKbps?.let { putInt(PodiumExtras.CLAIMED_BITRATE, it) }

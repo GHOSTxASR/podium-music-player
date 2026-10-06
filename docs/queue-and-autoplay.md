@@ -53,6 +53,11 @@ Saved per `data-model.md` (queue tables): on every mutation (debounced 500 ms), 
 
 **Implemented (D-34):** in `PodiumPlaybackEngine`, for ONLINE songs only. When the current song is the last or second-to-last (`AutoplayEngine.needsMore`) and Settings ▸ Autoplay and Online recommendations are on, the engine asks the current song's own source (`SourceRecommendationEngine` → `RecommendationFacet.related`) with the last five songs from that source as seeds and every queued (and, with Avoid repeats, every song played in the last six hours) id excluded; `AutoplayEngine.pick` drops anything from another source, anything queued or recently played, any second copy of the same recording (matcher tier EXACT — never title alone), and spreads artists apart when it can; up to 10 go at the end as AUTOPLAY items (`QueueManager.appendAutoplay`). Local songs are never autoplayed with online suggestions. Radios the listener starts are RADIO items (`playContext(radio = true)`), shuffled with the context. The design below remains the target for scoring and explanations.
 
+**Multi-source (D-35):** "the current song's own source" became "every source of the current song's environment".
+- **Who is asked.** Every enabled online source that recommends is asked at once, about the seeds it holds: its own copies, or copies already known to be EXACTly the same recording. The current song's source leads; the others follow in the listener's priority. A source holding none of the seeds isn't asked, because it can't relate to them.
+- **What gets in.** `AutoplayEngine.pick` takes candidates from any source of that environment, never another. It drops a candidate whose twin is queued or was played recently, and keeps only one copy of a recording (EXACT).
+- **What stays as it was.** Queue items keep their own source: a queue can hold songs from several sources. An item's preferred source and EXACT-only fallback come from its track. Artist radio stays on the artist's own source.
+
 ### 5.1 When it runs
 `autoplay = on` ∧ repeat = OFF ∧ remaining non-autoplay Up Next items ≤ 1 → generate a batch of 10. Re-run whenever autoplay items remaining ≤ 2. Never runs during offline unless candidates are offline-playable.
 

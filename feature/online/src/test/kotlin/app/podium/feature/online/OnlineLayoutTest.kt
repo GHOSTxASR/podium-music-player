@@ -159,14 +159,16 @@ class OnlineLayoutTest {
     }
 
     private open class FakeRepo : OnlineRepository {
-        override val source: StateFlow<OnlineSource?> = MutableStateFlow(OnlineSource("Online test", canSearch = true, canBrowse = true, canRecommend = true))
+        override val status: StateFlow<OnlineStatus?> = MutableStateFlow(OnlineStatus(canSearch = true, canBrowse = true, canRecommend = true))
+        override fun canStartRadio(track: Track) = true
+        override fun canRelate(artist: ArtistId) = true
         override suspend fun shelves(): Outcome<List<Shelf>> = Outcome.Success(
             listOf(Shelf("week", "Trending this week", tracks = SONGS), Shelf("underground", "Underground", tracks = SONGS.reversed()), Shelf("playlists", "Popular playlists", playlists = PLAYLISTS)),
         )
         override suspend fun shelf(id: String, offset: Int, limit: Int) = Outcome.Success(if (offset == 0) ShelfPage(tracks = SONGS) else ShelfPage())
         override suspend fun genres(): Outcome<List<String>> = Outcome.Success(listOf("Electronic", "Hip-Hop/Rap", "Lo-fi"))
         override suspend fun genre(name: String, offset: Int, limit: Int) = Outcome.Success(SONGS)
-        override suspend fun search(text: String, offset: Int, limit: Int) = Outcome.Success(SearchResults(tracks = SONGS))
+        override fun search(text: String, offset: Int, limit: Int): Flow<Outcome<SearchResults>> = flowOf(Outcome.Success(SearchResults(tracks = SONGS)))
         override suspend fun artist(id: ArtistId): Outcome<ArtistDetail> = Outcome.Success(
             ArtistDetail(ArtistSummary(id, "Northern Sines", ArtworkRef(Audius, "artist"), trackCount = 42), albums = emptyList(), tracks = SONGS, playlists = PLAYLISTS),
         )

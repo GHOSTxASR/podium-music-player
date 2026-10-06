@@ -74,6 +74,11 @@ data class OnlineHistoryEntity(
     @ColumnInfo(name = "duration_ms") val durationMs: Long?,
     /** 0..1 of the song heard, when its length is known. */
     val completion: Float?,
+    /**
+     * Schema v3 (D-35): the source whose copy actually played, when it wasn't the song's own (an
+     * EXACT copy elsewhere). The row stays the song the listener chose; this only says who served it.
+     */
+    @ColumnInfo(name = "served_by") val servedBy: String? = null,
 )
 
 /** A playlist row with what lists need: how many songs and a few covers. */

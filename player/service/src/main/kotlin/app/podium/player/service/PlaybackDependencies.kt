@@ -13,6 +13,7 @@ import app.podium.player.api.TrackCatalog
 import app.podium.sources.api.ArtworkResolver
 import app.podium.sources.api.SourceHealthMonitor
 import app.podium.sources.api.SourceRegistry
+import app.podium.sources.api.resolve.EquivalenceStore
 import app.podium.sources.api.resolve.StreamResolver
 
 /**
@@ -35,6 +36,9 @@ interface PlaybackDependencies {
 
     /** Suggestions for autoplay; null turns autoplay off. */
     val recommendations: RecommendationEngine? get() = null
+
+    /** Copies already known to be the same recording on other sources (D-35), for autoplay's de-duplication. */
+    val equivalence: EquivalenceStore? get() = null
 
     /** Songs played since a time (for avoid-repeats), from ONLINE history. */
     suspend fun playedSince(sinceMillis: Long): Set<TrackId> = emptySet()

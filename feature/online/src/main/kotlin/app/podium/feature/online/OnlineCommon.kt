@@ -55,15 +55,19 @@ fun <T> rememberRemote(vararg key: Any?, load: suspend () -> Outcome<T>): Remote
     return state
 }
 
-/** Why online content isn't here, and what to do next. Local music is never affected. */
+/**
+ * Why online content isn't here, and what to do next. Local music is never affected. Never names a
+ * source: the listener asked for music, not for a provider (D-35).
+ */
 @Composable
-fun OnlineMessage(error: PodiumError?, sourceName: String?) {
+fun OnlineMessage(error: PodiumError?) {
     val (title, message) = when (error) {
         PodiumError.Offline -> "You're offline" to "Online music needs a connection. Music on this phone still plays."
         is PodiumError.RateLimited -> "Too many requests" to "Wait a moment, then go back and try again."
         is PodiumError.NotFound -> "This isn't available" to "It may have been removed. Go back and pick something else."
-        null -> "No online source" to "Online music needs an online source. Music on this phone still plays."
-        else -> "Couldn't reach ${sourceName ?: "the online source"}" to "Check your connection, then go back and try again."
+        is PodiumError.PolicyDisabled -> "This isn't available right now" to "Its online source is turned off. Turn it on in Settings, Online sources."
+        null -> "No online source" to "Turn on an online source in Settings. Music on this phone still plays."
+        else -> "Couldn't reach online music" to "Check your connection, then go back and try again."
     }
     CenteredMessage(if (error == PodiumError.Offline) PodiumSymbol.Offline else PodiumSymbol.Error, title, message)
 }
@@ -136,7 +140,7 @@ fun PageNearEnd(focus: FocusListState, loaded: Int, exhausted: Boolean, loadMore
 private const val PREFETCH = 6
 
 /**
- * The long-press menu for an online song (D-34): only what the source and ONLINE support —
+ * The long-press menu for an online song (D-34): only what the song's source and ONLINE support —
  * Play next, Add to Up Next, Like, Add to playlist, Start radio, the artist, Share.
  */
 fun showTrackMenu(
@@ -145,8 +149,8 @@ fun showTrackMenu(
     repository: OnlineRepository,
     actions: OnlineActions,
     navigate: (OnlinePlace) -> Unit,
-    canRecommend: Boolean,
 ) {
+    val canRecommend = repository.canStartRadio(track)
     val liked = track.id in repository.likedIds.value
     val playable = track.availability !is Availability.Unavailable
     val artist = track.artists.firstOrNull()

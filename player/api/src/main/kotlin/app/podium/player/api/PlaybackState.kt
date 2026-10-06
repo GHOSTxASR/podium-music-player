@@ -3,6 +3,7 @@ package app.podium.player.api
 import app.podium.core.common.PodiumError
 import app.podium.core.model.QualityReport
 import app.podium.core.model.QueueUid
+import app.podium.core.model.SourceId
 import app.podium.core.model.TrackId
 import app.podium.sources.api.Attribution
 import app.podium.sources.api.ResolutionPath
@@ -90,6 +91,8 @@ data class NowPlayingItem(
     val servedByDisplayName: String?,
     /** How it was reached; non-OWN_SOURCE paths are surfaced to the user. */
     val resolutionPath: ResolutionPath?,
+    /** The source actually serving the audio — for history, never for display (D-35). */
+    val servedBy: SourceId? = null,
 )
 
 data class PlaybackSnapshot(

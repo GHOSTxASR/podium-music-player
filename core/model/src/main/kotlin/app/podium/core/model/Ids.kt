@@ -76,6 +76,29 @@ value class PlaylistId(val value: String) {
 
     /** The source-local key (everything after the source id). */
     val providerKey: String get() = value.substringAfter(TrackId.SEPARATOR)
+
+    val sourceId: SourceId get() = SourceId(value.substringBefore(TrackId.SEPARATOR))
+}
+
+/**
+ * A source-local key made unique across sources — `<sourceId>|<key>`, the TrackId shape — for
+ * things without an id type of their own (a source's shelves). "trending" means nothing until it
+ * says whose (D-35).
+ */
+@JvmInline
+value class ScopedKey(val value: String) {
+    init {
+        require(TrackId.SEPARATOR in value) { "ScopedKey must be source-qualified: $value" }
+    }
+
+    val sourceId: SourceId get() = SourceId(value.substringBefore(TrackId.SEPARATOR))
+    val key: String get() = value.substringAfter(TrackId.SEPARATOR)
+
+    override fun toString(): String = value
+
+    companion object {
+        fun of(source: SourceId, key: String) = ScopedKey("${source.value}${TrackId.SEPARATOR}$key")
+    }
 }
 
 /** One play slot in the queue. Distinct from TrackId: the same track may be queued twice. */

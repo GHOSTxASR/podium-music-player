@@ -129,6 +129,7 @@ import app.podium.feature.settings.CustomColorScreen
 import app.podium.feature.settings.FinishScreen
 import app.podium.feature.settings.GrainScreen
 import app.podium.feature.settings.MusicFoldersScreen
+import app.podium.feature.settings.OnlineSourcesScreen
 import app.podium.feature.settings.SettingsScreen
 import app.podium.feature.settings.ThemeScreen
 import app.podium.player.api.PlayIntent
@@ -165,6 +166,9 @@ sealed interface Dest {
     data object Finish : Dest
     data object Grain : Dest
     data object CustomColor : Dest
+
+    /** Settings ▸ Online sources (D-35). */
+    data object OnlineSources : Dest
     data class Album(val id: AlbumId) : Dest
     data class Artist(val id: ArtistId) : Dest
 
@@ -177,7 +181,7 @@ sealed interface Dest {
 
 private val fixedDests = listOf(
     Dest.Home, Dest.Music, Dest.CoverFlow, Dest.Albums, Dest.Artists, Dest.Songs, Dest.Favorites, Dest.NowPlaying,
-    Dest.UpNext, Dest.Settings, Dest.Theme, Dest.Finish, Dest.Grain, Dest.CustomColor,
+    Dest.UpNext, Dest.Settings, Dest.Theme, Dest.Finish, Dest.Grain, Dest.CustomColor, Dest.OnlineSources,
 ).associateBy { it.toString() }
 
 private fun Dest.encode(): String = when (this) {
@@ -220,6 +224,7 @@ private fun titleOf(dest: Dest, graph: AppGraph): String = when (dest) {
     Dest.Finish -> "Finish"
     Dest.Grain -> "Grain"
     Dest.CustomColor -> "Custom color"
+    Dest.OnlineSources -> "Online sources"
     is Dest.Album -> {
         val album by remember(dest) { graph.library.album(dest.id) }.collectAsStateWithLifecycle(initialValue = null)
         album?.album?.title ?: "Album"
@@ -522,7 +527,7 @@ private fun ScreenContent(
 ) {
     val controller = graph.playbackController
     val settings = graph.deviceSettings
-    val onlineSource by graph.online.source.collectAsStateWithLifecycle()
+    val onlineStatus by graph.online.status.collectAsStateWithLifecycle()
     val onlineRecent by graph.online.recentlyPlayed.collectAsStateWithLifecycle(initialValue = emptyList())
     val play: (List<Track>, Int, String) -> Unit = { tracks, index, label ->
         controller.playContext(tracks.map { it.id }, index, label)
@@ -547,7 +552,7 @@ private fun ScreenContent(
                 },
                 onNowPlaying = navigator::showNowPlaying,
                 onSettings = { navigator.push(Dest.Settings) },
-                onOnline = if (onlineSource != null) ({ navigator.push(Dest.Online(OnlinePlace.Menu)) }) else null,
+                onOnline = if (onlineStatus != null) ({ navigator.push(Dest.Online(OnlinePlace.Menu)) }) else null,
                 onlineArtwork = onlineRecent.mapNotNull { it.artwork?.uri }.distinct().take(10),
             )
         }
@@ -591,12 +596,15 @@ private fun ScreenContent(
         Dest.Settings -> SettingsScreen(
             repository = settings,
             folders = graph.musicFolders,
+            onlineSources = graph.onlineSources,
             onTheme = { navigator.push(Dest.Theme) },
             onFinish = { navigator.push(Dest.Finish) },
             onCustomColor = { navigator.push(Dest.CustomColor) },
             onGrain = { navigator.push(Dest.Grain) },
             onMusicFolders = { navigator.push(Dest.MusicFolders("")) },
+            onOnlineSources = { navigator.push(Dest.OnlineSources) },
         )
+        Dest.OnlineSources -> OnlineSourcesScreen(graph.onlineSources)
         is Dest.MusicFolders -> MusicFoldersScreen(graph.musicFolders, screen.path, onOpen = { navigator.push(Dest.MusicFolders(it)) })
         Dest.Theme -> ThemeScreen(settings)
         Dest.Finish -> FinishScreen(settings, onCustomColor = { navigator.push(Dest.CustomColor) })

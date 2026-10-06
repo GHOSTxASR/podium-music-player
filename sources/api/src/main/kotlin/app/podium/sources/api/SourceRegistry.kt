@@ -58,10 +58,13 @@ class SourceRegistry(private val health: SourceHealthMonitor) {
     fun isEnabled(id: SourceId): Boolean = registrations.value[id]?.enabled == true
 
     fun setEnabled(id: SourceId, enabled: Boolean) {
+        val was = isEnabled(id)
         registrations.update { all ->
             val reg = all[id] ?: return@update all
             all + (id to reg.copy(enabled = enabled))
         }
+        // Turning a source back on starts it afresh: no breaker left over from before.
+        if (enabled && !was) health.reset(id)
     }
 
     /** Set the user's priority order (lower index = asked first). */
@@ -74,9 +77,16 @@ class SourceRegistry(private val health: SourceHealthMonitor) {
         registrations.value[id]?.takeIf { it.enabled }?.source
     }
 
+    /** Enabled sources of one environment (D-34), in priority order. */
+    fun ordered(environment: MusicEnvironment): List<MusicSource> = ordered().filter { it.descriptor.environment == environment }
+
     /** Enabled sources that currently have [capability] usable, in priority order. */
     fun withCapability(capability: Capability): List<MusicSource> =
         ordered().filter { it.capabilities.value.isUsable(capability) }
+
+    /** Every registered source (enabled or not) of one environment, in priority order. */
+    fun registered(environment: MusicEnvironment): List<MusicSource> =
+        orderedIds().mapNotNull { registrations.value[it]?.source }.filter { it.descriptor.environment == environment }
 
     fun capabilities(id: SourceId): StateFlow<SourceCapabilities>? = get(id)?.capabilities
 

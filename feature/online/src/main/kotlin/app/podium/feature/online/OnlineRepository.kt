@@ -15,16 +15,13 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 
 /**
- * The online source the ONLINE section shows (D-34), by what it can do — never by who it is.
- * [name] is only for copy ("Couldn't reach …").
+ * What ONLINE can do right now, across every enabled online source (D-34, D-35) — by what they can
+ * do, never by who they are, and never how many there are.
  */
-data class OnlineSource(
-    val name: String,
+data class OnlineStatus(
     val canSearch: Boolean,
     val canBrowse: Boolean,
     val canRecommend: Boolean,
-    /** A note from the source when it can't be reached or used. */
-    val note: String? = null,
 )
 
 /** One of the listener's online playlists (kept on the device until a source can hold them). */
@@ -35,18 +32,32 @@ data class OnlinePlaylistEntry(val entryId: Long, val track: Track)
 data class OnlinePlaylistContents(val playlist: OnlinePlaylist, val entries: List<OnlinePlaylistEntry>)
 
 /**
- * Everything the ONLINE screens read and write. Catalogue calls go to the online source; likes,
- * playlists and history are ONLINE's own and never touch the local library (D-34).
+ * Everything the ONLINE screens read and write. Catalogue calls go to every enabled online source at
+ * once and come back as one answer, each song once (D-35); anything that belongs to one source (an
+ * artist, an album, a playlist, a shelf) carries its source in its id and goes back to that source.
+ * Likes, playlists and history are ONLINE's own and never touch the local library (D-34).
  */
 interface OnlineRepository {
-    /** The connected online source, or null when there's none. */
-    val source: StateFlow<OnlineSource?>
+    /** What ONLINE can do, or null when no online source is on. */
+    val status: StateFlow<OnlineStatus?>
+
+    /** Whether a radio can start from [track] (its source — or one with the same recording — recommends). */
+    fun canStartRadio(track: Track): Boolean
+
+    /** Whether [artist]'s source can name related artists and play the artist's radio. */
+    fun canRelate(artist: ArtistId): Boolean
 
     suspend fun shelves(): Outcome<List<Shelf>>
     suspend fun shelf(id: String, offset: Int, limit: Int): Outcome<ShelfPage>
     suspend fun genres(): Outcome<List<String>>
     suspend fun genre(name: String, offset: Int, limit: Int): Outcome<List<Track>>
-    suspend fun search(text: String, offset: Int, limit: Int): Outcome<SearchResults>
+
+    /**
+     * Search every online source. Emits as sources answer — what's known so far, then the final
+     * answer — so a slow source never keeps the others' results off the screen. A failure is
+     * emitted only when no source could answer.
+     */
+    fun search(text: String, offset: Int, limit: Int): Flow<Outcome<SearchResults>>
     suspend fun artist(id: ArtistId): Outcome<ArtistDetail>
     suspend fun relatedArtists(id: ArtistId): Outcome<List<ArtistSummary>>
     suspend fun collection(id: PlaylistId): Outcome<PlaylistDetail>

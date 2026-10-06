@@ -52,13 +52,13 @@ fun OnlineScreen(place: OnlinePlace, repository: OnlineRepository, actions: Onli
 
 @Composable
 fun OnlineMenuScreen(repository: OnlineRepository, navigate: (OnlinePlace) -> Unit) {
-    val source by repository.source.collectAsStateWithLifecycle()
-    val current = source
+    val status by repository.status.collectAsStateWithLifecycle()
+    val current = status
     if (current == null) {
-        OnlineMessage(null, null)
+        OnlineMessage(null)
         return
     }
-    val shelves = rememberRemote(current.name) { if (current.canBrowse) repository.shelves() else Outcome.Success(emptyList()) }
+    val shelves = rememberRemote(current) { if (current.canBrowse) repository.shelves() else Outcome.Success(emptyList()) }
     val liked by repository.likedTracks.collectAsStateWithLifecycle(initialValue = emptyList())
     val playlists by repository.playlists.collectAsStateWithLifecycle(initialValue = emptyList())
     val recent by repository.recentlyPlayed.collectAsStateWithLifecycle(initialValue = emptyList())
@@ -85,13 +85,12 @@ private fun shelfCovers(shelf: Shelf): List<String> =
  */
 @Composable
 fun OnlineHomeScreen(repository: OnlineRepository, navigate: (OnlinePlace) -> Unit) {
-    val source by repository.source.collectAsStateWithLifecycle()
     val shelves = rememberRemote(Unit) { repository.shelves() }
     val liked by repository.likedTracks.collectAsStateWithLifecycle(initialValue = emptyList())
     val recent by repository.recentlyPlayed.collectAsStateWithLifecycle(initialValue = emptyList())
     when (shelves) {
         Remote.Loading -> Unit
-        is Remote.Failed -> OnlineMessage(shelves.error, source?.name)
+        is Remote.Failed -> OnlineMessage(shelves.error)
         is Remote.Ready -> {
             val entries = buildList {
                 shelves.value.forEach { shelf ->
@@ -113,7 +112,6 @@ fun OnlineHomeScreen(repository: OnlineRepository, navigate: (OnlinePlace) -> Un
 /** One shelf, paged as the focus nears the end. Songs play from the one chosen; playlists open. */
 @Composable
 fun OnlineShelfScreen(place: OnlinePlace.Shelf, repository: OnlineRepository, actions: OnlineActions, navigate: (OnlinePlace) -> Unit) {
-    val source by repository.source.collectAsStateWithLifecycle()
     val tracks = remember(place.id) { mutableStateListOf<Track>() }
     val playlists = remember(place.id) { mutableStateListOf<PlaylistSummary>() }
     var state by remember(place.id) { mutableStateOf<Remote<Unit>>(Remote.Loading) }
@@ -142,7 +140,7 @@ fun OnlineShelfScreen(place: OnlinePlace.Shelf, repository: OnlineRepository, ac
     LaunchedEffect(place.id) { loadMore() }
     when (val s = state) {
         Remote.Loading -> Unit
-        is Remote.Failed -> OnlineMessage(s.error, source?.name)
+        is Remote.Failed -> OnlineMessage(s.error)
         is Remote.Ready -> if (playlists.isNotEmpty()) {
             PlaylistList(playlists, "shelf:${place.id}", navigate, onNearEnd = loadMore, exhausted = exhausted)
         } else {
@@ -154,11 +152,10 @@ fun OnlineShelfScreen(place: OnlinePlace.Shelf, repository: OnlineRepository, ac
 /** ONLINE ▸ Explore: the source's genres, most popular first. */
 @Composable
 fun OnlineExploreScreen(repository: OnlineRepository, navigate: (OnlinePlace) -> Unit) {
-    val source by repository.source.collectAsStateWithLifecycle()
     val genres = rememberRemote(Unit) { repository.genres() }
     when (genres) {
         Remote.Loading -> Unit
-        is Remote.Failed -> OnlineMessage(genres.error, source?.name)
+        is Remote.Failed -> OnlineMessage(genres.error)
         is Remote.Ready -> OnlinePaperMenu(genres.value.map { g -> OnlineEntry(g, MenuPreview.None) { navigate(OnlinePlace.Genre(g)) } }, "online-explore")
     }
 }
@@ -166,7 +163,7 @@ fun OnlineExploreScreen(repository: OnlineRepository, navigate: (OnlinePlace) ->
 /** A genre: its radio first, then its music as the source ranks it. */
 @Composable
 fun OnlineGenreScreen(genre: String, repository: OnlineRepository, actions: OnlineActions, navigate: (OnlinePlace) -> Unit) {
-    val source by repository.source.collectAsStateWithLifecycle()
+    val status by repository.status.collectAsStateWithLifecycle()
     val tracks = remember(genre) { mutableStateListOf<Track>() }
     var state by remember(genre) { mutableStateOf<Remote<Unit>>(Remote.Loading) }
     var exhausted by remember(genre) { mutableStateOf(false) }
@@ -192,10 +189,10 @@ fun OnlineGenreScreen(genre: String, repository: OnlineRepository, actions: Onli
     LaunchedEffect(genre) { loadMore() }
     when (val s = state) {
         Remote.Loading -> Unit
-        is Remote.Failed -> OnlineMessage(s.error, source?.name)
+        is Remote.Failed -> OnlineMessage(s.error)
         is Remote.Ready -> OnlineTrackList(
             tracks, "genre:$genre", genre, repository, actions, navigate,
-            lead = if (source?.canRecommend == true) listOf(Lead("$genre radio", PodiumSymbol.PlaylistPlay) { actions.startGenreRadio(genre) }) else emptyList(),
+            lead = if (status?.canRecommend == true) listOf(Lead("$genre radio", PodiumSymbol.PlaylistPlay) { actions.startGenreRadio(genre) }) else emptyList(),
             onNearEnd = loadMore, exhausted = exhausted,
         )
     }
@@ -258,7 +255,7 @@ fun OnlineRadioScreen(repository: OnlineRepository, actions: OnlineActions) {
         }
     }
     if (entries.isEmpty()) {
-        if (genres is Remote.Failed) OnlineMessage(genres.error, repository.source.value?.name)
+        if (genres is Remote.Failed) OnlineMessage(genres.error)
         return
     }
     OnlinePaperMenu(entries, "online-radio")
@@ -288,7 +285,6 @@ fun OnlineTrackList(
     onNearEnd: () -> Unit = {},
     exhausted: Boolean = true,
 ) {
-    val source by repository.source.collectAsStateWithLifecycle()
     val likedIds by repository.likedIds.collectAsStateWithLifecycle()
     val overlayHost = overlay()
     val rows = remember(tracks.toList(), lead) { lead.map { Row.Action(it) } + tracks.mapIndexed { i, t -> Row.Song(t, i) } }
@@ -302,7 +298,7 @@ fun OnlineTrackList(
         }
     }
     val longPress: (Int) -> Unit = { i ->
-        (rows.getOrNull(i) as? Row.Song)?.let { showTrackMenu(overlayHost, it.track, repository, actions, navigate, source?.canRecommend == true) }
+        (rows.getOrNull(i) as? Row.Song)?.let { showTrackMenu(overlayHost, it.track, repository, actions, navigate) }
     }
     ListInputEffect(focus, onActivate = activate, onLongPress = longPress)
     PageNearEnd(focus, rows.size, exhausted, onNearEnd)

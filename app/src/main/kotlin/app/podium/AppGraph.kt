@@ -23,7 +23,13 @@ import app.podium.player.service.PlaybackDependencies
 import app.podium.player.service.SystemVolumeController
 import app.podium.sources.api.ArtworkResolver
 import app.podium.sources.api.SourceHealthMonitor
+import app.podium.sources.api.MusicEnvironment
 import app.podium.sources.api.SourceRegistry
+import app.podium.sources.api.SourceSettings
+import app.podium.sources.api.aggregate.MultiSourceCatalog
+import app.podium.sources.api.aggregate.SourceFanOut
+import app.podium.sources.api.aggregate.TrackGrouper
+import app.podium.sources.api.resolve.InMemoryEquivalenceStore
 import app.podium.sources.api.matching.TrackMatcher
 import app.podium.sources.api.resolve.StreamResolver
 import app.podium.sources.audius.AudiusMusicSource
@@ -49,7 +55,9 @@ class AppGraph(private val context: Context) {
     val health = SourceHealthMonitor(clock)
     val registry = SourceRegistry(health)
     val matcher = TrackMatcher()
-    val resolver = StreamResolver(registry, health, matcher, clock)
+    /** Which copies on different sources are the same recording (D-35): learnt from searches, used to play a twin. */
+    val equivalence = InMemoryEquivalenceStore()
+    val resolver = StreamResolver(registry, health, matcher, clock, equivalence = equivalence)
     /** The library database (ADR-004, D-31): library cache, favorites, the saved queue. */
     val database = PodiumDatabase.create(context)
     val libraryStore = LibraryStore(database)
@@ -62,11 +70,15 @@ class AppGraph(private val context: Context) {
     /** The first online source (D-34): Audius' public catalogue, read anonymously. */
     val audius = AudiusMusicSource("Podium/${BuildConfig.VERSION_NAME} (Android music player)", onRequest = DiskActivity::pulse)
 
+    /** Which sources are on and in what order (D-35): stored, applied once every source is registered. */
+    val sourceSettings = SourceSettings(registry, SharedPrefsSourcePreferences(context))
+
     init {
         BuildConfigFlags.checkMirror = BuildConfig.DEBUG
         registry.register(localSource)
         registry.register(audius)
         buildVariantSources(context).forEach { registry.register(it) }
+        sourceSettings.apply()
     }
 
     val environments = Environments(registry)
@@ -81,12 +93,17 @@ class AppGraph(private val context: Context) {
 
     /** ONLINE's own library: liked songs, playlists, history (D-34). */
     val onlineStore = OnlineLibraryStore(database)
-    val online = AppOnlineRepository(registry, onlineStore, catalog, appScope)
+    /** Every enabled online source as one catalogue (D-35). */
+    val onlineCatalog = MultiSourceCatalog(registry, MusicEnvironment.ONLINE, SourceFanOut(health), TrackGrouper(matcher), equivalence)
+    val online = AppOnlineRepository(registry, onlineCatalog, onlineStore, catalog, appScope, TrackGrouper(matcher))
+
+    /** Settings ▸ Online sources. */
+    val onlineSources = RegistryOnlineSourceSettings(registry, sourceSettings, appScope)
 
     /** The heart on Now Playing: routed to local favorites or ONLINE's liked songs by the song's environment. */
     val favorites = EnvironmentFavorites(localFavorites, online, environments, { catalog.cached(it) ?: libraryStore.track(it) }, appScope)
 
-    val recommendations = SourceRecommendationEngine(registry)
+    val recommendations = SourceRecommendationEngine(registry, equivalence::exactEquivalents)
 
     val autoplaySettings: StateFlow<AutoplaySettings> = combine(
         deviceSettings.autoplay, deviceSettings.onlineRecommendations, deviceSettings.avoidRepeats,
@@ -172,6 +189,7 @@ class AppGraph(private val context: Context) {
         override val queueStore = this@AppGraph.queueStore
         override val autoplay = this@AppGraph.autoplaySettings
         override val recommendations = this@AppGraph.recommendations
+        override val equivalence = this@AppGraph.equivalence
         override suspend fun playedSince(sinceMillis: Long) = onlineStore.playedSince(sinceMillis)
 
         override fun sessionActivity(context: Context): PendingIntent = PendingIntent.getActivity(

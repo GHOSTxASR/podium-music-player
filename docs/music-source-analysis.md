@@ -48,7 +48,7 @@ This document separates three questions for every candidate source:
 | Option | What it is | Podium builds it? |
 |---|---|---|
 | Y0 | No YouTube source | — |
-| Y1 | Catalogue/metadata adapter (unofficial, opt-in, excluded from Play builds); tracks play only via an EXACT/STRONG-matched copy on the user's authorized sources | Yes, if the user accepts the documented policy risk |
+| Y1 | Catalogue/metadata adapter (unofficial, opt-in, excluded from Play builds); tracks play only via an EXACT-matched copy on the user's authorized sources (D-17) | Yes, if the user accepts the documented policy risk |
 | Y2 | Official embedded player target (visible, foreground, video) | Yes, if wanted |
 | Y3 | Direct YouTube audio (BitChord-style stream unlock) | **No** (conflicts with the brief's §65 and ADR-013's hard boundary) |
 Nothing in Podium's core assumes YouTube; the matcher-based design keeps provider identity out of the UI either way.

@@ -132,7 +132,11 @@ class OnlineLibraryStore(
 
     // --- History -------------------------------------------------------------------------------------------
 
-    suspend fun record(track: Track, startedAt: Long, playedMs: Long, account: String = DEVICE) {
+    /**
+     * One listen to [track] — the song the listener chose, with its own source and provider id —
+     * and, when another source's EXACT copy played it, [servedBy] (D-35).
+     */
+    suspend fun record(track: Track, startedAt: Long, playedMs: Long, servedBy: SourceId? = null, account: String = DEVICE) {
         if (playedMs <= 0) return
         remember(listOf(track))
         val duration = track.durationMs
@@ -146,9 +150,13 @@ class OnlineLibraryStore(
                 playedMs = playedMs,
                 durationMs = duration,
                 completion = duration?.takeIf { it > 0 }?.let { (playedMs.toFloat() / it).coerceIn(0f, 1f) },
+                servedBy = servedBy?.value?.takeIf { it != track.source.sourceId.value },
             ),
         )
     }
+
+    /** The listens, newest first, as stored (for checks and diagnostics). */
+    suspend fun listens(limit: Int = 50, account: String = DEVICE): List<OnlineHistoryEntity> = dao.listens(account, limit)
 
     fun recentlyPlayed(limit: Int = 50, account: String = DEVICE): Flow<List<Track>> =
         dao.recentTracks(account, limit).map { rows -> rows.map(TrackMapping::toTrack) }

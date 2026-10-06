@@ -40,6 +40,7 @@ object PodiumExtras {
     // Session extras describing the current item's resolution (who is serving it, and how).
     const val CURRENT_UID = "podium.current.uid"
     const val SERVED_BY = "podium.current.servedBy"
+    const val SERVED_BY_ID = "podium.current.servedById"
     const val RESOLUTION_PATH = "podium.current.path"
     const val CLAIMED_CODEC = "podium.current.claimed.codec"
     const val CLAIMED_BITRATE = "podium.current.claimed.kbps"

@@ -58,7 +58,6 @@ private sealed interface MineRow {
 /** One online playlist: Play, Shuffle, Rename, Delete, then its songs (hold Center to move or remove one). */
 @Composable
 fun OnlineMyPlaylistScreen(place: OnlinePlace.MyPlaylist, repository: OnlineRepository, actions: OnlineActions, navigate: (OnlinePlace) -> Unit) {
-    val source by repository.source.collectAsStateWithLifecycle()
     val contents by remember(place.id) { repository.playlist(place.id) }.collectAsStateWithLifecycle(initialValue = null)
     val overlayHost = overlay()
     val c = contents
@@ -101,7 +100,7 @@ fun OnlineMyPlaylistScreen(place: OnlinePlace.MyPlaylist, repository: OnlineRepo
                         if (row.index > 0) add(MenuAction("Move up") { repository.movePlaylistEntry(place.id, row.entry.entryId, row.index - 1) })
                         if (row.index < entries.lastIndex) add(MenuAction("Move down") { repository.movePlaylistEntry(place.id, row.entry.entryId, row.index + 1) })
                         add(MenuAction("Remove from playlist") { repository.removeFromPlaylist(place.id, row.entry.entryId) })
-                        add(MenuAction("More…") { showTrackMenu(overlayHost, track, repository, actions, navigate, source?.canRecommend == true) })
+                        add(MenuAction("More…") { showTrackMenu(overlayHost, track, repository, actions, navigate) })
                     },
                 ),
             )

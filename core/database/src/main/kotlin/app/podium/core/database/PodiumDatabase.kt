@@ -28,8 +28,8 @@ import java.io.File
     ],
     version = PodiumDatabase.VERSION,
     exportSchema = true,
-    // v2 (D-34) only adds the ONLINE tables.
-    autoMigrations = [AutoMigration(from = 1, to = 2)],
+    // v2 (D-34) only adds the ONLINE tables; v3 (D-35) adds online_history.served_by (nullable).
+    autoMigrations = [AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3)],
 )
 abstract class PodiumDatabase : RoomDatabase() {
     abstract fun library(): LibraryDao
@@ -38,7 +38,7 @@ abstract class PodiumDatabase : RoomDatabase() {
     abstract fun online(): OnlineDao
 
     companion object {
-        const val VERSION = 2
+        const val VERSION = 3
         const val FILE_NAME = "podium.db"
 
         /**

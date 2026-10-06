@@ -51,6 +51,7 @@ import app.podium.sources.api.PlaylistSummary
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.last
 import kotlinx.coroutines.launch
 
 private sealed interface SearchRow {
@@ -72,7 +73,6 @@ private sealed interface SearchRow {
  */
 @Composable
 fun OnlineSearchScreen(repository: OnlineRepository, actions: OnlineActions, navigate: (OnlinePlace) -> Unit) {
-    val source by repository.source.collectAsStateWithLifecycle()
     val likedIds by repository.likedIds.collectAsStateWithLifecycle()
     val overlayHost = overlay()
     var query by rememberSaveable { mutableStateOf("") }
@@ -92,12 +92,16 @@ fun OnlineSearchScreen(repository: OnlineRepository, actions: OnlineActions, nav
             }
             delay(DEBOUNCE_MS)
             results = Remote.Loading
-            results = when (val r = repository.search(text, 0, RESULTS)) {
-                is Outcome.Success -> Remote.Ready(r.value).also {
-                    songs = r.value.tracks
-                    moreExhausted = r.value.tracks.size < RESULTS
+            // Every online source answers in its own time; what's known so far shows straight away.
+            // A newer search cancels this one (collectLatest), so a stale answer never lands.
+            repository.search(text, 0, RESULTS).collect { r ->
+                results = when (r) {
+                    is Outcome.Success -> Remote.Ready(r.value).also {
+                        songs = r.value.tracks
+                        moreExhausted = r.value.tracks.size < RESULTS
+                    }
+                    is Outcome.Failure -> Remote.Failed(r.error)
                 }
-                is Outcome.Failure -> Remote.Failed(r.error)
             }
         }
     }
@@ -116,7 +120,7 @@ fun OnlineSearchScreen(repository: OnlineRepository, actions: OnlineActions, nav
             when (val r = results) {
                 null -> Unit
                 Remote.Loading -> Unit
-                is Remote.Failed -> add(SearchRow.Message(failureText(r.error, source?.name)))
+                is Remote.Failed -> add(SearchRow.Message(failureText(r.error)))
                 is Remote.Ready -> {
                     val v = r.value
                     if (songs.isEmpty() && v.artists.isEmpty() && v.albums.isEmpty() && v.playlists.isEmpty()) {
@@ -146,7 +150,7 @@ fun OnlineSearchScreen(repository: OnlineRepository, actions: OnlineActions, nav
     val playable = songs.filter { it.availability !is Availability.Unavailable }
     val loadMoreSongs: () -> Unit = {
         scope.launch {
-            when (val r = repository.search(query.trim(), songs.size, RESULTS)) {
+            when (val r = repository.search(query.trim(), songs.size, RESULTS).last()) {
                 is Outcome.Success -> {
                     val fresh = r.value.tracks.filter { t -> songs.none { it.id == t.id } }
                     songs = songs + fresh
@@ -169,7 +173,7 @@ fun OnlineSearchScreen(repository: OnlineRepository, actions: OnlineActions, nav
         }
     }
     val longPress: (Int) -> Unit = { i ->
-        (rows.getOrNull(i) as? SearchRow.Song)?.let { showTrackMenu(overlayHost, it.track, repository, actions, navigate, source?.canRecommend == true) }
+        (rows.getOrNull(i) as? SearchRow.Song)?.let { showTrackMenu(overlayHost, it.track, repository, actions, navigate) }
     }
     ListInputEffect(focus, onActivate = activate, onLongPress = longPress)
     LaunchedEffect(focus) {
@@ -219,10 +223,11 @@ fun OnlineSearchScreen(repository: OnlineRepository, actions: OnlineActions, nav
     }
 }
 
-private fun failureText(error: PodiumError, name: String?) = when (error) {
+private fun failureText(error: PodiumError) = when (error) {
     PodiumError.Offline -> "You're offline. Music on this phone still plays."
     is PodiumError.RateLimited -> "Too many requests. Wait a moment and type again."
-    else -> "Couldn't reach ${name ?: "the online source"}. Check your connection."
+    is PodiumError.NotFound -> "Turn on an online source in Settings to search."
+    else -> "Couldn't reach online music. Check your connection."
 }
 
 /** The search box: a hairline field on the paper, in the theme's own type. */

@@ -68,7 +68,7 @@ These are normative sketches; names may be refined, semantics may not.
 ### 4.1 Identity
 ```kotlin
 @JvmInline value class SourceId(val value: String)          // "local", "subsonic:9f2c", "audius"
-@JvmInline value class TrackId(val value: String)           // "<sourceId>:<sourceTrackId>"
+@JvmInline value class TrackId(val value: String)           // "<sourceId>|<sourceTrackId>"
 @JvmInline value class AlbumId(val value: String)
 @JvmInline value class ArtistId(val value: String)
 @JvmInline value class PlaylistId(val value: String)        // Podium-local UUID; remote refs stored separately

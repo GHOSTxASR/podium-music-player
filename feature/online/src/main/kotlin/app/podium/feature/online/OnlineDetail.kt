@@ -43,9 +43,9 @@ private sealed interface ArtistRow {
  */
 @Composable
 fun OnlineArtistScreen(place: OnlinePlace.Artist, repository: OnlineRepository, actions: OnlineActions, navigate: (OnlinePlace) -> Unit) {
-    val source by repository.source.collectAsStateWithLifecycle()
+    val canRelate = repository.canRelate(place.id)
     val detail = rememberRemote(place.id) { repository.artist(place.id) }
-    val related = rememberRemote(place.id) { if (source?.canRecommend == true) repository.relatedArtists(place.id) else app.podium.core.common.Outcome.Success(emptyList()) }
+    val related = rememberRemote(place.id) { if (canRelate) repository.relatedArtists(place.id) else app.podium.core.common.Outcome.Success(emptyList()) }
     val likedIds by repository.likedIds.collectAsStateWithLifecycle()
     val overlayHost = overlay()
     val d = (detail as? Remote.Ready)?.value
@@ -54,7 +54,7 @@ fun OnlineArtistScreen(place: OnlinePlace.Artist, repository: OnlineRepository, 
         if (d == null) emptyList()
         else buildList {
             add(ArtistRow.Header)
-            if (source?.canRecommend == true) add(ArtistRow.Radio)
+            if (canRelate) add(ArtistRow.Radio)
             if (songs.isNotEmpty()) add(ArtistRow.PlayAll)
             if (d.tracks.isNotEmpty()) {
                 add(ArtistRow.Section("Popular"))
@@ -88,13 +88,13 @@ fun OnlineArtistScreen(place: OnlinePlace.Artist, repository: OnlineRepository, 
         }
     }
     val longPress: (Int) -> Unit = { i ->
-        (rows.getOrNull(i) as? ArtistRow.Song)?.let { showTrackMenu(overlayHost, it.track, repository, actions, navigate, source?.canRecommend == true) }
+        (rows.getOrNull(i) as? ArtistRow.Song)?.let { showTrackMenu(overlayHost, it.track, repository, actions, navigate) }
     }
     ListInputEffect(focus, onActivate = activate, onLongPress = longPress)
     when (detail) {
         Remote.Loading -> return
         is Remote.Failed -> {
-            OnlineMessage(detail.error, source?.name)
+            OnlineMessage(detail.error)
             return
         }
         is Remote.Ready -> Unit
@@ -160,7 +160,6 @@ private sealed interface CollectionRow {
 /** An online album or playlist: its cover (large in the preview), Play, Shuffle, Save, the songs. */
 @Composable
 fun OnlineCollectionScreen(place: OnlinePlace.Collection, repository: OnlineRepository, actions: OnlineActions, navigate: (OnlinePlace) -> Unit) {
-    val source by repository.source.collectAsStateWithLifecycle()
     val detail = rememberRemote(place.id) { repository.collection(place.id) }
     val likedIds by repository.likedIds.collectAsStateWithLifecycle()
     val overlayHost = overlay()
@@ -184,13 +183,13 @@ fun OnlineCollectionScreen(place: OnlinePlace.Collection, repository: OnlineRepo
         }
     }
     val longPress: (Int) -> Unit = { i ->
-        (rows.getOrNull(i) as? CollectionRow.Song)?.let { showTrackMenu(overlayHost, it.track, repository, actions, navigate, source?.canRecommend == true) }
+        (rows.getOrNull(i) as? CollectionRow.Song)?.let { showTrackMenu(overlayHost, it.track, repository, actions, navigate) }
     }
     ListInputEffect(focus, onActivate = activate, onLongPress = longPress)
     when (detail) {
         Remote.Loading -> return
         is Remote.Failed -> {
-            OnlineMessage(detail.error, source?.name)
+            OnlineMessage(detail.error)
             return
         }
         is Remote.Ready -> Unit

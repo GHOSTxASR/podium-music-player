@@ -2,6 +2,7 @@ package app.podium
 
 import app.podium.core.database.LibraryStore
 import app.podium.core.database.OnlineLibraryStore
+import app.podium.core.model.SourceId
 import app.podium.core.model.Track
 import app.podium.core.model.TrackId
 import app.podium.player.api.FavoritesRepository
@@ -53,8 +54,9 @@ class EnvironmentFavorites(
 }
 
 /**
- * Online listening history (D-34): records each online song heard — when it started and how long it
- * played — in ONLINE's history. Local songs are never recorded here.
+ * Online listening history (D-34, D-35): records each online song heard — the song the listener
+ * chose, with its own source; when it started; how long it played; and, if another source's EXACT
+ * copy served it, which source — in ONLINE's history. Local songs are never recorded here.
  */
 class OnlineHistoryRecorder(
     private val controller: PlaybackController,
@@ -66,6 +68,7 @@ class OnlineHistoryRecorder(
     private val now: () -> Long = System::currentTimeMillis,
 ) {
     private var current: TrackId? = null
+    private var servedBy: SourceId? = null
     private var startedAt = 0L
     private var heard = 0L
     private var lastPosition = 0L
@@ -77,10 +80,13 @@ class OnlineHistoryRecorder(
                 if (id != current) {
                     finish()
                     current = id?.takeIf { environments.isOnline(it) }
+                    servedBy = null
                     startedAt = now()
                     heard = 0L
                     lastPosition = 0L
                 }
+                // Who serves it is known once it has been resolved; the last word wins.
+                if (id == current) snapshot.item?.servedBy?.let { servedBy = it }
             }
         }
         // Count time actually heard: position advances while playing (seeks don't count).
@@ -100,10 +106,11 @@ class OnlineHistoryRecorder(
         val id = current ?: return
         val played = heard
         val at = startedAt
+        val server = servedBy
         if (played < MIN_LISTEN_MS) return
         scope.launch {
             val track = catalog.cached(id) ?: library.track(id) ?: return@launch
-            store.record(track, at, played)
+            store.record(track, at, played, servedBy = server)
         }
     }
 

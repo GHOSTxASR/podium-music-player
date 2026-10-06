@@ -12,6 +12,7 @@ import app.podium.core.model.AudioQuality
 import app.podium.core.model.Codec
 import app.podium.core.model.QualityReport
 import app.podium.core.model.QueueUid
+import app.podium.core.model.SourceId
 import app.podium.core.model.TrackId
 import app.podium.player.api.EnginePhase
 import app.podium.player.api.NowPlayingItem
@@ -233,6 +234,7 @@ class MediaControllerPlaybackController(
             queueSize = size,
             servedByDisplayName = extras?.getString(PodiumExtras.SERVED_BY),
             resolutionPath = extras?.getString(PodiumExtras.RESOLUTION_PATH)?.let { runCatching { ResolutionPath.valueOf(it) }.getOrNull() },
+            servedBy = extras?.getString(PodiumExtras.SERVED_BY_ID)?.takeIf { it.isNotBlank() }?.let(::SourceId),
         )
     }
 

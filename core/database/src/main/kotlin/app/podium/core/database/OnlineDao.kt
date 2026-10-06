@@ -92,6 +92,9 @@ interface OnlineDao {
     )
     fun recentTracks(account: String, limit: Int): Flow<List<TrackEntity>>
 
+    @Query("SELECT * FROM online_history WHERE account_key = :account ORDER BY started_at DESC, id DESC LIMIT :limit")
+    suspend fun listens(account: String, limit: Int): List<OnlineHistoryEntity>
+
     @Query("SELECT DISTINCT track_id FROM online_history WHERE started_at >= :since")
     suspend fun playedSince(since: Long): List<String>
 

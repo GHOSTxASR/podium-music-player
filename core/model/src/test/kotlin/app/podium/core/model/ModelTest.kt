@@ -18,6 +18,22 @@ class ModelTest {
     }
 
     @Test
+    fun `the same provider key on two sources never collides`() {
+        val a = SourceId("audius")
+        val b = SourceId("other")
+        assertTrue(TrackId.of(a, "123") != TrackId.of(b, "123"))
+        assertTrue(ArtistId.of(a, "123") != ArtistId.of(b, "123"))
+        assertTrue(AlbumId.of(a, "123") != AlbumId.of(b, "123"))
+        assertTrue(PlaylistId.of(a, "123") != PlaylistId.of(b, "123"))
+        assertEquals(b, PlaylistId.of(b, "123").sourceId)
+        assertEquals("123", PlaylistId.of(b, "123").providerKey)
+        val shelf = ScopedKey.of(b, "trending")
+        assertEquals(b, shelf.sourceId)
+        assertEquals("trending", shelf.key)
+        assertFailsWith<IllegalArgumentException> { ScopedKey("trending") }
+    }
+
+    @Test
     fun `a track must belong to its source`() {
         assertFailsWith<IllegalArgumentException> {
             Track(

@@ -72,18 +72,23 @@ import app.podium.core.interaction.rememberFocusListState
 import app.podium.core.interaction.rememberPodiumHaptics
 import kotlin.math.roundToInt
 
-private enum class SettingsRow { Theme, Finish, CustomColor, Grain, MusicFolders, Autoplay, Recommendations, AvoidRepeats, Haptics, Clicks, StartupSound }
+private enum class SettingsRow { Theme, Finish, CustomColor, Grain, MusicFolders, OnlineSources, Autoplay, Recommendations, AvoidRepeats, Haptics, Clicks, StartupSound }
 
-/** Settings (D-26, D-32): the device's look, which folders hold its music, and how it answers touch. */
+/**
+ * Settings (D-26, D-32, D-35): the device's look, which folders hold its music, which online sources it
+ * uses, and how it answers touch.
+ */
 @Composable
 fun SettingsScreen(
     repository: DeviceSettingsRepository,
     folders: MusicFolderSettings,
+    onlineSources: OnlineSourceSettings,
     onTheme: () -> Unit,
     onFinish: () -> Unit,
     onCustomColor: () -> Unit,
     onGrain: () -> Unit,
     onMusicFolders: () -> Unit,
+    onOnlineSources: () -> Unit,
 ) {
     val appearance by repository.appearance.collectAsStateWithLifecycle()
     val startupSound by repository.startupSound.collectAsStateWithLifecycle()
@@ -94,8 +99,10 @@ fun SettingsScreen(
     val avoidRepeatsOn by repository.avoidRepeats.collectAsStateWithLifecycle()
     val folderList by folders.folders.collectAsStateWithLifecycle()
     val selection by folders.selection.collectAsStateWithLifecycle()
+    val sourceRows by onlineSources.sources.collectAsStateWithLifecycle()
     val haptics = rememberPodiumHaptics()
-    val rows = SettingsRow.entries
+    // Only a build with online sources has anything to choose there.
+    val rows = SettingsRow.entries.filter { it != SettingsRow.OnlineSources || sourceRows.isNotEmpty() }
     val focus = rememberFocusListState("settings")
     val activate: (Int) -> Unit = { index ->
         val industrial = appearance.display.isIndustrial
@@ -105,6 +112,7 @@ fun SettingsScreen(
             SettingsRow.CustomColor -> if (industrial) haptics.reject() else onCustomColor()
             SettingsRow.Grain -> if (appearance.isGlass) haptics.reject() else onGrain()
             SettingsRow.MusicFolders -> onMusicFolders()
+            SettingsRow.OnlineSources -> onOnlineSources()
             SettingsRow.Autoplay -> {
                 haptics.confirm()
                 repository.setAutoplay(!autoplayOn)
@@ -181,6 +189,7 @@ fun SettingsScreen(
                     else -> "${songsIncluded(folderList.orEmpty(), selection)} songs"
                 },
             )
+            SettingsRow.OnlineSources -> MenuRow("Online sources", focused, value = onlineSourcesSummary(sourceRows))
             SettingsRow.Autoplay -> MenuRow("Autoplay", focused, value = if (autoplayOn) "On" else "Off", showChevron = false)
             SettingsRow.Recommendations -> MenuRow("Online recommendations", focused, value = if (recommendationsOn) "On" else "Off", enabled = autoplayOn, showChevron = false)
             SettingsRow.AvoidRepeats -> MenuRow("Avoid repeats", focused, value = if (avoidRepeatsOn) "On" else "Off", enabled = autoplayOn, showChevron = false)

@@ -100,33 +100,6 @@ fun interface OwnedCopyLocator {
     suspend fun find(track: Track): Pair<Track, PlayableMedia>?
 }
 
-/** Remembers matcher decisions so equivalence is computed once and can be overridden by the user. */
-interface EquivalenceStore {
-    fun get(a: Track, b: Track): MatchResult?
-    fun put(a: Track, b: Track, result: MatchResult)
-    /** The user said "not the same song": never match these again. */
-    fun reject(a: Track, b: Track)
-}
-
-class InMemoryEquivalenceStore : EquivalenceStore {
-    private val decisions = mutableMapOf<Pair<String, String>, MatchResult>()
-
-    private fun key(a: Track, b: Track) =
-        if (a.id.value <= b.id.value) a.id.value to b.id.value else b.id.value to a.id.value
-
-    @Synchronized override fun get(a: Track, b: Track) = decisions[key(a, b)]
-
-    @Synchronized override fun put(a: Track, b: Track, result: MatchResult) {
-        val k = key(a, b)
-        if (decisions[k]?.tier == MatchTier.NO_MATCH && decisions[k]?.evidence?.isEmpty() == true) return
-        decisions[k] = result
-    }
-
-    @Synchronized override fun reject(a: Track, b: Track) {
-        decisions[key(a, b)] = MatchResult(MatchTier.NO_MATCH, 0f, emptyList())
-    }
-}
-
 /**
  * Turns a queued track into a playback [Selection] (MUSIC_SOURCE_ARCHITECTURE §8):
  *
@@ -210,11 +183,13 @@ class StreamResolver(
         resolveFrom(track.source.sourceId, track, request, ResolutionPath.OWN_SOURCE, null, attempts)
             ?.let { return it }
 
-        // 3. EXACT-match fallback on other enabled sources, in user priority order.
+        // 3. EXACT-match fallback on other enabled sources, in user priority order. A copy already
+        //    known to be EXACT (several sources answered the same search, D-35) is used directly;
+        //    otherwise the source is searched and the matcher decides.
         if (request.fallbackPolicy == FallbackPolicy.EXACT_ONLY && request.purpose != Purpose.PREFETCH) {
             for (source in registry.ordered()) {
                 if (source.descriptor.id == track.source.sourceId) continue
-                val candidate = findExactEquivalent(source, track, attempts) ?: continue
+                val candidate = knownExactEquivalent(source, track) ?: findExactEquivalent(source, track, attempts) ?: continue
                 resolveFrom(
                     source.descriptor.id, candidate.first, request, ResolutionPath.EXACT_FALLBACK, candidate.second, attempts,
                 )?.let { return it }
@@ -280,6 +255,13 @@ class StreamResolver(
                 null
             }
         }
+    }
+
+    /** A copy on [source] already decided EXACT for [track] (never anything less). */
+    private fun knownExactEquivalent(source: MusicSource, track: Track): Pair<Track, MatchResult>? {
+        val copy = equivalence.exactEquivalents(track).firstOrNull { it.source.sourceId == source.descriptor.id } ?: return null
+        val decision = equivalence.get(track, copy)?.takeIf { it.tier == MatchTier.EXACT } ?: return null
+        return copy to decision
     }
 
     private suspend fun findExactEquivalent(

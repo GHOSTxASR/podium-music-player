@@ -109,6 +109,43 @@ class OnlineLibraryStoreTest {
     }
 
     @Test
+    fun `likes keep their own source, even for the same provider id on two sources`() = runTest {
+        val other = SourceId("other")
+        val onAudius = song("Shared", source = Audius, key = "123")
+        val onOther = song("Shared", source = other, key = "123")
+        online.setLiked(onAudius, true)
+        assertEquals(setOf(TrackId("audius|123")), online.likedIds().first(), "liking one copy doesn't like the other")
+        online.setLiked(onOther, true)
+        assertEquals(setOf(onAudius.id, onOther.id), online.likedIds().first())
+        online.setLiked(onAudius, false)
+        assertEquals(setOf(onOther.id), online.likedIds().first())
+        assertEquals(other, online.likedTracks().first().single().source.sourceId)
+    }
+
+    @Test
+    fun `a listen records the song chosen and who served it`() = runTest {
+        val chosen = onlineSong("Alpha")
+        online.record(chosen, startedAt = 10, playedMs = 60_000, servedBy = SourceId("other"))
+        online.record(chosen, startedAt = 20, playedMs = 60_000, servedBy = Audius)
+        val (second, first) = online.listens()
+        assertEquals("audius|alpha", first.trackId)
+        assertEquals("audius", first.sourceId)
+        assertEquals("alpha", first.providerId)
+        assertEquals("other", first.servedBy)
+        assertEquals(null, second.servedBy, "its own source serving it isn't noted twice")
+    }
+
+    @Test
+    fun `a playlist keeps each song's own source`() = runTest {
+        val fromAudius = onlineSong("Alpha")
+        val fromOther = song("Gamma", source = SourceId("other"), key = "g")
+        val id = online.createPlaylist("Mixed", Audius, listOf(fromAudius, fromOther))
+        val entries = online.playlist(id).first()!!.entries.map { it.track }
+        assertEquals(listOf(Audius, SourceId("other")), entries.map { it.source.sourceId })
+        assertEquals(listOf(fromAudius.id, fromOther.id), entries.map { it.id })
+    }
+
+    @Test
     fun `online history doesn't touch the local library or favorites`() = runTest {
         online.record(onlineSong("Alpha"), startedAt = 10, playedMs = 60_000)
         assertTrue(db.likes().likedIds().first().isEmpty())

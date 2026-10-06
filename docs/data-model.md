@@ -3,7 +3,7 @@
 **Date:** 2026-10-02 · Database: Room 3 + bundled SQLite (ADR-004) · Preferences: Proto DataStore (D-10) · Storage classes: ADR-008.
 
 ## 1. Principles
-1. **Source-qualified identity** — every remote entity's primary key is `"<sourceId>:<sourceEntityId>"`. Title+artist is never identity.
+1. **Source-qualified identity** — every remote entity's primary key is `"<sourceId>|<sourceEntityId>"` (separator `|`, as in code). Title+artist is never identity.
 2. **User data references, doesn't copy** — likes, playlists, history, queue, downloads reference `track.id`. Referenced tracks are **pinned** (never garbage-collected).
 3. **Metadata needed offline is stored once** — in `track`/`album`/`artist`; denormalised display strings (`artist_display`, `album_title`) live on `track` to render rows without joins.
 4. **No redundant derived data** unless it removes a hot-path join; each denormalisation is noted.
@@ -21,6 +21,9 @@
 
 ### Schema v2 — ONLINE (D-34)
 Auto-migration 1 → 2 adds ONLINE's own tables, never shared with the local library's: `online_liked_track` (PK account_key + track_id; source_id, provider_id, liked_at, sync_state), `online_playlist` (id UUID, source_id, account_key, remote_playlist_id, name, created/updated) with `online_playlist_track` (autoincrement id, playlist_id FK cascade, track_id, fractional position, added_at), and `online_history` (source_id, account_key, provider_id, track_id, started_at, played_ms, duration_ms, completion). `account_key` is "" for "on this device" until a source can be signed in. Online songs' metadata is cached in `track` with `in_library = 0` (never listed locally; a library row is never overwritten). Tested by `MigrationTest` (a database built from the committed v1 schema opens on v2 with its data, and the backup is taken).
+
+### Schema v3 — multi-source ONLINE (D-35)
+Auto-migration 2 → 3 adds one nullable column, `online_history.served_by`: the source whose copy actually played a listen, when it wasn't the song's own (an EXACT copy elsewhere). The row's `track_id`/`source_id`/`provider_id` stay the song the listener chose. Nothing else changed — likes, playlists and history were already source-qualified per row, and the saved queue stores source-qualified `track_id`s (an item's preferred source and EXACT-only fallback are derived from its track, never stored). Tested by `MigrationTest` (a database built from the committed v2 schema, with likes, a playlist and a listen, opens on v3 intact; the `bak-v2` copy is taken).
 
 ## 2. Entity overview
 
