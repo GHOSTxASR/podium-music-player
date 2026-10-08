@@ -216,8 +216,9 @@ main, .footer, .nav { position: relative; z-index: 1; }
 }
 @media (max-width: 520px) {
   .spec-grid { grid-template-columns: 1fr; }
-  .hero { --wm: 14.5vw; }
-  .hero-device { max-height: 122vw; }
+  .hero { --wm: 14.5vw; --dtop: calc(60px + 3.2vh + clamp(30px, 3vw, 44px) + var(--wm) * 0.92 + 14px); }
+  /* On a phone the device sits just under the wordmark instead of over it. */
+  .hero-device { top: var(--dtop); height: calc(100% - var(--dtop) - 64px); max-height: 122vw; }
   .trio .device:nth-child(2) { transform: none; }
 }
 @media (prefers-reduced-motion: reduce) {

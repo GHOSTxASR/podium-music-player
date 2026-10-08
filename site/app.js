@@ -61,6 +61,7 @@
     ["concrete_rose", "Concrete Rose", "Yung Atlas"], ["static_bloom", "Static Bloom", "Iris Kane"], ["eighty_eight", "88 MPH", "Vanta"],
   ].map(([f, title, artist]) => ({ src: `assets/covers/${f}.jpg`, title, artist }));
   const N = COVERS.length;
+  COVERS.forEach((c) => { const im = new Image(); im.decoding = "async"; im.src = c.src; }); // warm the cache before the first step
   const coverAt = (k) => COVERS[((k % N) + N) % N];
 
   /* ---------- the flow: big at the browser's edges, shrinking into the Podium, Cover Flow on its screen ---------- */

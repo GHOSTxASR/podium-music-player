@@ -13,3 +13,7 @@
 # LiteRT loads its interpreter through JNI (the sticker cutout model).
 -keep class org.tensorflow.lite.** { *; }
 -keep class com.google.ai.edge.litert.** { *; }
+
+# Room finds each database's generated <Name>_Impl by name through reflection: WorkManager's
+# WorkDatabase and Podium's own. Keep the databases, their implementations and constructors.
+-keep class * extends androidx.room.RoomDatabase { <init>(); }
