@@ -66,7 +66,7 @@ Parameters are tokens (tunable on device; values are starting points):
 | `wheel.accel` | ×1 < 22 det/s · ×2 < 36 · ×4 ≥ 36 (ListFocus with ≥ 50 items only; shorter lists always move one item per detent) |
 | `wheel.maxHapticRate` | 60/s |
 
-Global: hold ⏯ switches the device off (as on the original); any press wakes it.
+Global: hold ⏯ switches the device off (as on the original); any press wakes it. Press ⏯ twice quickly (within 300 ms) to open Now Playing from anywhere (D-68). Each press still toggles at once, so the music ends as it was. Nothing opens when nothing is loaded; on Now Playing the two presses just toggle.
 
 Algorithm:
 1. `down` inside the ring band → candidate gesture; record the zone under the finger; play `press` haptic and show zone pressed state **immediately** (tactility).

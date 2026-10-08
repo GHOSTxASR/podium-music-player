@@ -2,6 +2,7 @@ package app.podium
 
 import android.app.Activity
 import android.content.Intent
+import android.os.SystemClock
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedContentTransitionScope
@@ -119,6 +120,7 @@ import app.podium.core.designsystem.theme.PodiumMotion
 import app.podium.core.designsystem.theme.PodiumTheme
 import app.podium.core.designsystem.theme.Spacing
 import app.podium.core.interaction.Clicker
+import app.podium.core.interaction.DoublePress
 import app.podium.core.interaction.Feedback
 import app.podium.core.interaction.InputRouter
 import app.podium.core.interaction.LocalFeedback
@@ -364,7 +366,7 @@ fun PodiumApp(graph: AppGraph, onSourceAction: (CapabilityAction) -> Unit, onTur
         val scope = rememberCoroutineScope()
 
         SystemBarIcons(darkIcons = palette.isLight)
-        GlobalInput(router, navigator, haptics, controller, graph) { direction ->
+        GlobalInput(router, navigator, overlay, haptics, controller, graph) { direction ->
             scope.launch {
                 // Hold ⏮/⏭ to scan: 5 s steps, 5 per second (interaction-model.md §3).
                 while (isActive) {
@@ -980,6 +982,9 @@ private class Navigator(private val stack: SnapshotStateList<Dest>) {
         while (stack.last() != screen) stack.removeAt(stack.lastIndex)
     }
 
+    /** The screen on top. */
+    val current: Dest get() = stack.last()
+
     /** Now Playing is a single instance: return to it if it's already in the stack. */
     fun showNowPlaying() {
         val existing = stack.indexOf(Dest.NowPlaying)
@@ -992,13 +997,14 @@ private class Navigator(private val stack: SnapshotStateList<Dest>) {
 }
 
 /**
- * Menu = back, long Menu = Home, transport buttons = playback, hold ⏮/⏭ to scan (ADR-011).
- * Switched off, any press wakes the device; while it boots, input is ignored.
+ * Menu = back, long Menu = Home, transport buttons = playback, hold ⏮/⏭ to scan (ADR-011), double
+ * ⏯ = Now Playing (D-68). Switched off, any press wakes the device; while it boots, input is ignored.
  */
 @Composable
 private fun GlobalInput(
     router: InputRouter,
     navigator: Navigator,
+    overlay: OverlayHost,
     haptics: PodiumHaptics,
     controller: PlaybackController,
     graph: AppGraph,
@@ -1006,6 +1012,7 @@ private fun GlobalInput(
 ) {
     DisposableEffect(router, navigator) {
         var scan: Job? = null
+        val playPause = DoublePress()
         router.global = handler@{ input ->
             when (graph.power.value) {
                 Power.OFF -> {
@@ -1021,7 +1028,18 @@ private fun GlobalInput(
                         if (!navigator.pop()) haptics.boundary()
                         true
                     }
-                    WheelButton.PLAY_PAUSE -> { controller.togglePlayPause(); true }
+                    WheelButton.PLAY_PAUSE -> {
+                        controller.togglePlayPause()
+                        // Two quick presses: show what's playing, from anywhere. The first press
+                        // already toggled at once (⏯ never waits); the second undoes it, so the
+                        // music is as it was. On Now Playing itself both presses simply toggle.
+                        val double = playPause.press(SystemClock.uptimeMillis())
+                        if (double && navigator.current != Dest.NowPlaying && controller.snapshot.value.item != null) {
+                            overlay.dismiss()
+                            navigator.showNowPlaying()
+                        }
+                        true
+                    }
                     WheelButton.NEXT -> { controller.next(); true }
                     WheelButton.PREVIOUS -> { controller.previous(); true }
                     WheelButton.CENTER -> false
