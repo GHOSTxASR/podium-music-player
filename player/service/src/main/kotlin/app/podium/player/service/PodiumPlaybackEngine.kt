@@ -135,6 +135,11 @@ class PodiumPlaybackEngine(
             override fun onPlaybackStateChanged(playbackState: Int) {
                 if (playbackState == Player.STATE_READY) {
                     consecutiveErrors = 0
+                    refreshedAfterError.clear()
+                    if (recovery != null) {
+                        recovery = null
+                        publishExtras()
+                    }
                     if (lastError != null) {
                         lastError = null
                         publishExtras()
@@ -419,20 +424,62 @@ class PodiumPlaybackEngine(
      * pause (SkipAfter). Three consecutive failures halt instead of skipping through the whole queue.
      */
     private fun handleError(error: PlaybackException) {
-        val classified = PlaybackErrors.classify(error)
-        lastError = classified
         val current = queue.state.value.current
-        current?.selection?.servedBy?.let { deps.health.record(it, PlaybackErrors.healthOutcomeOf(classified)) }
+        val refused = PlaybackErrors.isRefusedStream(error) && current?.selection?.media != null
+        // A stream URL that's refused (expired after a long pause, revoked) is asked for afresh from
+        // the same source, once, and playback carries on where it was (D-18: same source, same copy).
+        if (refused && current != null && refreshedAfterError.add(current.uid)) {
+            recovery = app.podium.player.api.Recovery.REFRESHING_STREAM
+            publishExtras()
+            refreshAndResume(current.uid, player.currentPosition)
+            return
+        }
+        // A refused stream says nothing about the listener's account: it's this song, not a sign-in.
+        val classified = if (refused) PodiumError.NotPlayable("stream refused") else PlaybackErrors.classify(error)
+        lastError = classified
+        val outcome = if (refused) HealthOutcome.INVALID_MEDIA else PlaybackErrors.healthOutcomeOf(classified)
+        current?.selection?.servedBy?.let { deps.health.record(it, outcome) }
         consecutiveErrors++
         publishExtras()
         Log.w(TAG, "playback error on ${current?.uid}: $classified (${error.errorCodeName})")
         skipJob?.cancel()
-        if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS || !player.hasNextMediaItem()) return
+        if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS || !player.hasNextMediaItem()) {
+            recovery = null
+            publishExtras()
+            return
+        }
+        recovery = app.podium.player.api.Recovery.SKIPPING
+        publishExtras()
         skipJob = scope.launch {
             delay(SKIP_AFTER_MS)
+            recovery = null
             player.seekToNextMediaItem()
             player.prepare()
             player.playWhenReady = true
+        }
+    }
+
+    /** Items whose refused stream was asked for afresh; cleared once playback is going again. */
+    private val refreshedAfterError = HashSet<QueueUid>()
+
+    /** What the engine is doing about the current song's problem, for the session (and Now Playing). */
+    private var recovery: app.podium.player.api.Recovery? = null
+
+    private fun refreshAndResume(uid: QueueUid, positionMs: Long) {
+        scope.launch {
+            val outcome = runCatching { itemResolver.refreshPinned(uid) }
+                .getOrElse { ResolveOutcome.Failed(HealthOutcome.UNKNOWN, it.javaClass.simpleName, emptyList()) }
+            if (queue.state.value.current?.uid != uid) return@launch // the listener moved on meanwhile
+            if (outcome is ResolveOutcome.Resolved) {
+                Log.d(TAG, "a fresh stream for $uid after the last was refused; resuming at ${positionMs}ms")
+                player.seekTo(player.currentMediaItemIndex, positionMs)
+                player.prepare() // keeps the listener's play/pause intent
+            } else {
+                Log.w(TAG, "no fresh stream for $uid: $outcome")
+                player.playerError?.let(::handleError) ?: handleError(
+                    PlaybackException("stream refused", null, PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS),
+                )
+            }
         }
     }
 
@@ -453,6 +500,7 @@ class PodiumPlaybackEngine(
             claimed?.bitDepth?.let { putInt(PodiumExtras.CLAIMED_BIT_DEPTH, it) }
             putString(PodiumExtras.CONTEXT_LABEL, queue.state.value.context?.label)
             putString(PodiumExtras.LAST_ERROR, lastError?.let { it::class.simpleName })
+            putString(PodiumExtras.RECOVERY, recovery?.name)
         }
         onExtrasChanged(extras)
     }
@@ -469,7 +517,8 @@ class PodiumPlaybackEngine(
 
     companion object {
         private const val TAG = "PodiumEngine"
-        private const val RESOLVE_TIMEOUT_MS = 15_000L
+        /** Longer than any source's own resolve budget (PlaybackFacet.resolveTimeoutMillis), so the source decides. */
+        private const val RESOLVE_TIMEOUT_MS = 25_000L
         private const val SKIP_AFTER_MS = 1_500L
         private const val MAX_CONSECUTIVE_ERRORS = 3
         private const val SAVE_DEBOUNCE_MS = 750L

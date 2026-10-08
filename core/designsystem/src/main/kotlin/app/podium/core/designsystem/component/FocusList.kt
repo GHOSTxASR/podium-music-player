@@ -214,6 +214,8 @@ fun <T> FocusList(
     BoxWithConstraints(modifier.clipToBounds()) {
         val g = PaperGeometry(maxWidth, maxHeight, contentPadding.calculateTopPadding(), contentPadding.calculateBottomPadding())
         val decor = LocalPaperDecor.current()
+        val lenses = if (miniature) null else LocalPaperLenses.current
+        val lensKey = LocalPaperKey.current
         // A miniature may centre any row: room above the first and below the last.
         val listPadding = if (miniature) PaddingValues(top = g.padTop + g.readable / 2, bottom = g.padBottom + g.readable / 2) else contentPadding
         // How far a row can bend left (at the readable region's ends, and in the fade beyond), plus
@@ -253,6 +255,7 @@ fun <T> FocusList(
             drawPath(path, colors.labelTertiary.copy(alpha = if (colors.isDark) 0.45f else 0.6f), style = Stroke(width = 1.dp.toPx()))
             val lens = lensRect(listState, state.focusedIndex, lensPosition.value) ?: return@Canvas
             val centre = lens.first + lens.second / 2f
+            if (lenses != null && lensKey != null) lenses.record(lensKey, centre)
             val centreDp = centre.toDp()
             val left = (g.columnLeft - g.bend(centreDp - g.centreY)).toPx()
             val right = (g.arcX(centreDp) - Paper.ArcGap / 2).toPx()
@@ -311,8 +314,9 @@ fun <T> FocusList(
                             left = if (g.leftBoxX > 0.dp) PeekFeather else 0.dp,
                             right = PeekFeather,
                             vertical = PeekFeather * 0.8f,
-                        )
-                        .background(colors.canvasRaised),
+                        ),
+                    // No backing of its own: the display (its colour, or the listener's picture)
+                    // shows through, so the glimpse is the same paper as the column in focus.
                 ) {
                     Box(
                         Modifier

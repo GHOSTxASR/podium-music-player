@@ -5,7 +5,8 @@ Decisions: D-11 (consent), D-39 (provider and full-screen lyric mode).
 
 Now Playing ▸ Lyrics turns the whole virtual display into the lyric. Podium never claims words it
 can't stand behind: lyrics are shown only when a provider's record is confidently the same recording,
-synced lyrics follow the real playback position, and plain lyrics never pretend to be synced.
+synced lyrics follow the real playback position, and lyrics without usable times are paced across
+the song by Podium — labelled an estimate (§5.2, D-50).
 
 ```
 LyricsScreen (feature:nowplaying) ── LyricsGateway (interface, app supplies it)
@@ -106,6 +107,31 @@ for delegated online playback (the owner-aware controller reports the remote ses
   time; only the pace inside the line is estimated, and the details overlay says so ("Words paced
   to the line").
 - The screen wakes at the next word or line (16–500 ms), so it redraws once per word.
+
+### 5.2 Formatted for the player (D-50)
+
+Providers write lyrics in many ways; the screen shows one line at a time and follows the music.
+`LyricsFormatter.forPlayback(lyrics, durationMs)` shapes what the repository hands the screen —
+the provider's own answer is cached unchanged, so better rules apply to old entries too:
+
+- **Usable synced lyrics are kept exactly.**
+- **Repaired:** lines sharing one stamp are spread (by length) up to the next stamp; stamps running
+  past the end of the song are scaled into it; a timed section label ("[Chorus]") becomes a gap; a
+  line longer than 14 words is split at its phrases, the pieces timed within the line (by the
+  provider's word times when it has them). Repairs other than splitting mark the lyrics
+  `estimated`.
+- **Times that say nothing** (six or more lines on a third as many distinct stamps or fewer, or all
+  inside 15 % of the song) are treated as plain.
+- **Plain lyrics are paced across the song:** labels dropped, a lead-in (7 %, 4–18 s) and an outro
+  (6 %, 4–20 s) left free, each line given time by its letters and each verse break a breath.
+  `Lyrics.Synced(estimated = true)`; the details overlay says "Timing estimated by Podium", and the
+  Wheel still reads ahead (Center returns to the music).
+- Without the song's length nothing is invented: plain lyrics stay plain.
+
+The provider prefers synced words: an exact LRCLIB match with only plain lyrics is kept while the
+search looks for the same song with times (another upload often has them); search results with
+times win over those without. The cache key carries a version (`v2`) so answers kept before this are
+asked for again.
 
 ## 6. Repository, consent and cache
 

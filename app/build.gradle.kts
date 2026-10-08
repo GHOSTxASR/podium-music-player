@@ -14,6 +14,10 @@ android {
     buildFeatures {
         buildConfig = true
     }
+    // The cutout model is memory-mapped straight from the APK.
+    androidResources {
+        noCompress += "tflite"
+    }
     buildTypes {
         debug {
             applicationIdSuffix = ".debug"
@@ -51,6 +55,8 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.navigation3.runtime)
     implementation(libs.androidx.navigation3.ui)
+    // Sticker cutout on the phone (D-55): LiteRT runs the bundled magic-touch model.
+    implementation(libs.litert)
 
     // The library repository over a real (in-memory) database, on the development machine.
     testImplementation(libs.junit)

@@ -2,7 +2,7 @@
 
 **Date:** 2026-10-02 · Evidence: `research/2026-10-02-music-sources.md` · Decision: ADR-002.
 
-> **Update (2026-10-02, later the same day):** the product direction changed to a *universal player* with interchangeable providers (Local, YouTube Music, OpenSubsonic, Audius, Spotify). The source model is now ADR-013 / `architecture/MUSIC_SOURCE_ARCHITECTURE.md`; per-provider capabilities and Podium's positions are in `architecture/SOURCE_CAPABILITY_MATRIX.md`; BitChord findings in `research/BITCHORD_ARCHITECTURE_REVIEW.md`. The YouTube analysis below still stands; its conclusion (§2.4) is refined into options Y0–Y3.
+> **Authoritative Direction Update (D-48):** Podium is a sideloaded personal music player. The earlier policy exclusion of direct YouTube streaming (Y3) has been superseded by D-48. YouTube Music is the sole online provider, featuring direct in-app Media3 streaming using BitChord as an architectural and implementation reference. Offline/local music playback remains stable and untouched. The technical findings below regarding InnerTube mechanics, format limits, and cipher rotation remain factually accurate, while earlier policy conclusions regarding stream extraction have been superseded.
 
 This document separates three questions for every candidate source:
 1. **Technically possible?** (can it be built and kept working)
@@ -13,14 +13,14 @@ This document separates three questions for every candidate source:
 
 | Source | Technically possible | Authorised | Distributable | Lossless | Downloads | Podium decision |
 |---|---|---|---|---|---|---|
-| Local files (MediaStore) | ✓ trivial | ✓ user's own files | ✓ | ✓ FLAC/ALAC/WAV | n/a (already local) | **Launch (Phase 5)** |
-| OpenSubsonic servers | ✓ simple REST | ✓ API designed for third-party clients; content is the user's | ✓ (many Subsonic clients on Play) | ✓ original files | ✓ via `download`/`stream` | **Launch (Phase 5/9)** |
-| Audius | ✓ simple REST, no key | ✓ public API for third-party apps | ✓ | ✗ (lossy streams) | ✓ only where the artist enables | **Launch (Phase 9)** |
-| Jellyfin | ✓ | ✓ | ✓ | ✓ | ✓ | P1 adapter |
+| Local files (MediaStore) | ✓ trivial | ✓ user's own files | ✓ | ✓ FLAC/ALAC/WAV | n/a (already local) | **Active (stable, frozen)** |
+| OpenSubsonic servers | ✓ simple REST | ✓ API designed for third-party clients; content is the user's | ✓ (many Subsonic clients on Play) | ✓ original files | ✓ via `download`/`stream` | **Retired (historical; D-48)** |
+| Audius | ✓ simple REST, no key | ✓ public API for third-party apps | ✓ | ✗ (lossy streams) | ✓ only where the artist enables | **Retired (historical; D-48)** |
+| Jellyfin | ✓ | ✓ | ✓ | ✓ | ✓ | Deferred |
 | TIDAL SDK | ✓ (SDK exists) | ✗ full playback not publicly available to third parties (previews only) | — | (✓ for partners) | — | Watch |
 | Apple MusicKit for Android | ✓ | Requires paid Apple developer membership + user subscription | Possibly | ✗ via SDK | ✗ | Watch; needs user's paid account |
 | YouTube Data API v3 | Search only | ✓ within quota | — | ✗ | ✗ | Rejected: no audio streams; visible player required; 100 searches/day |
-| **YouTube Music via InnerTube (InnerTune-style)** | ✓ but fragile (monthly breakage) | **✗** (see §2) | **✗** | ✗ (Opus ~160 / AAC 128–256) | ✗ ToS | **Not implemented by Podium** |
+| **YouTube Music via InnerTube** | ✓ requires extractor maintenance | Unofficial client | Sideloaded only | ✗ (Opus ~160 / AAC 128–256) | ✗ (streaming only in v1) | **Active sole online provider (D-48)** |
 
 ## 2. YouTube Music — detailed analysis
 
@@ -41,17 +41,16 @@ This document separates three questions for every candidate source:
 - Not acceptable on Google Play; exposes the developer to takedowns (cf. youtube-dl/Uberspace, Vanced).
 - Every mature client is GPL-3.0; reusing their code forces Podium's license.
 
-### 2.4 Conclusion
-**Technically possible, not authorised, not distributable.** The brief's §65 explicitly forbids implementing functionality designed to circumvent access controls, DRM, subscription restrictions, or authentication barriers. Podium therefore **does not implement** the stream-unlock layer: signature/n-parameter solving, PoToken/BotGuard generation, client-identity rotation to obtain streams, age-gate bypass, or YouTube downloading.
+### 2.4 Conclusion (Updated by D-48)
+**Historical Context:** Earlier iterations concluded that direct YouTube audio streaming was excluded under former policies. Under **D-48**, Podium is explicitly established as a personal sideloaded Android music player. Offline playback remains stable and untouched, while YouTube Music is the sole online music provider, utilizing direct in-app Media3 streaming based on BitChord's architectural and implementation reference.
 
-**Refined options (see `architecture/SOURCE_CAPABILITY_MATRIX.md` §3):**
-| Option | What it is | Podium builds it? |
+**Resolution of Options (authoritative under D-48):**
+| Option | What it is | Status |
 |---|---|---|
-| Y0 | No YouTube source | — |
-| Y1 | Catalogue/metadata adapter (unofficial, opt-in, excluded from Play builds); tracks play only via an EXACT-matched copy on the user's authorized sources (D-17) | Yes, if the user accepts the documented policy risk |
-| Y2 | Official embedded player target (visible, foreground, video) | Yes, if wanted |
-| Y3 | Direct YouTube audio (BitChord-style stream unlock) | **No** (conflicts with the brief's §65 and ADR-013's hard boundary) |
-Nothing in Podium's core assumes YouTube; the matcher-based design keeps provider identity out of the UI either way.
+| Y0 | No YouTube source | Superseded |
+| Y1 | Catalogue-only adapter | Superseded |
+| Y2 | Official embedded player target | Superseded |
+| Y3 | Direct YouTube audio (in-app Media3 stream playback) | **Active / Authoritative under D-48** (BitChord reference; sideloaded player) |
 
 ## 3. Launch source designs
 

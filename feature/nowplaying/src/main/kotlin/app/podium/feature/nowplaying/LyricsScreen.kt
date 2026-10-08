@@ -38,12 +38,13 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.podium.core.designsystem.component.Pinwheel
 import app.podium.core.designsystem.theme.BoneColors
 import app.podium.core.designsystem.theme.CarbonColors
 import app.podium.core.designsystem.theme.PodiumTheme
-import app.podium.core.designsystem.type.LocalTypographyPreset
+import app.podium.core.designsystem.type.LocalLyricsTypeface
 import app.podium.core.designsystem.type.PodiumText
 import app.podium.core.interaction.InputTargetEffect
 import app.podium.core.interaction.PodiumInput
@@ -82,7 +83,9 @@ interface LyricsGateway {
  * - Turning the Wheel reads ahead or back; following resumes after a few seconds, or with Center,
  *   which also jumps playback to the line read — only when the player can seek.
  * - Center plays/pauses while following; Menu goes back; a tap shows the song and the credit.
- * - Plain lyrics never pretend to be synced: the Wheel moves through them.
+ * - Lyrics without usable times are paced across the song by Podium ([app.podium.core.lyrics.LyricsFormatter],
+ *   D-50), so they follow the music too; the details say the timing is an estimate. Only when the
+ *   song's length is unknown do they stay plain, moved through with the Wheel.
  */
 @Composable
 fun LyricsScreen(controller: PlaybackController, gateway: LyricsGateway) {
@@ -115,13 +118,33 @@ fun LyricsScreen(controller: PlaybackController, gateway: LyricsGateway) {
 
     // Follow playback efficiently: wake when the next word or line is due (or twice a second to
     // notice a seek), and change state only when it changes — the screen redraws once per word.
+    // Coming back to the screen (from Home, or the app reopened) starts following afresh, from
+    // where the music is now; so does the player getting going again after a hiccup.
+    var resumes by remember { mutableIntStateOf(0) }
+    LifecycleResumeEffect(Unit) {
+        resumes++
+        following = true
+        onPauseOrDispose { }
+    }
+    val status = snapshot.status
     if (lyrics is Lyrics.Synced) {
         val starts = remember(lyrics) { HashMap<Int, List<Long>>() }
         fun startsOf(i: Int) = starts.getOrPut(i) { WordTiming.starts(lyrics.lines[i], lyrics.lines.getOrNull(i + 1)?.startMs) }
-        LaunchedEffect(lyrics, following, playing) {
+        LaunchedEffect(lyrics, following, playing, resumes, status) {
             if (!following) shown = Int.MAX_VALUE
+            var lastPosition = -1L
+            var lastClock = 0L
             while (isActive && following) {
                 val position = controller.positionMs()
+                // Diagnostics for lyrics that drift from the music: while playing, the player's
+                // position should move with the clock. Facts only (no titles).
+                val clock = android.os.SystemClock.elapsedRealtime()
+                if (playing && lastPosition >= 0) {
+                    val drift = (position - lastPosition) - (clock - lastClock)
+                    if (kotlin.math.abs(drift) > DRIFT_LOG_MS) android.util.Log.i("PodiumLyrics", "position moved ${drift}ms off the clock at ${position}ms (status ${status::class.simpleName})")
+                }
+                lastPosition = position
+                lastClock = clock
                 val i = LyricsTiming.displayIndex(lyrics.lines, position)
                 val words = startsOf(i)
                 index = i
@@ -223,6 +246,7 @@ fun LyricsScreen(controller: PlaybackController, gateway: LyricsGateway) {
                 val note = buildString {
                     append(item.artistDisplay)
                     if (lyrics is Lyrics.Plain) append(". Not synced: turn the Wheel to read")
+                    if (lyrics is Lyrics.Synced && lyrics.estimated) append(". Timing estimated by Podium")
                     // Most lyrics time whole lines: the words' pace inside a line is then Podium's estimate.
                     if (lyrics is Lyrics.Synced && lyrics.lines.getOrNull(index)?.let(WordTiming::isEstimated) == true) append(". Words paced to the line")
                     if (lyrics is Lyrics.Synced && !following) append(". Center returns to the music")
@@ -246,8 +270,8 @@ fun LyricsScreen(controller: PlaybackController, gateway: LyricsGateway) {
 private fun Lyric(text: String, color: Color, quiet: Color, shown: Int) {
     val measurer = rememberTextMeasurer(cacheSize = 64)
     val base = PodiumTheme.type.title
-    val preset = LocalTypographyPreset.current
-    val family = remember(text, preset) { preset.familyFor(text) }
+    val typeface = LocalLyricsTypeface.current
+    val family = remember(text, typeface) { typeface.familyFor(text) }
     val style = remember(base, family) { base.copy(fontFamily = family, fontWeight = FontWeight.Medium, letterSpacing = 0.sp) }
     val density = LocalDensity.current
     val reduced = PodiumTheme.motion.reduced
@@ -327,6 +351,7 @@ private fun Message(title: String, body: String?, ink: Color, quiet: Color) {
 
 private const val MIN_WAIT_MS = 16L
 private const val MAX_WAIT_MS = 500L
+private const val DRIFT_LOG_MS = 1_200L
 private const val RESUME_FOLLOW_MS = 5_000L
 private const val DETAILS_MS = 4_000L
 private const val INVERT_MS = 90

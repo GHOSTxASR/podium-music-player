@@ -67,6 +67,19 @@ interface PlaybackFacet {
     suspend fun resolve(track: Track, quality: QualityRequest, purpose: Purpose): FacetResolution
 
     /**
+     * How long resolving one of this source's tracks may take before the resolver gives up on it
+     * and counts a failure; null = the resolver's default. A source whose streams take real work
+     * to find (not a lookup) says so here rather than being benched for being slow.
+     */
+    val resolveTimeoutMillis: Long? get() = null
+
+    /**
+     * The stream this source gave for [track] was refused while it played (an expired or revoked
+     * URL): don't hand the same one out again. Called just before the same source is asked afresh.
+     */
+    fun forgetStream(track: Track) {}
+
+    /**
      * For a source whose music plays in another app (a [PlaybackTarget.RemoteProvider]): the
      * provider key of this source's track that the other app's media session reports as
      * [sessionMediaId], or null when it isn't recognisable. Lets Podium mirror what plays there

@@ -52,7 +52,7 @@ internal class YouTubeMusicMapper(private val source: SourceId) {
             releaseDate = (song.year ?: context?.year)?.let { PartialDate(it) },
             trackNumber = song.trackNumber,
             availability = if (song.playable) Availability.Unknown else Availability.Unavailable("Not available in your region or account"),
-            routes = setOf(PlaybackRoute.REMOTE),
+            routes = setOf(PlaybackRoute.DIRECT),
             kind = song.kind,
         )
     }

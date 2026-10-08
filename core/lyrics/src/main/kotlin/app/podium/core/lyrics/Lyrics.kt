@@ -22,8 +22,11 @@ data class LyricsLine(
 data class LyricsWord(val startMs: Long, val text: String)
 
 sealed interface Lyrics {
-    /** Lines with times, in order. Never empty. */
-    data class Synced(val lines: List<LyricsLine>) : Lyrics {
+    /**
+     * Lines with times, in order. Never empty. [estimated]: the times are Podium's ([LyricsFormatter]),
+     * paced across the song or repaired, not the provider's — the screen says so.
+     */
+    data class Synced(val lines: List<LyricsLine>, val estimated: Boolean = false) : Lyrics {
         init {
             require(lines.isNotEmpty()) { "synced lyrics need lines" }
         }

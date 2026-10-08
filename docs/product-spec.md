@@ -22,7 +22,7 @@ Litmus test for every screen: *someone who used an iPod in 2006 knows how to use
 | **The nostalgic minimalist** | Calm, focused listening without feeds, autoplaying video, or engagement bait. A tactile wheel. |
 | **The discoverer** | A free public catalog to explore (Audius at launch), autoplay that doesn't loop the same five songs. |
 
-Podium is **not** trying to replace a major streaming subscription's catalog (see §6 and `music-source-analysis.md`).
+Under **D-48**, Podium is a sideloaded personal Android music player that combines a rock-solid offline local library with an online YouTube Music experience comparable to BitChord.
 
 ## 3. Product principles
 
@@ -36,14 +36,12 @@ Podium is **not** trying to replace a major streaming subscription's catalog (se
 
 ## 4. Music sources at launch
 
-| Source | Kind | What it provides | Phase |
+| Source | Kind | What it provides | Status |
 |---|---|---|---|
-| **On This Device** (MediaStore) | Library | Your files, true lossless, always offline | 5 |
-| **OpenSubsonic servers** (Navidrome, Gonic, Airsonic-Advanced, Ampache, LMS…) | Library | Streaming + sanctioned downloads + stars + playlists + synced lyrics + similar songs, from your own server | 5 / 9 |
-| **Audius** | Catalog | Public, free, legal streaming of independent artists; downloads only where the artist allows | 9 |
-| **Fixture** (debug builds only) | Library | Generated test tones and artwork for screenshots/tests; never shipped | 4 |
-| YouTube Music | Catalog (unofficial) | Options Y1 (catalogue + matched playback via your sources) / Y2 (official embed) — **pending user decision**; direct YouTube audio (Y3) is not built. See `architecture/SOURCE_CAPABILITY_MATRIX.md` §3 | S8 (optional) |
-| Spotify | Catalog / Remote | Options S-a (playlist & library import) / S-b (remote session controlling the Spotify app) — **pending user decision** (policy III.5/III.11, 5-user dev mode) | S8 (optional) |
+| **On This Device** (MediaStore) | Library | Your files, true lossless, always offline | Active (stable, frozen) |
+| **YouTube Music** (D-48) | Catalog + Library | YouTube Music catalogue, search, albums, artists, playlists, user library, liked music, history, and direct Media3 streaming | Active (authoritative online provider) |
+| **Fixture** (debug builds only) | Library | Generated test tones and artwork for screenshots/tests; never shipped | Active (test only) |
+| **OpenSubsonic / Audius** | Retired | Multi-source setup replaced by YouTube Music under D-48 | Retired (historical) |
 
 *Library* sources are synchronised into Podium's database (metadata only), so browsing is instant and works offline — exactly like syncing an iPod. *Catalog* sources are searched live and cached.
 
@@ -72,8 +70,8 @@ Priority: **P0** = v1.0 must ship · **P1** = v1.x · **P2** = later.
 
 ## 6. Non-goals
 
-- Circumventing any access control, DRM, subscription restriction, bot detection, or authentication barrier. (Hard rule; see `security.md` and `music-source-analysis.md`.)
-- Video. Podcasts (maybe P2 as a separate source kind). Social feeds. Ads. Engagement metrics.
+- Widevine DRM cracking or paid subscription circumvention. (Stream resolution via InnerTube client rotation, cipher deobfuscation, and PoToken is permitted for public YouTube Music streams per D-48.)
+- Video playback. Podcasts (maybe P2 as a separate source kind). Social feeds. Ads. Engagement metrics.
 - Recreating 2005 pixels. No bitmap fonts, no brushed metal, no fake LCD.
 - Shipping a server or proxy. Podium is a client.
 
@@ -110,13 +108,13 @@ All of: coherent architecture per `architecture.md`; every P0 row above implemen
 | A2 | English-only UI for v1; metadata can be any script. Localisation-ready strings from day one. |
 | A3 | Single user, single device; no Podium account or cloud service. |
 | A4 | minSdk 29 (Android 10). Glass fidelity scales with API level (ADR-007). |
-| A5 | Podium's own source code license is undecided → all rights reserved until the user chooses. No GPL code is copied in the meantime. |
-| A6 | Distribution target is undecided; architecture stays Google Play-compliant so no option is closed. |
+| A5 | Podium's own source code license is undecided → all rights reserved until the user chooses. Factual GPL-3.0 notices respected on BitChord/extractor components. |
+| A6 | Sideloaded personal Android application (D-48). |
 
 ## 10. Decisions that need the user (summary — details in the checkpoint report)
 
 1. Confirm Android-native.
-2. Choose the optional providers: YouTube Music Y0/Y1/Y2 and Spotify none/S-a/S-b (`architecture/SOURCE_CAPABILITY_MATRIX.md` §3).
+2. Online provider: YouTube Music confirmed as sole online provider (D-48).
 3. Test device availability.
 4. Podium's license and distribution channel.
 5. Name clearance (provisional "Podium").

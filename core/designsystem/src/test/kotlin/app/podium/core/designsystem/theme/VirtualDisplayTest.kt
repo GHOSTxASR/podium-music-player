@@ -13,6 +13,9 @@ import app.podium.core.designsystem.shell.GlitterField
 import app.podium.core.designsystem.shell.palette
 import app.podium.core.designsystem.type.DefaultType
 import app.podium.core.designsystem.type.DisplayFont
+import app.podium.core.designsystem.type.InstrumentSans
+import app.podium.core.designsystem.type.LyricsTypeface
+import app.podium.core.designsystem.type.LyricsFont
 import app.podium.core.designsystem.type.Inter
 import app.podium.core.designsystem.type.TypographyPreset
 import org.junit.Test
@@ -110,6 +113,39 @@ class VirtualDisplayTest {
         assertNotEquals(Inter, TypographyPreset.of(DisplayFont.MONO).familyFor("Björk"))
         // Mono is set a little smaller, so rows keep their rhythm.
         assertTrue(TypographyPreset.of(DisplayFont.MONO).type.row.fontSize.value < DefaultType.row.fontSize.value)
+    }
+
+    @Test
+    fun `the faces added for D-50 set their own strings and fall back whole`() {
+        val faces = listOf(
+            DisplayFont.ITALIC, DisplayFont.TIMES, DisplayFont.TIMES_ITALIC, DisplayFont.ELEGANT, DisplayFont.ELEGANT_ITALIC,
+            DisplayFont.TYPEWRITER, DisplayFont.ROUNDED, DisplayFont.HANDWRITTEN, DisplayFont.SCRIPT, DisplayFont.BUBBLY, DisplayFont.GOTHIC,
+        )
+        for (font in faces) {
+            val family = TypographyPreset.of(font).familyFor("Coastline, Björk")
+            assertNotEquals(Inter, family, "$font sets Latin itself")
+            assertNotEquals(InstrumentSans, family, "$font is its own face")
+        }
+        // Tinos has Cyrillic; no script face has Japanese, so such strings go to Inter whole.
+        assertNotEquals(Inter, TypographyPreset.of(DisplayFont.TIMES).familyFor("Кино"))
+        assertEquals(Inter, TypographyPreset.of(DisplayFont.BUBBLY).familyFor("東京"))
+        // Scripts are small for their size: set larger so rows read.
+        assertTrue(TypographyPreset.of(DisplayFont.SCRIPT).type.row.fontSize.value > DefaultType.row.fontSize.value)
+    }
+
+    @Test
+    fun `the lyrics font follows the display, or sets the lyric in its own face`() {
+        val display = TypographyPreset.of(DisplayFont.TIMES)
+        assertEquals(display.familyFor("Coastline"), LyricsTypeface.of(LyricsFont.SAME_AS_DISPLAY, display).familyFor("Coastline"))
+        assertEquals(TypographyPreset.of(DisplayFont.SCRIPT).familyFor("Coastline"), LyricsTypeface.of(LyricsFont.SCRIPT, display).familyFor("Coastline"))
+        for (font in LyricsFont.entries) {
+            val typeface = LyricsTypeface.of(font, display)
+            assertNotEquals(FontFamily.Default, typeface.familyFor("Coastline"))
+            assertEquals(DefaultType.wheelLegend, typeface.specimen.type.wheelLegend)
+        }
+        // Blackletter has no Cyrillic: the line goes to Inter whole, never a mix inside a word.
+        assertEquals(Inter, LyricsTypeface.of(LyricsFont.FRAKTUR, display).familyFor("Кино"))
+        assertNotEquals(Inter, LyricsTypeface.of(LyricsFont.FRAKTUR, display).familyFor("Coastline"))
     }
 
     @Test

@@ -81,6 +81,22 @@ internal fun handleDebugIntent(intent: Intent?, graph: AppGraph) {
             val b = intent.getStringExtra("podium.b")
             if (a != null && b != null && '|' in a && '|' in b) graph.equivalence.reject(TrackId(a), TrackId(b))
         }
+        // Make a sticker from a picture in the app's own files (device tests, no photo picker):
+        // --es podium.file sticker-test.png
+        "sticker-make" -> intent.getStringExtra("podium.file")?.let { name ->
+            graph.debugStickerSource.value = android.net.Uri.fromFile(java.io.File(graph.context.filesDir, name))
+        }
+        // The hands-on guide, as on a first launch.
+        "guide" -> {
+            graph.guide.forget()
+            graph.debugGuide.value = true
+        }
+        "guide-done" -> graph.guide.markSeen()
+        // Arrange stickers straight away (device tests).
+        "stickers-arrange" -> graph.debugArrange.value = true
+        // Podium's space without the pinch (adb can't pinch): --es podium.debug space-enter / space-leave
+        "space-enter" -> graph.debugSpace.value = true
+        "space-leave" -> graph.debugSpace.value = false
         "pause" -> graph.playbackController.pause()
         "play" -> if (graph.playbackController.snapshot.value.intent != PlayIntent.PLAY) graph.playbackController.play()
         "next" -> graph.playbackController.next()

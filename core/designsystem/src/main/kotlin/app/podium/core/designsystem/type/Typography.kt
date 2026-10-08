@@ -63,6 +63,51 @@ private val JetBrainsMono = FontFamily((400..700 step 100).map { variable(R.font
 /** Pixelify Sans (OFL): the Pixel display font, drawn on a pixel grid. */
 private val PixelifySans = FontFamily((400..700 step 100).map { variable(R.font.pixelify_sans, it) })
 
+private fun static(res: Int, weight: Int = 400) = Font(res, FontWeight(weight))
+
+/** Instrument Sans Italic (OFL): Podium's own face, slanted. */
+private val InstrumentSansItalic = FontFamily((400..700 step 100).map { variable(R.font.instrument_sans_italic, it) })
+
+/** Tinos (OFL, Times New Roman's metric twin): the Times display font. */
+private val Tinos = FontFamily(static(R.font.tinos_regular, 400), static(R.font.tinos_bold, 700))
+
+/**
+ * Tinos Italic, alone in its family: declared upright so it's chosen as it is (never slanted
+ * twice); the scale's heavier weights are drawn from it.
+ */
+private val TinosItalic = FontFamily(static(R.font.tinos_italic))
+
+/** Playfair Display (OFL), high contrast: the Elegant display font, and its italic. */
+private val Playfair = FontFamily((400..700 step 100).map { variable(R.font.playfair_display, it) })
+private val PlayfairItalic = FontFamily((400..700 step 100).map { variable(R.font.playfair_display_italic, it) })
+
+/** Courier Prime (OFL): the Typewriter font, and its italic (lyrics). */
+private val CourierPrime = FontFamily(static(R.font.courier_prime_regular, 400), static(R.font.courier_prime_bold, 700))
+private val CourierPrimeItalic = FontFamily(static(R.font.courier_prime_italic))
+
+/** Nunito (OFL), rounded: the Rounded display font. */
+private val Nunito = FontFamily((400..700 step 100).map { variable(R.font.nunito, it) })
+
+/** Caveat (OFL), handwriting: the Handwritten display font. */
+private val Caveat = FontFamily((400..700 step 100).map { variable(R.font.caveat, it) })
+
+/** Dancing Script (OFL), a bouncy cursive: the Script display font. */
+private val DancingScript = FontFamily((400..700 step 100).map { variable(R.font.dancing_script, it) })
+
+/** Pacifico (OFL), round and bubbly cursive: the Bubbly display font. */
+private val Pacifico = FontFamily(static(R.font.pacifico))
+
+/** Grenze Gotisch (OFL), a readable blackletter: the Gothic display font. */
+private val GrenzeGotisch = FontFamily((400..700 step 100).map { variable(R.font.grenze_gotisch, it) })
+
+// Lyrics only: faces that read at the lyric's size but not in a list's rows.
+private val Unifraktur = FontFamily(static(R.font.unifraktur_maguntia))
+private val Pirata = FontFamily(static(R.font.pirata_one))
+private val Jacquard = FontFamily(static(R.font.jacquard_24))
+private val GreatVibes = FontFamily(static(R.font.great_vibes))
+private val Parisienne = FontFamily(static(R.font.parisienne))
+private val Sacramento = FontFamily(static(R.font.sacramento))
+
 /** Coverage fallback for metadata Instrument Sans can't render (Greek, Cyrillic, full Vietnamese…). */
 val Inter = FontFamily(inter(400), inter(500), inter(600), inter(700))
 
@@ -138,6 +183,18 @@ enum class DisplayFont(val label: String, val description: String) {
     MONO("Mono", "JetBrains Mono, fixed width"),
     PIXEL("Pixel", "Pixelify Sans, on a pixel grid"),
     CONDENSED("Condensed", "Instrument Sans, narrow"),
+    // D-50: faces that look different.
+    ITALIC("Italic", "Instrument Sans, slanted"),
+    TIMES("Times", "Tinos, the newspaper serif"),
+    TIMES_ITALIC("Times italic", "Tinos, slanted"),
+    ELEGANT("Elegant", "Playfair Display, high contrast"),
+    ELEGANT_ITALIC("Elegant italic", "Playfair Display, slanted"),
+    TYPEWRITER("Typewriter", "Courier Prime, typed"),
+    ROUNDED("Rounded", "Nunito, soft corners"),
+    HANDWRITTEN("Handwritten", "Caveat, a quick hand"),
+    SCRIPT("Script", "Dancing Script, cursive"),
+    BUBBLY("Bubbly", "Pacifico, round cursive"),
+    GOTHIC("Gothic", "Grenze Gotisch, blackletter"),
 }
 
 /**
@@ -154,11 +211,13 @@ class TypographyPreset private constructor(
     val sizeScale: Float,
     /** Added to every style's tracking, in sp. */
     private val trackingDelta: Float,
+    /** False for a lyrics face set as a specimen in Settings ([LyricsTypeface.specimen]): no display font of its own. */
+    private val isDisplayFont: Boolean = true,
 ) {
     /** The family for a whole string in this face, or Inter when the face can't set all of it. */
     fun familyFor(text: String): FontFamily {
-        if (font == DisplayFont.CLASSIC) return app.podium.core.designsystem.type.familyFor(text)
-        if (font == DisplayFont.CLEAN) return Inter
+        if (isDisplayFont && font == DisplayFont.CLASSIC) return app.podium.core.designsystem.type.familyFor(text)
+        if (isDisplayFont && font == DisplayFont.CLEAN) return Inter
         var i = 0
         while (i < text.length) {
             val cp = text.codePointAt(i)
@@ -170,7 +229,7 @@ class TypographyPreset private constructor(
 
     /** Podium's type scale in this face. The Wheel's legend is on the body and stays Classic. */
     val type: PodiumType by lazy {
-        if (font == DisplayFont.CLASSIC) return@lazy DefaultType
+        if (isDisplayFont && font == DisplayFont.CLASSIC) return@lazy DefaultType
         fun TextStyle.inFace() = copy(
             fontFamily = family,
             fontSize = fontSize * sizeScale,
@@ -207,12 +266,94 @@ class TypographyPreset private constructor(
                 // Pixel faces read best a little larger, with air between the letters.
                 DisplayFont.PIXEL -> TypographyPreset(font, PixelifySans, PixelifySansCoverage::covers, 1.1f, 0.3f)
                 DisplayFont.CONDENSED -> TypographyPreset(font, InstrumentSansCondensed, InstrumentSansCoverage::covers, 1.04f, 0.1f)
+                DisplayFont.ITALIC -> TypographyPreset(font, InstrumentSansItalic, InstrumentSansItalicCoverage::covers, 1f, 0f)
+                // Serifs set a little smaller on the body: a touch larger keeps the x-height.
+                DisplayFont.TIMES -> TypographyPreset(font, Tinos, TinosCoverage::covers, 1.08f, 0f)
+                DisplayFont.TIMES_ITALIC -> TypographyPreset(font, TinosItalic, TinosCoverage::covers, 1.08f, 0f)
+                DisplayFont.ELEGANT -> TypographyPreset(font, Playfair, PlayfairCoverage::covers, 1.02f, 0f)
+                DisplayFont.ELEGANT_ITALIC -> TypographyPreset(font, PlayfairItalic, PlayfairCoverage::covers, 1.04f, 0f)
+                DisplayFont.TYPEWRITER -> TypographyPreset(font, CourierPrime, CourierPrimeCoverage::covers, 0.95f, 0f)
+                DisplayFont.ROUNDED -> TypographyPreset(font, Nunito, NunitoCoverage::covers, 1f, 0f)
+                // Handwriting and scripts are small for their size: larger, with a little air.
+                DisplayFont.HANDWRITTEN -> TypographyPreset(font, Caveat, CaveatCoverage::covers, 1.28f, 0.1f)
+                DisplayFont.SCRIPT -> TypographyPreset(font, DancingScript, DancingScriptCoverage::covers, 1.2f, 0.1f)
+                DisplayFont.BUBBLY -> TypographyPreset(font, Pacifico, PacificoCoverage::covers, 0.92f, 0.2f)
+                DisplayFont.GOTHIC -> TypographyPreset(font, GrenzeGotisch, GrenzeGotischCoverage::covers, 1.1f, 0.1f)
             }
         }
 
         fun of(font: DisplayFont): TypographyPreset = presets.getValue(font)
+
+        /** A lyrics-only face as a type scale, so a list can set a name in it (Settings ▸ Lyrics font). */
+        internal fun specimen(family: FontFamily, covers: (Int) -> Boolean, scale: Float): TypographyPreset =
+            TypographyPreset(DisplayFont.CLASSIC, family, covers, scale, 0f, isDisplayFont = false)
     }
 }
+
+/**
+ * The lyrics screen's typeface (D-50; Settings ▸ Appearance ▸ Virtual display ▸ Lyrics font): the
+ * display's own font, any display font, or a face that only reads at a lyric's size — calligraphy,
+ * thin scripts, blackletter. Every face is bundled and SIL OFL 1.1 (third_party/FONTS.md).
+ */
+enum class LyricsFont(val label: String, val description: String, internal val display: DisplayFont? = null) {
+    SAME_AS_DISPLAY("Same as the display", "Whatever the display uses"),
+    CLASSIC("Classic", "Instrument Sans, Podium's own", DisplayFont.CLASSIC),
+    ITALIC("Italic", "Instrument Sans, slanted", DisplayFont.ITALIC),
+    TIMES("Times", "Tinos, the newspaper serif", DisplayFont.TIMES),
+    TIMES_ITALIC("Times italic", "Tinos, slanted", DisplayFont.TIMES_ITALIC),
+    ELEGANT("Elegant", "Playfair Display, high contrast", DisplayFont.ELEGANT),
+    ELEGANT_ITALIC("Elegant italic", "Playfair Display, slanted", DisplayFont.ELEGANT_ITALIC),
+    TYPEWRITER("Typewriter", "Courier Prime, typed", DisplayFont.TYPEWRITER),
+    TYPEWRITER_ITALIC("Typewriter italic", "Courier Prime, slanted"),
+    ROUNDED("Rounded", "Nunito, soft corners", DisplayFont.ROUNDED),
+    MONO("Mono", "JetBrains Mono, fixed width", DisplayFont.MONO),
+    PIXEL("Pixel", "Pixelify Sans, on a pixel grid", DisplayFont.PIXEL),
+    HANDWRITTEN("Handwritten", "Caveat, a quick hand", DisplayFont.HANDWRITTEN),
+    SCRIPT("Script", "Dancing Script, cursive", DisplayFont.SCRIPT),
+    BUBBLY("Bubbly", "Pacifico, round cursive", DisplayFont.BUBBLY),
+    CALLIGRAPHY("Calligraphy", "Great Vibes, formal script"),
+    FRENCH_SCRIPT("French script", "Parisienne, light and slanted"),
+    LOOPY("Loopy", "Sacramento, thin and looped"),
+    GOTHIC("Gothic", "Grenze Gotisch, blackletter", DisplayFont.GOTHIC),
+    FRAKTUR("Fraktur", "UnifrakturMaguntia, old German blackletter"),
+    PIRATA("Pirata", "Pirata One, sharp blackletter"),
+    JACQUARD("Jacquard", "Jacquard 24, blackletter on a pixel grid"),
+}
+
+/** How a [LyricsFont] sets the lyric: its family per string, falling back to Inter like the display's. */
+@Immutable
+class LyricsTypeface private constructor(val font: LyricsFont, private val display: TypographyPreset) {
+    /** This face as a type scale: the display font's own, or (lyrics-only faces) a specimen of it. */
+    val specimen: TypographyPreset by lazy {
+        font.display?.let(TypographyPreset::of) ?: lyricsOnly(font)?.let { (family, coverage) ->
+            TypographyPreset.specimen(family, coverage::covers, LYRIC_FACE_SCALE)
+        } ?: display
+    }
+
+    fun familyFor(text: String): FontFamily = specimen.familyFor(text)
+
+    companion object {
+        fun of(font: LyricsFont, display: TypographyPreset) = LyricsTypeface(font, display)
+    }
+}
+
+/** The lyrics-only faces: no display font of their own. */
+private fun lyricsOnly(font: LyricsFont): Pair<FontFamily, FontCoverage>? = when (font) {
+    LyricsFont.TYPEWRITER_ITALIC -> CourierPrimeItalic to CourierPrimeCoverage
+    LyricsFont.CALLIGRAPHY -> GreatVibes to GreatVibesCoverage
+    LyricsFont.FRENCH_SCRIPT -> Parisienne to ParisienneCoverage
+    LyricsFont.LOOPY -> Sacramento to SacramentoCoverage
+    LyricsFont.FRAKTUR -> Unifraktur to UnifrakturCoverage
+    LyricsFont.PIRATA -> Pirata to PirataCoverage
+    LyricsFont.JACQUARD -> Jacquard to JacquardCoverage
+    else -> null
+}
+
+/** Scripts and blackletter are small for their size: their specimens are set a little larger. */
+private const val LYRIC_FACE_SCALE = 1.2f
+
+/** The lyrics typeface in use (provided by PodiumTheme). */
+val LocalLyricsTypeface = staticCompositionLocalOf { LyricsTypeface.of(LyricsFont.SAME_AS_DISPLAY, TypographyPreset.of(DisplayFont.CLASSIC)) }
 
 /**
  * Text with Podium's per-string family selection. Use for anything that may contain metadata

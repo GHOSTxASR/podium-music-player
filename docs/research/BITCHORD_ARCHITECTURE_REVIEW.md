@@ -1,9 +1,13 @@
 # BitChord Architecture Review
 
 **Reviewed:** 2026-10-02 · **Repository:** [kushagrasinghx/BitChord](https://github.com/kushagrasinghx/BitChord) at `main` = `85d19183` (2026-10-01) · **Release:** v1.7 (2026-09-25) · **License:** GPL-3.0
-**Method:** read the current source of the source layer, InnerTube stream path, playback fallback/quality code, auth, and build file through the GitHub API (study only, in a scratch directory outside this repo). This document describes **behaviour and design ideas in prose**. It intentionally reproduces **no code, constants, word lists, or regexes** from BitChord (see §12 and ADR-014).
 
-> Purpose: learn from a current, working, multi-source Android music client so Podium's own source architecture is informed by real failure modes — without creating a derivative work.
+> **Authoritative Context Update (D-48):**
+> This review was originally written under former clean-room rules (ADR-014) when Podium avoided BitChord's implementation approach. Under **D-48**, that policy stance is superseded:
+> - BitChord serves as an active architectural and implementation reference for Podium's YouTube Music online provider.
+> - Direct in-app Media3 streaming using practical stream resolution (client identities, cipher deobfuscation, PoToken) is adopted for Podium as a sideloaded personal music player.
+> - The former "BitChord source is not opened" clean-room rule and stream-unlock bans are revoked.
+> - Sections 11–13 below document earlier policy constraints and are retained for historical context; factual licensing notices (GPL-3.0) remain applicable to any extracted or shared code.
 
 ---
 
@@ -115,27 +119,28 @@ Observed ecosystem (GitHub, 2026-10-02): a self-hosted addon that exposes **your
 | Log redaction of tokens in URLs | Privacy | Already in `security.md` |
 | A declarative, code-free HTTP protocol for *user-owned* servers | Extensibility without executing code | Considered for P2 as "Personal server bridge", restricted to user-owned content (ADR-013 §Future) |
 
-## 11. Ideas Podium should NOT adopt
+## 11. Architectural pitfalls to avoid (updated by D-48)
 
-| BitChord behaviour | Why not |
+> **Note on D-48:** Row 2 below (prohibiting client-identity walks, PoToken, and cipher solving) was an interim policy rule superseded by **D-48**. Under D-48, BitChord's stream extraction architecture serves as an active reference for Podium's direct Media3 playback. The architectural cautions below regarding monolithic services, leaking raw IDs, and mid-track swapping remain valid advice.
+
+| BitChord behaviour | Why avoid in Podium |
 |---|---|
-| One provider as an undeletable catalogue spine; its raw ids leak across features | Violates Podium's core rule that providers never leak into the app; makes provider replacement impossible |
-| Client-identity walk, PoToken/BotGuard minting in a hidden WebView, player-cipher solving (InnerTubeX/NewPipe), age-restricted access via those tokens | These exist to defeat YouTube's protection and access controls; conflicts with the brief's §65 and YouTube policies (`SOURCE_CAPABILITY_MATRIX.md`) |
-| Unofficial JioSaavn API | Undocumented provider API; its own UI warns of wrong-song matches |
-| Executing third-party JavaScript modules | Remote code execution surface; modules described as streaming from paid services |
-| Open addon ecosystem without provenance; addons relaying paid-service streams (e.g., TIDAL manifests) | Content provenance unknowable; relays a service's content outside its sanctioned channels |
-| Mid-track stream swapping to a different source (`QualityUpgrade`) | Changes the audio under the listener on a duration-only identity check; risk of wrong recording; breaks gapless/analysis assumptions |
+| One provider as an undeletable catalogue spine; its raw ids leak across features | Violates Podium's clean domain abstraction; keep provider types encapsulated behind `sources:api` |
+| Client-identity walk, PoToken, cipher solving | *(Superseded by D-48; adopted as implementation reference for direct streaming)* |
+| Unofficial JioSaavn API | Not in product scope |
+| Executing third-party JavaScript modules | Remote code execution surface |
+| Open addon ecosystem without provenance | Content provenance unknowable |
+| Mid-track stream swapping to a different source (`QualityUpgrade`) | Changes audio under the listener; risk of wrong recording; breaks gapless playback |
 | "First acceptable answer wins" races for identity-sensitive substitution | Search ranking of another catalogue shouldn't decide identity |
 | Matcher without ISRC/MBID evidence | Identifiers are the strongest identity signal when present |
-| Monolithic playback service and global singletons | Hard to test; Podium uses modules + DI |
-| Haze/Material 3 visual stack | Podium has its own design system (ADR-007) |
-| YouTube downloads; Premium features (background play, offline) without subscription | Brief §65; YouTube ToS and API policies |
+| Monolithic playback service and global singletons | Hard to test; Podium uses modular services and dependency injection |
+| Haze/Material 3 visual stack | Podium has its own distinct design system (ADR-007) |
+| YouTube downloads | Scope limited to streaming in v1 |
 
-## 12. What would create GPL-3.0 obligations if copied
-- **Any BitChord source file or substantial excerpt** (all GPL-3.0): including but not limited to `TrackMatcher` (its scoring constants, version-word list, title/artist regexes, parsing passes), `SourceResolver` logic, `SourceRegistry`, addon wire models, `QuickJsExecutor`, `StreamChoice`/`QualityUpgrade`, auth screens, taggers, lyrics providers. Translating or "lightly rewriting" such code can still be a derivative work.
-- **Linking GPL-3.0 libraries** BitChord depends on — **NewPipeExtractor**, **InnerTubeX** — into Podium and distributing the result would, under the FSF's interpretation, require the combined work to be offered under GPL-3.0-compatible terms with Corresponding Source.
-- Not GPL: quickjs-kt (Apache-2.0), Media3 (Apache-2.0), Haze (Apache-2.0) — but Podium doesn't need them for this purpose.
-- Ideas, architecture, and behaviour described in prose here are not themselves copyrighted expression; Podium reimplements from its own specification (ADR-014). This is an engineering-risk statement, not legal advice.
+## 12. Licensing and GPL-3.0 observations
+- **Any BitChord source file or substantial excerpt** (all GPL-3.0): including `TrackMatcher`, `SourceResolver`, auth screens, etc.
+- **Linking GPL-3.0 libraries** BitChord depends on — **NewPipeExtractor**, **InnerTubeX** — into Podium: If utilized, factual GPL-3.0 licensing terms apply to those modules.
+- Ideas and architecture described in prose are not copyrighted expression; clean boundaries are maintained around Podium's UI and core iPod playback engine.
 
-## 13. What Podium reimplements independently
-From Podium's own specs (`docs/architecture/*`), without consulting BitChord source during implementation: capability-faceted `MusicSource`, `SourceRegistry`, `SourceHealth` with circuit breaking, `StreamResolver` → `PlaybackTarget`/`PlayableMedia`, `TrackMatcher` (own lexicon derived from MusicBrainz style guidelines and Podium's test corpus; adds ISRC/MBID evidence and explicit/clean and re-recording handling), quality reconciliation, stream pinning, per-connection quality requests, connected-source/auth model, remote playback targets. Process and safeguards in ADR-014.
+## 13. Historical clean-room note (superseded by D-48)
+*Historical note:* Earlier documentation enforced strict clean-room separation under ADR-014 ("BitChord source is not opened"). Under D-48, that rule is revoked, and BitChord serves as an active reference while Podium preserves its own UI, iPod interaction model, queue architecture, Media3 integration, and offline local playback. Process and safeguards in ADR-014 are superseded by D-48.

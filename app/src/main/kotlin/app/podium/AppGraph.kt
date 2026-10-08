@@ -32,11 +32,7 @@ import app.podium.sources.api.resolve.StreamResolver
 import app.podium.sources.local.LocalMusicSource
 import app.podium.sources.youtubemusic.YouTubeMusicSource
 import app.podium.player.api.OwnerAwarePlaybackController
-import app.podium.player.api.RemoteAccess
 import app.podium.player.remote.MediaSessionRemotePlayback
-import app.podium.sources.api.CapabilityAction
-import app.podium.sources.api.CapabilityState
-import app.podium.sources.api.CapabilityStatus
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -92,20 +88,14 @@ class AppGraph(val context: Context) {
         },
     )
 
-    /** What the official app means for playing songs, as a capability of the online source. */
-    private val providerApp: StateFlow<CapabilityState> = remotePlayback.access
-        .map(::playbackCapability)
-        .stateIn(appScope, SharingStarted.Eagerly, playbackCapability(remotePlayback.access.value))
-
     /**
-     * ONLINE (D-38): YouTube Music — its catalogue and the listener's account read here, its songs
-     * played by the official app. The device's own browser user agent, warmed off the main thread.
+     * ONLINE (D-38, D-48): YouTube Music — its catalogue and the listener's account read here, its
+     * songs played by Podium itself. The device's own browser user agent, warmed off the main thread.
      */
     val youtubeMusic = YouTubeMusicSource(
         credentials,
         userAgent = { webUserAgent },
         region = { java.util.Locale.getDefault().country.takeIf { it.length == 2 } ?: "US" },
-        providerApp = providerApp,
     )
 
     private val webUserAgent: String by lazy {
@@ -121,7 +111,6 @@ class AppGraph(val context: Context) {
         sourceSettings.apply()
         RetiredSources.cleanUp(context, credentials)
         appScope.launch(Dispatchers.IO) { webUserAgent }
-        appScope.launch { providerApp.collect { youtubeMusic.onProviderAppChanged() } }
     }
 
     val environments = Environments(registry)
@@ -239,6 +228,40 @@ class AppGraph(val context: Context) {
     val playbackController by lazy { OwnerAwarePlaybackController(localPlayback, remotePlayback, catalog, registry, appScope) }
     val volume by lazy { SystemVolumeController(context) }
 
+    /** Debug builds: open (true) or close (false) Podium's space from adb (device tests, D-54). */
+    val debugSpace = MutableStateFlow<Boolean?>(null)
+
+    /** The listener's stickers and where they're stuck (D-55): files in the app's own storage. */
+    val stickers by lazy { app.podium.stickers.StickerStore(java.io.File(context.filesDir, "stickers")) }
+
+    /** Finds a picture's subject on the phone (D-55); the model loads on first use. */
+    val cutter by lazy { app.podium.stickers.SubjectCutter(context) }
+
+    /** Whether the hands-on guide was finished or skipped (D-57). */
+    val guide by lazy { app.podium.guide.GuideStore(context) }
+
+    /** Debug builds: make a sticker from this picture (device tests, without the photo picker). */
+    val debugStickerSource = MutableStateFlow<android.net.Uri?>(null)
+
+    /** Debug builds: start the hands-on guide (true) as on a first launch. */
+    val debugGuide = MutableStateFlow(false)
+
+    /** Debug builds: open the space and arrange stickers. */
+    val debugArrange = MutableStateFlow(false)
+
+    /**
+     * Turn off Podium (D-56): the music stops and everything is kept (stickers written, the
+     * player's place saved as it pauses); the caller then closes the app.
+     */
+    fun prepareToTurnOff() {
+        playbackController.pause()
+        stickers.flush()
+        localPlayback.release()
+    }
+
+    /** Where the music is heard and whether it's muted, for the status bar (D-52). */
+    val audioOutput by lazy { app.podium.player.service.AudioOutputMonitor(context) }
+
     private var musicAccess = localSource.hasPermission()
 
     /** The user granted or revoked a runtime permission (e.g. music access). */
@@ -278,14 +301,3 @@ enum class Power { OFF, BOOTING, ON }
 
 /** LRCLIB asks clients to name themselves. */
 private val LYRICS_USER_AGENT = "Podium/${BuildConfig.VERSION_NAME} (Android music player)"
-
-private fun playbackCapability(access: RemoteAccess): CapabilityState = when (access) {
-    RemoteAccess.NO_APP -> CapabilityState(
-        CapabilityStatus.REQUIRES_PROVIDER_APP,
-        "Install YouTube Music to play songs",
-        CapabilityAction.InstallApp(YouTubeMusicSource.PROVIDER_APP_PACKAGE, "Install YouTube Music"),
-    )
-    // Songs still open in the app; Podium just can't control or mirror it.
-    RemoteAccess.NEEDS_ACCESS -> CapabilityState(CapabilityStatus.DEGRADED, "Allow media controls to control playback from Podium")
-    RemoteAccess.READY -> CapabilityState.Available
-}

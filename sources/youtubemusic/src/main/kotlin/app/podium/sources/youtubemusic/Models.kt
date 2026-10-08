@@ -89,6 +89,9 @@ internal data class YtmArtistPage(
     /** The playlist id of the artist's radio. */
     val radioPlaylistId: String?,
     val shufflePlaylistId: String?,
+    /** The song the radio starts from, and its parameters, when the page's button says. */
+    val radioVideoId: String? = null,
+    val radioParams: String? = null,
 )
 
 /** A page of a list that continues: what's here and how to get more. */

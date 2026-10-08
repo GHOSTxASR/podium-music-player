@@ -4,7 +4,7 @@
 
 ## 1. Hard rules
 1. **No secrets in the client or the repo.** Launch sources need none. Signing keys and any future tokens come from environment variables / local files that are gitignored (`.gitignore` covers `*.jks`, `*.keystore`, `keystore.properties`, `.env*`, `local.properties`).
-2. **No circumvention (ADR-013 stream-unlock boundary).** Podium never implements DRM removal, player-cipher/throttle solving, bot-detection/attestation token generation (e.g., BotGuard/PoToken), client-identity rotation to obtain streams, age-gate bypass, paywall/subscription bypass, or downloads a source doesn't permit (`architecture/SOURCE_CAPABILITY_MATRIX.md` §3). Sources built on unofficial APIs are labelled `UNOFFICIAL_API`, opt-in, and excluded from Play builds (D-19).
+2. **Stream resolution & DRM boundaries (D-48).** Under D-48, Podium is a sideloaded personal music player. Direct stream resolution (using client-identity rotation, signature/n-parameter deobfuscation, and PoToken generation comparable to BitChord) is permitted and required for YouTube Music streaming. The former "stream-unlock boundary" is revoked. Podium still strictly avoids Widevine DRM cracking, paid subscription cracking, or arbitrary local filesystem overwriting. Unofficial sources are marked with `UNOFFICIAL_API`.
 3. **No analytics or crash SDKs** (D-12). No data leaves the device except requests to sources the user configured, artwork hosts those sources reference, and LRCLIB after consent (D-11).
 
 ## 2. Threat model (STRIDE, condensed)

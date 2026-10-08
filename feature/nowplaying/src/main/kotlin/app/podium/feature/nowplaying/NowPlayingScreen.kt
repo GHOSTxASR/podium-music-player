@@ -6,6 +6,12 @@ import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.runtime.Immutable
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.ui.zIndex
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -55,6 +61,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -106,6 +113,9 @@ import app.podium.player.api.RemoteProblem
 import app.podium.player.api.RemoteStatus
 import app.podium.player.api.PlaybackSnapshot
 import app.podium.player.api.PlaybackStatus
+import androidx.compose.ui.platform.LocalDensity
+import app.podium.core.designsystem.component.Pinwheel
+import app.podium.player.api.Recovery
 import app.podium.player.api.RepeatMode
 import app.podium.player.api.VolumeController
 import kotlin.math.ceil
@@ -310,11 +320,13 @@ fun NowPlayingScreen(
         content = { BackgroundExtension(rememberArtwork(item.artworkUri, 96.dp), Modifier.fillMaxSize()) },
         functional = {
             BoxWithConstraints(Modifier.fillMaxSize().padding(top = insets.top, bottom = insets.bottom)) {
+                CompositionLocalProvider(LocalWindowWidth provides maxWidth) {
                 when {
                     maxWidth > maxHeight * 1.15f -> LandscapeLayout(parts)
                     // Too short for a stacked cover to stay meaningful: the cover moves beside the title.
                     maxHeight - StackedControlsHeight < maxWidth * 0.45f -> CompactLayout(parts)
                     else -> PortraitLayout(parts)
+                }
                 }
             }
         },
@@ -344,16 +356,24 @@ private fun PortraitLayout(p: NowPlayingParts) {
         Modifier.fillMaxSize().padding(horizontal = Spacing.xl).padding(top = Spacing.xxs, bottom = Spacing.s),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        // The screen decides the composition: the artwork takes whatever the controls leave.
-        BoxWithConstraints(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-            ArtworkStage(p, maxWidth, maxHeight)
+        // The screen decides the composition: the cover and its facts take whatever the controls
+        // leave — the cover at the left, the song's place, quality and any note beside it, in every
+        // theme. A new cover travels in from the right edge of the display; the old one leaves left.
+        BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
+            val travel = artTravel(rowWidth = maxWidth, startInset = Spacing.xl)
+            Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
+                BoxWithConstraints(Modifier.weight(0.62f).fillMaxHeight().zIndex(1f), contentAlignment = Alignment.CenterStart) {
+                    ArtworkStage(p, maxWidth, maxHeight, travel)
+                }
+                Spacer(Modifier.width(Spacing.m))
+                StatusColumn(p, Modifier.weight(0.38f))
+            }
         }
         Spacer(Modifier.height(Spacing.m))
         TrackText(p.item, Alignment.CenterHorizontally, TextAlign.Center)
         Spacer(Modifier.height(Spacing.s + Spacing.xxs))
         ProgressRow(p)
-        StatusSlot(p)
-        Spacer(Modifier.height(Spacing.xxs))
+        Spacer(Modifier.height(Spacing.s))
         TransportRow(p)
         Spacer(Modifier.height(Spacing.xs))
         ActionCluster(p)
@@ -369,8 +389,9 @@ private fun CompactLayout(p: NowPlayingParts) {
         verticalArrangement = Arrangement.Center,
     ) {
         Row(Modifier.fillMaxWidth().weight(1f, fill = false), verticalAlignment = Alignment.CenterVertically) {
-            BoxWithConstraints(Modifier.weight(0.42f).aspectRatio(1f), contentAlignment = Alignment.Center) {
-                ArtworkStage(p, maxWidth, maxHeight)
+            val rowWidth = LocalWindowWidth.current
+            BoxWithConstraints(Modifier.weight(0.42f).aspectRatio(1f).zIndex(1f), contentAlignment = Alignment.Center) {
+                ArtworkStage(p, maxWidth, maxHeight, artTravel(rowWidth, Spacing.l))
             }
             Spacer(Modifier.width(Spacing.m))
             Box(Modifier.weight(0.58f)) { TrackText(p.item, Alignment.Start, TextAlign.Start) }
@@ -394,8 +415,9 @@ private fun LandscapeLayout(p: NowPlayingParts) {
         Modifier.fillMaxSize().padding(horizontal = Spacing.l).padding(bottom = Spacing.s),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        BoxWithConstraints(Modifier.fillMaxHeight().aspectRatio(1f, matchHeightConstraintsFirst = true), contentAlignment = Alignment.Center) {
-            ArtworkStage(p, maxWidth, maxHeight)
+        val rowWidth = LocalWindowWidth.current
+        BoxWithConstraints(Modifier.fillMaxHeight().aspectRatio(1f, matchHeightConstraintsFirst = true).zIndex(1f), contentAlignment = Alignment.Center) {
+            ArtworkStage(p, maxWidth, maxHeight, artTravel(rowWidth, Spacing.l))
         }
         Spacer(Modifier.width(Spacing.l))
         Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
@@ -413,12 +435,43 @@ private fun LandscapeLayout(p: NowPlayingParts) {
 private data class ArtKey(val identity: String, val uri: String?, val fallback: String, val index: Int)
 
 /**
+ * How far a cover travels when the song changes, in pixels: in from beyond the display's right
+ * edge ([enterFromPx], measured from the cover's place) and out past its left edge ([exitToPx],
+ * the cover's own width and the margin before it). Previous runs the other way.
+ */
+@Immutable
+private data class ArtTravel(val enterFromPx: Int, val exitToPx: (fullWidth: Int) -> Int)
+
+/** The width Now Playing lays out in: a cover leaving or arriving crosses all of it. */
+private val LocalWindowWidth = staticCompositionLocalOf { 0.dp }
+
+@Composable
+private fun artTravel(rowWidth: Dp, startInset: Dp): ArtTravel {
+    val density = LocalDensity.current
+    return remember(rowWidth, startInset, density) {
+        with(density) {
+            val edge = startInset.roundToPx() + ArtTravelOvershoot.roundToPx()
+            ArtTravel(enterFromPx = rowWidth.roundToPx() + edge, exitToPx = { fullWidth -> fullWidth + edge })
+        }
+    }
+}
+
+/** A little past the display's edge, so a cover is wholly gone before it's out of the frame. */
+private val ArtTravelOvershoot = 12.dp
+
+private const val ART_TRAVEL_MS = 460
+
+/** The cover's lean (D-58): a turn about its vertical axis, seen from not far off. */
+private const val ART_TILT_DEG = 26f
+private const val ART_CAMERA_DISTANCE = 6f
+
+/**
  * The artwork, as large as the box allows in its own proportions. It "breathes" with playback
  * (slightly smaller while paused), and a new cover arrives from the direction you skipped in —
  * a short crossfade with a little scale and travel, not a page flip. Songs sharing a cover keep it.
  */
 @Composable
-private fun ArtworkStage(p: NowPlayingParts, maxWidth: Dp, maxHeight: Dp) {
+private fun ArtworkStage(p: NowPlayingParts, maxWidth: Dp, maxHeight: Dp, travel: ArtTravel? = null) {
     val motion = PodiumTheme.motion
     val breathe by animateFloatAsState(
         if (p.playing || motion.reduced) 1f else 0.93f,
@@ -430,10 +483,16 @@ private fun ArtworkStage(p: NowPlayingParts, maxWidth: Dp, maxHeight: Dp) {
         targetState = key,
         contentKey = { it.identity },
         transitionSpec = {
+            val dir = if (targetState.index >= initialState.index) 1 else -1
             if (motion.reduced) {
                 fadeIn(tween(160)) togetherWith fadeOut(tween(160))
+            } else if (travel != null) {
+                // Next: the cover slides off the display to the left and the new one comes in from
+                // the right, settling at the left. Previous: the mirror.
+                val move = tween<IntOffset>(ART_TRAVEL_MS, easing = FastOutSlowInEasing)
+                slideInHorizontally(move) { full -> if (dir > 0) travel.enterFromPx else -travel.exitToPx(full) } togetherWith
+                    slideOutHorizontally(move) { full -> if (dir > 0) -travel.exitToPx(full) else travel.enterFromPx }
             } else {
-                val dir = if (targetState.index >= initialState.index) 1 else -1
                 (fadeIn(tween(300, delayMillis = 60)) +
                     scaleIn(spring(dampingRatio = 0.86f, stiffness = 320f), initialScale = 0.93f) +
                     slideInHorizontally(spring(dampingRatio = 0.9f, stiffness = 320f)) { dir * it / 9 }) togetherWith
@@ -442,10 +501,18 @@ private fun ArtworkStage(p: NowPlayingParts, maxWidth: Dp, maxHeight: Dp) {
                         slideOutHorizontally(tween(240)) { -dir * it / 9 })
             }.using(SizeTransform(clip = false))
         },
-        modifier = Modifier.graphicsLayer {
-            scaleX = breathe
-            scaleY = breathe
-        },
+        modifier = Modifier
+            .graphicsLayer {
+                // Turned a little to the right, like a record leaning on a shelf: the near edge at
+                // the left, the far edge receding. Hinged on the left so the cover keeps its place.
+                rotationY = ART_TILT_DEG
+                cameraDistance = ART_CAMERA_DISTANCE * density
+                transformOrigin = TransformOrigin(0f, 0.5f)
+            }
+            .graphicsLayer {
+                scaleX = breathe
+                scaleY = breathe
+            },
         contentAlignment = Alignment.Center,
         label = "artwork",
     ) { art ->
@@ -513,6 +580,9 @@ private fun ProgressRow(p: NowPlayingParts) {
                     ProgressBar({ p.volumeFraction }, running = false, modifier = Modifier.weight(1f).padding(horizontal = Spacing.s))
                     Symbol(PodiumSymbol.VolumeUp, colors.labelSecondary, size = 18.dp)
                 }
+            } else if (p.snapshot.status == PlaybackStatus.Loading) {
+                // Until the song first plays (an online song's stream is being found), the bar says so.
+                LoadingBar()
             } else {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     @Suppress("UNUSED_EXPRESSION") tick
@@ -558,27 +628,98 @@ private fun ProgressRow(p: NowPlayingParts) {
 }
 
 /**
+ * Beside the cover: the song's place in the queue, the measured quality, where it belongs
+ * ("Online"), and any note — an error, a retry, scrubbing, a source's quality claim — on as many
+ * lines as it needs (up to five), so nothing is ever cut off whatever the font.
+ */
+@Composable
+private fun StatusColumn(p: NowPlayingParts, modifier: Modifier = Modifier) {
+    val colors = PodiumTheme.colors
+    val type = PodiumTheme.type
+    val (note, problem) = statusNote(p, includeEnvironment = false)
+    Column(modifier.semantics(mergeDescendants = true) {}, verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+        if (!p.queueHidden) PodiumText("${p.item.indexInQueue + 1} of ${p.item.queueSize}", type.caption, colors.labelSecondary)
+        QualityLabel.forNowPlaying(p.snapshot.quality)?.let { PodiumText(it, type.caption, colors.labelTertiary, maxLines = 2) }
+        p.environment?.let { PodiumText(it, type.caption, colors.labelTertiary) }
+        if (note != null) {
+            PodiumText(
+                note,
+                type.caption,
+                if (problem) colors.critical else colors.labelSecondary,
+                Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                maxLines = 5,
+            )
+        }
+    }
+}
+
+/**
+ * The note Now Playing shows, and whether it's a problem: what another app is doing, what the
+ * player is doing about a problem, the problem, scrubbing, a source's quality claim — or, where
+ * there's room for one line only, where the song belongs.
+ */
+private fun statusNote(p: NowPlayingParts, includeEnvironment: Boolean): Pair<String?, Boolean> {
+    val status = p.snapshot.status
+    val remote = p.snapshot.remote
+    val owner = (p.snapshot.owner as? PlaybackOwner.Remote)?.displayName
+    val recovery = p.snapshot.recovery
+    val note = when {
+        remote != null && owner != null -> remoteNote(remote, owner)
+        // While the player deals with a problem it says what it's doing, not only what went wrong.
+        recovery == Recovery.REFRESHING_STREAM -> "The stream dropped. Getting it again…"
+        status is PlaybackStatus.Error && recovery == Recovery.SKIPPING -> skippingCopy(status.error)
+        status is PlaybackStatus.Error -> errorCopy(status.error)
+        p.mode == WheelMode.Scrub -> "Scrubbing. Turn faster to cover more."
+        // Which source serves the song is Podium's business, not the listener's (D-36).
+        p.snapshot.quality.codecMismatch -> p.snapshot.quality.sourceClaimed?.let(QualityLabel::format)?.let { "Source reported $it" }
+        includeEnvironment -> p.environment
+        else -> null
+    }
+    val problem = (status is PlaybackStatus.Error && recovery == null) || remote?.problem != null
+    return note to problem
+}
+
+/**
+ * The progress row while a song loads: a small pinwheel and the word, centred where the bar goes.
+ * It waits a moment before showing, so a local song that opens at once never flashes it.
+ */
+@Composable
+private fun LoadingBar() {
+    val colors = PodiumTheme.colors
+    var shown by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        delay(LOADING_BAR_DELAY_MS)
+        shown = true
+    }
+    Row(
+        Modifier.fillMaxWidth().semantics { contentDescription = "Loading the song" },
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (shown) {
+            Pinwheel(size = 14.dp, color = colors.labelSecondary)
+            Spacer(Modifier.width(Spacing.s))
+            PodiumText("Loading", PodiumTheme.type.caption, colors.labelSecondary)
+        }
+    }
+}
+
+/** A song that opens within this shows no loading state at all. */
+private const val LOADING_BAR_DELAY_MS = 250L
+
+/**
  * Two fixed lines, so nothing below ever jumps: position in the queue and the measured quality,
- * then any note (an error, scrubbing, where the audio comes from, a source's quality claim).
+ * then any note (an error, scrubbing, where the audio comes from, a source's quality claim). The
+ * lines are as tall as the display font's captions: faces set larger never lose their lower line.
  */
 @Composable
 private fun StatusSlot(p: NowPlayingParts) {
     val colors = PodiumTheme.colors
     val type = PodiumTheme.type
-    val status = p.snapshot.status
     val quality = QualityLabel.forNowPlaying(p.snapshot.quality)
-    val remote = p.snapshot.remote
-    val owner = (p.snapshot.owner as? PlaybackOwner.Remote)?.displayName
-    val note = when {
-        remote != null && owner != null -> remoteNote(remote, owner)
-        status is PlaybackStatus.Error -> errorCopy(status.error)
-        p.mode == WheelMode.Scrub -> "Scrubbing. Turn faster to cover more."
-        // Which source serves the song is Podium's business, not the listener's (D-36): it is kept
-        // (session, history, logs) but never shown here.
-        p.snapshot.quality.codecMismatch -> p.snapshot.quality.sourceClaimed?.let(QualityLabel::format)?.let { "Source reported $it" }
-        else -> p.environment
-    }
-    Column(Modifier.fillMaxWidth().height(34.dp), verticalArrangement = Arrangement.Center) {
+    val (note, problem) = statusNote(p, includeEnvironment = true)
+    val lineHeight = with(LocalDensity.current) { type.caption.lineHeight.toDp() }
+    Column(Modifier.fillMaxWidth().height(maxOf(34.dp, lineHeight * 2 + 4.dp)), verticalArrangement = Arrangement.Center) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             PodiumText(if (p.queueHidden) "" else "${p.item.indexInQueue + 1} of ${p.item.queueSize}", type.caption, colors.labelTertiary)
             quality?.let { PodiumText(it, type.caption, colors.labelTertiary) }
@@ -586,7 +727,7 @@ private fun StatusSlot(p: NowPlayingParts) {
         PodiumText(
             note ?: "",
             type.caption,
-            if (status is PlaybackStatus.Error || remote?.problem != null) colors.critical else colors.labelSecondary,
+            if (problem) colors.critical else colors.labelSecondary,
             Modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Polite },
             textAlign = TextAlign.Center,
         )
@@ -864,6 +1005,13 @@ internal fun remoteNote(remote: RemoteStatus, owner: String): String = when {
 }
 
 /** Error copy (design-system.md §11): what happened, what's next; never raw exception text. */
+/** An error, and that the next song is on its way. */
+internal fun skippingCopy(error: PodiumError): String = when (error) {
+    is PodiumError.Network, PodiumError.Offline -> "Can't reach the music source. Skipping to the next song."
+    is PodiumError.NotFound -> "This song isn't available right now. Skipping to the next one."
+    else -> "This song can't play right now. Skipping to the next one."
+}
+
 internal fun errorCopy(error: PodiumError): String = when (error) {
     is PodiumError.NotPlayable -> "This song can't play right now. Choose another one."
     is PodiumError.AuthExpired -> "Your sign-in expired. Sign in again from Settings."

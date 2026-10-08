@@ -342,10 +342,22 @@ internal object YouTubeMusicParser {
             }
         }
         if (songs.isEmpty()) songs = carouselSongs
-        val radio = header.at("startRadioButton", "buttonRenderer", "navigationEndpoint", "watchPlaylistEndpoint", "playlistId").str
-            ?: header.findAll("watchPlaylistEndpoint", 4).mapNotNull { it.at("playlistId").str }.firstOrNull { it.startsWith("RD") }
-        val shuffle = header.at("playButton", "buttonRenderer", "navigationEndpoint", "watchPlaylistEndpoint", "playlistId").str
-        return YtmArtistPage(name, thumbs, songs, songsPlaylist, albums, singles, videos.filter { it.kind != MediaKind.EPISODE }, playlists, related, radio, shuffle)
+        // The buttons have pointed at a playlist (watchPlaylistEndpoint) and, since 2026, at a
+        // starting song within it (watchEndpoint): either is read.
+        val radioEndpoint = header.at("startRadioButton", "buttonRenderer", "navigationEndpoint")
+        val shuffleEndpoint = header.at("playButton", "buttonRenderer", "navigationEndpoint")
+        fun playlistOf(endpoint: JsonElement?) =
+            endpoint.at("watchPlaylistEndpoint", "playlistId").str ?: endpoint.at("watchEndpoint", "playlistId").str
+        val radio = playlistOf(radioEndpoint)
+            ?: (header.findAll("watchPlaylistEndpoint", 4) + header.findAll("watchEndpoint", 4))
+                .mapNotNull { it.at("playlistId").str }.firstOrNull { it.startsWith("RD") }
+        val shuffle = playlistOf(shuffleEndpoint)
+        val radioVideo = if (radio != null && playlistOf(radioEndpoint) == radio) radioEndpoint.at("watchEndpoint", "videoId").str else null
+        val radioParams = radioEndpoint.at("watchEndpoint", "params").str ?: radioEndpoint.at("watchPlaylistEndpoint", "params").str
+        return YtmArtistPage(
+            name, thumbs, songs, songsPlaylist, albums, singles, videos.filter { it.kind != MediaKind.EPISODE }, playlists, related,
+            radio, shuffle, radioVideo, radioParams,
+        )
     }
 
     // --- The watch-next list (radio, a song's details) ------------------------------------------------

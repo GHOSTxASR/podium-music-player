@@ -7,6 +7,7 @@ import app.podium.feature.settings.OnlineServiceSettings
 import app.podium.feature.settings.OnlineServiceState
 import app.podium.feature.settings.ServiceAccount
 import app.podium.feature.settings.ServiceApp
+import app.podium.core.model.PlaybackRoute
 import app.podium.player.api.RemoteAccess
 import app.podium.player.remote.MediaSessionRemotePlayback
 import app.podium.sources.api.AuthState
@@ -45,7 +46,8 @@ class AppOnlineServiceSettings(private val graph: AppGraph) : OnlineServiceSetti
                 is AuthState.SignedIn -> ServiceAccount.SignedIn(a.accountName)
                 AuthState.Expired -> ServiceAccount.Expired
             },
-            app = ServiceApp(
+            // Only a service whose songs play in another app has an app to install or allow (by route).
+            app = if (graph.registry.get(s.sourceId)?.playback?.routes?.contains(PlaybackRoute.DIRECT) != false) null else ServiceApp(
                 name = s.descriptor.displayName,
                 installed = access != RemoteAccess.NO_APP,
                 controlAllowed = access == RemoteAccess.READY,

@@ -62,6 +62,8 @@ class AppShellTest {
         RuntimeEnvironment.setQualifiers("w411dp-h891dp-port-420dpi")
         val graph = ApplicationProvider.getApplicationContext<PodiumApplication>().graph
         compose.mainClock.autoAdvance = false
+        // The first-launch tour (D-57) has its own tests; here the shell itself is under test.
+        graph.guide.markSeen()
         compose.setContent { PodiumApp(graph, onSourceAction = {}) }
         repeat(60) { if (graph.power.value != Power.ON) compose.mainClock.advanceTimeBy(150) }
         assertEquals(Power.ON, graph.power.value, "boots")

@@ -36,7 +36,7 @@ class LyricsRepository(
         val key = keyOf(request)
         cache.read(key)?.let { entry ->
             if (now() - entry.storedAt < (if (entry.lyrics != null) foundTtlMs else missTtlMs)) {
-                return entry.lyrics?.let { LyricsResult.Found(it, provider.attribution) } ?: LyricsResult.NotFound
+                return entry.lyrics?.let { LyricsResult.Found(shown(it, request), provider.attribution) } ?: LyricsResult.NotFound
             }
         }
         if (!consent()) return LyricsResult.NeedsConsent
@@ -47,8 +47,9 @@ class LyricsRepository(
         val result = try {
             when (val answer = provider.lookup(request)) {
                 is ProviderAnswer.Found -> {
+                    // The provider's answer is kept as it came; what's shown is formatted for the player.
                     cache.write(key, LyricsCache.Entry(now(), answer.lyrics))
-                    LyricsResult.Found(answer.lyrics, provider.attribution)
+                    LyricsResult.Found(shown(answer.lyrics, request), provider.attribution)
                 }
                 ProviderAnswer.NotFound -> {
                     cache.write(key, LyricsCache.Entry(now(), null))
@@ -70,11 +71,15 @@ class LyricsRepository(
         return result
     }
 
+    private fun shown(lyrics: Lyrics, request: LyricsRequest) = LyricsFormatter.forPlayback(lyrics, request.durationMs)
+
     /** Forget every kept answer. */
     fun clear() = cache.clear()
 
     fun keyOf(request: LyricsRequest): String {
         val fingerprint = listOf(
+            // v2: lookups prefer synced lyrics (D-50) — answers kept before that are asked again.
+            KEY_VERSION,
             request.key,
             request.title.trim().lowercase(),
             request.artist.trim().lowercase(),
@@ -85,6 +90,8 @@ class LyricsRepository(
         return provider.id + "-" + digest.take(16).joinToString("") { "%02x".format(it) }
     }
 }
+
+private const val KEY_VERSION = "v2"
 
 /** Where answers are kept between runs. */
 interface LyricsCache {

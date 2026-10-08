@@ -7,6 +7,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import app.podium.core.designsystem.type.DisplayFont
+import app.podium.core.designsystem.type.LyricsFont
 
 /** What sits behind the virtual display's content (PODIUM_CUSTOMIZATION.md §4). */
 enum class DisplayBackground(val label: String) {
@@ -34,6 +35,8 @@ enum class TextContrast(val label: String) {
 @Immutable
 data class VirtualDisplay(
     val font: DisplayFont = DisplayFont.CLASSIC,
+    /** The lyrics screen's face (D-50): the display's own, or one of its own. */
+    val lyricsFont: LyricsFont = LyricsFont.SAME_AS_DISPLAY,
     val background: DisplayBackground = DisplayBackground.NONE,
     /** The solid colour (opaque ARGB): the background itself, or the base under an image. */
     val solidArgb: Int = DEFAULT_SOLID,

@@ -3,14 +3,12 @@ package app.podium
 import android.app.Activity
 import android.content.Intent
 import androidx.activity.compose.BackHandler
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.PickVisualMediaRequest
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.ContentTransform
-import androidx.compose.animation.core.FastOutSlowInEasing
+import kotlin.math.roundToInt
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.keyframes
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -39,10 +37,15 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.flow.first
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.listSaver
@@ -64,6 +67,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation3.runtime.NavEntry
 import androidx.navigation3.scene.Scene
 import androidx.navigation3.ui.LocalNavAnimatedContentScope
@@ -83,6 +87,11 @@ import app.podium.core.designsystem.component.LocalMiniatureFocusKey
 import app.podium.core.designsystem.component.LocalOverlayHost
 import app.podium.core.designsystem.component.LocalPaperDecor
 import app.podium.core.designsystem.component.LocalPaperPeek
+import app.podium.core.designsystem.component.LocalPaperKey
+import app.podium.core.designsystem.component.softArrival
+import app.podium.core.designsystem.component.softDeparture
+import app.podium.core.designsystem.component.LocalPaperLenses
+import app.podium.core.designsystem.component.PaperLenses
 import app.podium.core.designsystem.component.LocalScreenInsets
 import app.podium.core.designsystem.component.MiniPlayer
 import app.podium.core.designsystem.component.OverlayHost
@@ -147,6 +156,27 @@ import app.podium.feature.settings.DeviceBodyScreen
 import app.podium.feature.settings.FinishScreen
 import app.podium.feature.settings.FontScreen
 import app.podium.feature.settings.LevelScreen
+import app.podium.feature.settings.LyricsFontScreen
+import app.podium.space.LocalPodiumSpace
+import app.podium.space.HelpContent
+import app.podium.space.StickerDetail
+import app.podium.space.StickerGallery
+import app.podium.stickers.Sticker
+import app.podium.stickers.StickerEditor
+import app.podium.stickers.StickerEditorBar
+import app.podium.stickers.StickerEditorState
+import app.podium.stickers.StickerLayer
+import app.podium.stickers.StickerMaker
+import app.podium.guide.GuideTour
+import app.podium.guide.GuideState
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import app.podium.space.SpacePanel
+import app.podium.space.SpacePhase
+import app.podium.space.SpacePage
+import app.podium.space.rememberPodiumSpaceState
+import app.podium.space.PodiumSpace
 import app.podium.feature.settings.MusicFoldersScreen
 import app.podium.feature.settings.OnlineServiceScreen
 import app.podium.feature.settings.SettingsScreen
@@ -193,6 +223,7 @@ sealed interface Dest {
     data object VirtualDisplay : Dest
     data object Theme : Dest
     data object Font : Dest
+    data object LyricsFont : Dest
     data object Background : Dest
     data object Finish : Dest
     data object CustomColor : Dest
@@ -218,7 +249,7 @@ sealed interface Dest {
 private val fixedDests = listOf(
     Dest.Home, Dest.Music, Dest.CoverFlow, Dest.Albums, Dest.Artists, Dest.Songs, Dest.Favorites, Dest.NowPlaying,
     Dest.UpNext, Dest.Lyrics, Dest.Settings, Dest.Appearance, Dest.DeviceBody, Dest.VirtualDisplay, Dest.Theme, Dest.Font,
-    Dest.Background, Dest.Finish, Dest.CustomColor, Dest.DisplayColor, Dest.OnlineSources,
+    Dest.LyricsFont, Dest.Background, Dest.Finish, Dest.CustomColor, Dest.DisplayColor, Dest.OnlineSources,
 ).associateBy { it.toString() }
 
 private fun Dest.encode(): String = when (this) {
@@ -265,6 +296,7 @@ private fun titleOf(dest: Dest, graph: AppGraph): String = when (dest) {
     Dest.VirtualDisplay -> "Virtual display"
     Dest.Theme -> "Theme"
     Dest.Font -> "Font"
+    Dest.LyricsFont -> "Lyrics font"
     Dest.Background -> "Background"
     Dest.Finish -> "Finish"
     Dest.CustomColor -> "Custom color"
@@ -288,7 +320,7 @@ private fun titleOf(dest: Dest, graph: AppGraph): String = when (dest) {
  * through to the global handlers here.
  */
 @Composable
-fun PodiumApp(graph: AppGraph, onSourceAction: (CapabilityAction) -> Unit) {
+fun PodiumApp(graph: AppGraph, onSourceAction: (CapabilityAction) -> Unit, onTurnOff: () -> Unit = {}) {
     val appearance by graph.deviceSettings.appearance.collectAsStateWithLifecycle()
     val preview by graph.deviceSettings.preview.collectAsStateWithLifecycle()
     val effective = preview ?: appearance
@@ -302,6 +334,17 @@ fun PodiumApp(graph: AppGraph, onSourceAction: (CapabilityAction) -> Unit) {
         val controller = graph.playbackController
         val snapshot by controller.snapshot.collectAsStateWithLifecycle()
         val power by graph.power.collectAsStateWithLifecycle()
+        // Where the music is heard (D-52). A route switched in the system's output picker sends no
+        // event, so it's looked at again every few seconds while Podium is in front.
+        val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+        LaunchedEffect(lifecycle) {
+            lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
+                while (true) {
+                    graph.audioOutput.refresh()
+                    kotlinx.coroutines.delay(OUTPUT_REFRESH_MS)
+                }
+            }
+        }
         val colors = PodiumTheme.colors
         val palette = effective.palette(colors.isDark)
 
@@ -330,6 +373,69 @@ fun PodiumApp(graph: AppGraph, onSourceAction: (CapabilityAction) -> Unit) {
             }
         }
 
+        // The physical Podium (D-54, D-56): pinch it into its space; the settings page beside it.
+        val space = rememberPodiumSpaceState()
+        var spacePage by remember { mutableStateOf(SpacePage.MAIN) }
+        var openSticker by remember { mutableStateOf<String?>(null) }
+        var makingFrom by remember { mutableStateOf<android.net.Uri?>(null) }
+        var turningOff by remember { mutableStateOf(false) }
+        val stickerEditor = remember { StickerEditorState() }
+        val guide = remember { GuideState(graph.guide) }
+        LaunchedEffect(space.phase) {
+            if (space.phase == SpacePhase.NORMAL) {
+                spacePage = SpacePage.MAIN
+                openSticker = null
+            }
+        }
+        LaunchedEffect(space) {
+            graph.debugSpace.collect { open ->
+                if (open == true && !space.isOut) space.enter() else if (open == false && space.isOut) space.leave()
+                graph.debugSpace.value = null
+            }
+        }
+        LaunchedEffect(space) {
+            graph.debugStickerSource.collect { uri ->
+                if (uri != null) {
+                    if (!space.isOut) space.enter()
+                    makingFrom = uri
+                    graph.debugStickerSource.value = null
+                }
+            }
+        }
+        LaunchedEffect(space) {
+            graph.debugArrange.collect { arrange ->
+                if (!arrange) return@collect
+                if (!space.isOut) space.enter()
+                snapshotFlow { space.phase }.first { it == SpacePhase.PHYSICAL }
+                space.startEditing()
+                graph.debugArrange.value = false
+            }
+        }
+        LaunchedEffect(guide) {
+            graph.debugGuide.collect { start ->
+                if (start) {
+                    guide.offer()
+                    graph.debugGuide.value = false
+                }
+            }
+        }
+        // The tour (D-57): offered once Podium has switched on for the first time.
+        LaunchedEffect(power) {
+            if (power == Power.ON) {
+                delay(GUIDE_DELAY_MS)
+                guide.offer()
+            }
+        }
+        val pickPicture = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+            if (uri != null) makingFrom = uri
+        }
+        fun stickOn(sticker: Sticker) {
+            val placed = graph.stickers.place(sticker.id)
+            stickerEditor.selected = placed.id
+            spacePage = SpacePage.MAIN
+            space.startEditing()
+        }
+
         val nowPlayingArt = rememberArtwork(snapshot.item?.artworkUri, 96.dp)
         val atmosphere = remember(nowPlayingArt, colors.isDark) {
             nowPlayingArt?.let { Atmosphere.fromArtwork(it.asAndroidBitmap(), colors.isDark) } ?: Atmosphere.neutral(colors)
@@ -342,7 +448,78 @@ fun PodiumApp(graph: AppGraph, onSourceAction: (CapabilityAction) -> Unit) {
             LocalFeedback provides feedback,
             LocalKeyboardHost provides keyboard,
             LocalKeyboardStyle provides if (podiumKeyboard) KeyboardStyle.PODIUM else KeyboardStyle.PHONE,
+            LocalPodiumSpace provides space,
         ) {
+         Box(Modifier.fillMaxSize()) {
+          PodiumSpace(
+            state = space,
+            edgeColor = if (palette.isGlass) GlassEdge else palette.bodyBottom,
+            spaceTint = androidx.compose.ui.graphics.lerp(if (palette.isGlass) GlassEdge else palette.bodyBottom, Color.Black, 0.94f),
+            stickers = { StickerLayer(graph.stickers) },
+            stickerEditor = { StickerEditor(graph.stickers, stickerEditor) },
+            panel = {
+                BackHandler {
+                    when {
+                        space.phase == SpacePhase.STICKER_EDITING -> {
+                            stickerEditor.selected = null
+                            space.stopEditing()
+                        }
+                        spacePage != SpacePage.MAIN -> spacePage = SpacePage.MAIN
+                        else -> space.leave()
+                    }
+                }
+                SpacePanel(
+                    state = space,
+                    page = spacePage,
+                    onPage = { spacePage = it },
+                    stickers = {
+                        StickerGallery(
+                            graph.stickers,
+                            onAdd = { pickPicture.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                            onOpen = {
+                                openSticker = it.id
+                                spacePage = SpacePage.STICKER
+                            },
+                            onArrange = space::startEditing,
+                        )
+                    },
+                    sticker = {
+                        StickerDetail(
+                            graph.stickers,
+                            openSticker,
+                            onStick = ::stickOn,
+                            onArrange = space::startEditing,
+                            onDeleted = {
+                                spacePage = SpacePage.MAIN
+                                openSticker = null
+                            },
+                        )
+                    },
+                    help = {
+                        HelpContent(onReplayGuide = guide::begin)
+                    },
+                    onTurnOff = {
+                        // The music stops at once; the goodbye, then Podium closes.
+                        controller.pause()
+                        turningOff = true
+                    },
+                )
+                val arranging by remember(space) { derivedStateOf { space.phase == SpacePhase.STICKER_EDITING || space.edit.value > 0.01f } }
+                if (arranging) StickerEditorBar(space, stickerEditor, graph.stickers)
+                makingFrom?.let { uri ->
+                    StickerMaker(
+                        source = uri,
+                        cutter = graph.cutter,
+                        store = graph.stickers,
+                        onSaved = { sticker ->
+                            makingFrom = null
+                            stickOn(sticker)
+                        },
+                        onCancel = { makingFrom = null },
+                    )
+                }
+            },
+          ) {
             // One structure for every finish, so trying finishes on never rebuilds the screen.
             GlassHost(
                 modifier = Modifier.fillMaxSize(),
@@ -387,6 +564,10 @@ fun PodiumApp(graph: AppGraph, onSourceAction: (CapabilityAction) -> Unit) {
                     )
                 },
             )
+          }
+          GuideTour(guide, palette)
+          if (turningOff) Farewell(onFinished = onTurnOff)
+         }
         }
     }
 }
@@ -435,6 +616,7 @@ private fun ScreenOs(
     val controller = graph.playbackController
     val motion = PodiumTheme.motion
     val colors = PodiumTheme.colors
+    val output by graph.audioOutput.state.collectAsStateWithLifecycle()
     val top = backStack.last()
     val miniPlayerVisible = snapshot.isActive && top.showsMiniPlayer()
     // Lyrics take the whole display: no header, no fading edges.
@@ -447,6 +629,23 @@ private fun ScreenOs(
         val screenHeight = maxHeight
         // The same geometry the lists use, so a screen moving away lands exactly in its box.
         val paper = PaperGeometry(maxWidth, maxHeight, insets.top + 8.dp, insets.bottom + 8.dp)
+        // Where each column's lit row sits, and which column was in front before this move (D-61).
+        val lenses = remember { PaperLenses() }
+        // The column in front now, and the one in front before it. The move may be set up before or
+        // after this records the change, so the column leaving is whichever of the two isn't in front.
+        val fronts = remember { arrayOfNulls<Dest>(2) }
+        SideEffect {
+            val now = backStack.last()
+            if (fronts[1] != now) {
+                fronts[0] = fronts[1]
+                fronts[1] = now
+            }
+        }
+        val leavingLens: () -> Float? = {
+            val now = backStack.last()
+            lenses.centreOf(if (fronts[1] == now) fronts[0] else fronts[1])
+        }
+        val comingLens: () -> Float? = { lenses.centreOf(backStack.last()) }
 
         GlassHost(
             modifier = Modifier.fillMaxSize(),
@@ -454,7 +653,7 @@ private fun ScreenOs(
                 // Glass tints the display with the artwork's atmosphere; Carbon and Bone stay matte, and
                 // a background the listener chose (D-41) shows as it is.
                 if (!colors.isIndustrial && LocalDisplaySurface.current == null) AtmosphereBackground(atmosphere, Modifier.fillMaxSize())
-                CompositionLocalProvider(LocalScreenInsets provides insets) {
+                CompositionLocalProvider(LocalScreenInsets provides insets, LocalPaperLenses provides lenses) {
                     NavDisplay(
                         backStack = backStack,
                         modifier = Modifier.fillMaxSize().scrollEdgeFade(
@@ -462,9 +661,11 @@ private fun ScreenOs(
                             bottomStartPx = with(density) { (if (fullScreen) screenHeight else screenHeight - insets.bottom.coerceAtLeast(24.dp)).toPx() },
                         ),
                         onBack = { navigator.pop() },
-                        transitionSpec = { paperForward(paper, density, motion.reduced) },
-                        popTransitionSpec = { paperBack(paper, density, motion.reduced) },
-                        predictivePopTransitionSpec = { paperBack(paper, density, motion.reduced) },
+                        // Forward: the column in front leaves for the left box, the new one comes from the right.
+                        // Back: the column in front leaves for the right box, the one behind comes from the left.
+                        transitionSpec = { paperForward(paper, density, motion.reduced, leaving = leavingLens(), coming = comingLens()) },
+                        popTransitionSpec = { paperBack(paper, density, motion.reduced, leaving = leavingLens(), coming = comingLens()) },
+                        predictivePopTransitionSpec = { paperBack(paper, density, motion.reduced, leaving = leavingLens(), coming = comingLens()) },
                         entryProvider = { key ->
                             // Glass lets Now Playing rise from the mini player; Carbon and Bone keep the whole
                             // hierarchy on one horizontal sheet of paper (D-29).
@@ -478,15 +679,22 @@ private fun ScreenOs(
                                 }
                                 val scope = LocalNavAnimatedContentScope.current
                                 val decor: @Composable () -> Modifier = {
+                                    // The glimpses come in as the move settles, soft then sharp, overlapping
+                                    // the column that sinks into their box (D-62).
                                     with(scope) {
-                                        Modifier.animateEnterExit(
-                                            enter = fadeIn(tween(220, delayMillis = if (motion.reduced) 0 else PaperTransitionMillis - 140)),
-                                            exit = fadeOut(tween(80)),
-                                        )
+                                        Modifier
+                                            .animateEnterExit(
+                                                enter = fadeIn(tween(GlimpseArrivalMillis, delayMillis = if (motion.reduced) 0 else GlimpseDelayMillis, easing = PodiumMotion.Smooth)),
+                                                exit = fadeOut(tween(80)),
+                                            )
+                                            .softArrival(scope, delayMillis = GlimpseDelayMillis, durationMillis = GlimpseArrivalMillis + 80)
                                     }
                                 }
-                                CompositionLocalProvider(LocalPaperPeek provides peek, LocalPaperDecor provides decor) {
-                                    ScreenContent(screen, graph, navigator, onSourceAction)
+                                CompositionLocalProvider(LocalPaperPeek provides peek, LocalPaperDecor provides decor, LocalPaperKey provides screen) {
+                                    // Leaving for a box, a column melts into the glimpse that takes its place (D-64).
+                                    Box(Modifier.fillMaxSize().softDeparture(scope, delayMillis = DepartureDelayMillis, durationMillis = PaperTransitionMillis - DepartureDelayMillis)) {
+                                        ScreenContent(screen, graph, navigator, onSourceAction)
+                                    }
                                 }
                             }
                         },
@@ -500,6 +708,7 @@ private fun ScreenOs(
                     canGoBack = backStack.size > 1,
                     onBack = { navigator.pop() },
                     playing = if (snapshot.isActive) snapshot.intent == PlayIntent.PLAY else null,
+                    output = output.indicator(),
                     modifier = Modifier.align(Alignment.TopCenter),
                 )
                 AnimatedVisibility(
@@ -557,6 +766,7 @@ private fun PreviousColumn(previous: Dest, current: Dest, graph: AppGraph, navig
         Dest.VirtualDisplay -> "VirtualDisplay"
         Dest.Theme -> "Theme"
         Dest.Font -> "Font"
+        Dest.LyricsFont -> "LyricsFont"
         Dest.Background -> "Background"
         Dest.Finish -> "Finish"
         Dest.CustomColor -> if (previous == Dest.Finish) "CUSTOM" else "CustomColor"
@@ -599,6 +809,7 @@ private fun ScreenContent(
     navigator: Navigator,
     onSourceAction: (CapabilityAction) -> Unit,
 ) {
+    val podiumSpace = app.podium.space.LocalPodiumSpace.current
     val controller = graph.playbackController
     val settings = graph.deviceSettings
     val onlineStatus by graph.online.status.collectAsStateWithLifecycle()
@@ -671,6 +882,7 @@ private fun ScreenContent(
         )
         Dest.UpNext -> UpNextScreen(controller)
         Dest.Settings -> SettingsScreen(
+            onPodiumSpace = { podiumSpace?.enter() },
             repository = settings,
             folders = graph.musicFolders,
             onlineService = graph.onlineService,
@@ -698,6 +910,7 @@ private fun ScreenContent(
                 imageStatus = image.status,
                 onTheme = { navigator.push(Dest.Theme) },
                 onFont = { navigator.push(Dest.Font) },
+                onLyricsFont = { navigator.push(Dest.LyricsFont) },
                 onBackground = { navigator.push(Dest.Background) },
                 onBackgroundColor = { navigator.push(Dest.DisplayColor) },
                 onLevel = { navigator.push(Dest.Level(it)) },
@@ -705,6 +918,7 @@ private fun ScreenContent(
         }
         Dest.Theme -> ThemeScreen(settings)
         Dest.Font -> FontScreen(settings)
+        Dest.LyricsFont -> LyricsFontScreen(settings)
         Dest.Background -> {
             val image by graph.displayImages.state.collectAsStateWithLifecycle()
             // The system photo picker: no storage permission; Podium keeps only the URI.
@@ -851,63 +1065,119 @@ private fun SystemBarIcons(darkIcons: Boolean) {
 }
 
 /** One move along the paper. */
-private const val PaperTransitionMillis = 600
+private const val PaperTransitionMillis = 560
+
+/** The glimpses arrive over the move's last part, overlapping the column leaving for their box. */
+private const val GlimpseDelayMillis = PaperTransitionMillis * 62 / 100
+private const val GlimpseArrivalMillis = 300
+
+/** The column leaving softens over the move's last part, as its glimpse arrives. */
+private const val DepartureDelayMillis = PaperTransitionMillis * 55 / 100
 
 /**
  * Forward along the paper (D-29, after the user's sketch): the next column grows out of its
  * preview box at middle-right and rises along the curve into focus, while the current screen
- * sinks down and to the left into the previous-column box — the Wheel turning one step.
+ * sinks down and to the left into the previous-column box — the Wheel turning one step. Every part
+ * of the move follows one curve, [PodiumMotion.Smooth] (D-60): it sets off gently, keeps going and
+ * settles with a long, soft finish — never pausing part-way.
  */
-private fun AnimatedContentTransitionScope<Scene<Dest>>.paperForward(g: PaperGeometry, density: Density, reduced: Boolean): ContentTransform {
+private fun AnimatedContentTransitionScope<Scene<Dest>>.paperForward(
+    g: PaperGeometry,
+    density: Density,
+    reduced: Boolean,
+    leaving: Float?,
+    coming: Float?,
+): ContentTransform {
     if (reduced) return fadeIn(tween(160)) togetherWith fadeOut(tween(120))
     val (right, left, lift) = paperPoints(g, density)
-    val d = PaperTransitionMillis
-    val enter = slideIn(
-        keyframes {
-            durationMillis = d
-            right at 0 using FastOutSlowInEasing
-            IntOffset(right.x / 2, right.y - lift) at d * 45 / 100 using FastOutSlowInEasing
-            IntOffset.Zero at d
-        },
-    ) { right } + scaleIn(tween(d, easing = FastOutSlowInEasing), initialScale = g.miniScale) + fadeIn(tween(d / 2), initialAlpha = 0.55f)
-    val exit = slideOut(
-        keyframes {
-            durationMillis = d
-            IntOffset.Zero at 0 using FastOutSlowInEasing
-            IntOffset(left.x / 2, left.y + lift) at d * 55 / 100 using FastOutSlowInEasing
-            left at d
-        },
-    ) { left } + scaleOut(tween(d, easing = FastOutSlowInEasing), targetScale = g.peekScale) + fadeOut(tween(d * 35 / 100, delayMillis = d * 65 / 100))
-    return enter togetherWith exit
+    return paperMove(
+        enterFrom = right + litToRightBox(g, density, coming),
+        enterScale = g.miniScale,
+        exitTo = left + litToLeftBox(g, density, leaving),
+        exitScale = g.glimpseScale,
+        lift = lift,
+    )
 }
 
 /** Back along the paper: the previous column rises out of its box into focus; the current one sinks into the next box. */
-private fun AnimatedContentTransitionScope<Scene<Dest>>.paperBack(g: PaperGeometry, density: Density, reduced: Boolean): ContentTransform {
+private fun AnimatedContentTransitionScope<Scene<Dest>>.paperBack(
+    g: PaperGeometry,
+    density: Density,
+    reduced: Boolean,
+    leaving: Float?,
+    coming: Float?,
+): ContentTransform {
     if (reduced) return fadeIn(tween(160)) togetherWith fadeOut(tween(120))
     val (right, left, lift) = paperPoints(g, density)
+    return paperMove(
+        enterFrom = left + litToLeftBox(g, density, coming),
+        enterScale = g.glimpseScale,
+        exitTo = right + litToRightBox(g, density, leaving),
+        exitScale = g.miniScale,
+        lift = lift,
+    )
+}
+
+/**
+ * How far to move a column sitting in the left box (at [PaperGeometry.peekScale]) so its lit row,
+ * at [litY] px in the column, lands on the box's middle — where the glimpse shows that row (D-61).
+ */
+private fun litToLeftBox(g: PaperGeometry, density: Density, litY: Float?): IntOffset = with(density) {
+    val lit = litY ?: return IntOffset.Zero
+    IntOffset(0, ((g.centreY.toPx() - lit) * g.glimpseScale).roundToInt())
+}
+
+/**
+ * The same for the right box (the whole column at [PaperGeometry.miniScale], centred on the box):
+ * its lit row on the box's middle. A column not seen before lights its first row, near the top.
+ */
+private fun litToRightBox(g: PaperGeometry, density: Density, litY: Float?): IntOffset = with(density) {
+    val lit = litY ?: (g.padTop + FirstRowCentre).toPx()
+    IntOffset(0, ((g.height.toPx() / 2f - lit) * g.miniScale).roundToInt())
+}
+
+/** Where a fresh list's first row sits below the readable region's top. */
+private val FirstRowCentre = 26.dp
+
+private fun paperMove(enterFrom: IntOffset, enterScale: Float, exitTo: IntOffset, exitScale: Float, lift: Int): ContentTransform {
     val d = PaperTransitionMillis
-    val enter = slideIn(
-        keyframes {
-            durationMillis = d
-            left at 0 using FastOutSlowInEasing
-            IntOffset(left.x / 2, left.y - lift) at d * 45 / 100 using FastOutSlowInEasing
-            IntOffset.Zero at d
-        },
-    ) { left } + scaleIn(tween(d, easing = FastOutSlowInEasing), initialScale = g.peekScale) + fadeIn(tween(d / 2), initialAlpha = 0.55f)
-    val exit = slideOut(
-        keyframes {
-            durationMillis = d
-            IntOffset.Zero at 0 using FastOutSlowInEasing
-            IntOffset(right.x / 2, right.y + lift) at d * 55 / 100 using FastOutSlowInEasing
-            right at d
-        },
-    ) { right } + scaleOut(tween(d, easing = FastOutSlowInEasing), targetScale = g.miniScale) + fadeOut(tween(d * 35 / 100, delayMillis = d * 65 / 100))
+    val smooth = PodiumMotion.Smooth
+    // The column coming in rises out of its box along an arc; the one leaving dips into the other.
+    val enter = slideIn(arc(enterFrom, IntOffset.Zero, IntOffset(enterFrom.x / 2, enterFrom.y - lift), d)) { enterFrom } +
+        scaleIn(tween(d, easing = smooth), initialScale = enterScale) +
+        fadeIn(tween(d / 2, easing = smooth), initialAlpha = 0.55f)
+    val exit = slideOut(arc(IntOffset.Zero, exitTo, IntOffset(exitTo.x / 2, exitTo.y + lift), d)) { exitTo } +
+        scaleOut(tween(d, easing = smooth), targetScale = exitScale) +
+        fadeOut(tween(d * 30 / 100, delayMillis = d * 70 / 100, easing = smooth))
     return enter togetherWith exit
 }
 
 /**
+ * A move from [from] to [to] along the arc through [through] (its midpoint), timed by one smooth
+ * curve end to end: the path is a quadratic curve, sampled finely at eased times, so the speed
+ * never dips where the old move joined two halves.
+ */
+private fun arc(from: IntOffset, to: IntOffset, through: IntOffset, durationMillis: Int) = keyframes<IntOffset> {
+    this.durationMillis = durationMillis
+    // The control point that makes the curve pass through [through] halfway.
+    val cx = 2f * through.x - (from.x + to.x) / 2f
+    val cy = 2f * through.y - (from.y + to.y) / 2f
+    for (i in 0..ArcSamples) {
+        val time = i / ArcSamples.toFloat()
+        val t = PodiumMotion.Smooth.transform(time)
+        val u = 1f - t
+        val x = u * u * from.x + 2f * u * t * cx + t * t * to.x
+        val y = u * u * from.y + 2f * u * t * cy + t * t * to.y
+        IntOffset(x.roundToInt(), y.roundToInt()) at (durationMillis * i / ArcSamples) using LinearEasing
+    }
+}
+
+private const val ArcSamples = 30
+
+/**
  * Centre offsets of a screen sitting in the next box (whole, at [PaperGeometry.miniScale]) and in
- * the previous box (zoomed to its list, at [PaperGeometry.peekScale]), and how far the path arcs.
+ * the previous box (exactly as the glimpse shows it, at [PaperGeometry.glimpseScale] — D-63), and
+ * how far the path arcs.
  */
 private fun paperPoints(g: PaperGeometry, density: Density): Triple<IntOffset, IntOffset, Int> = with(density) {
     val right = IntOffset(
@@ -915,8 +1185,8 @@ private fun paperPoints(g: PaperGeometry, density: Density): Triple<IntOffset, I
         (g.centreY - g.height / 2).roundToPx(),
     )
     val left = IntOffset(
-        (g.peekOriginX + g.width * g.peekScale / 2 - g.width / 2).roundToPx(),
-        (g.peekOriginY + g.height * g.peekScale / 2 - g.height / 2).roundToPx(),
+        (g.glimpseOriginX + g.width * g.glimpseScale / 2 - g.width / 2).roundToPx(),
+        (g.glimpseOriginY + g.height * g.glimpseScale / 2 - g.height / 2).roundToPx(),
     )
     Triple(right, left, (g.height * 0.12f).roundToPx())
 }
@@ -1046,4 +1316,21 @@ private fun rememberOnlineActions(graph: AppGraph, navigator: Navigator): Online
 }
 
 private const val RADIO_SIZE = 30
+
+private const val OUTPUT_REFRESH_MS = 4_000L
+
+/** The guide waits a moment after switching on, for the display to settle (and any first question). */
+private const val GUIDE_DELAY_MS = 900L
+
+/** The slab's edge for the Glass finish (its body is the artwork's atmosphere, not a colour). */
+private val GlassEdge = Color(0xFF1C1E22)
+
+/** The status bar's output glyph: muted first, then where the music goes (none for other outputs). */
+private fun app.podium.player.service.AudioOutputState.indicator(): app.podium.core.designsystem.shell.OutputIndicator? = when {
+    muted -> app.podium.core.designsystem.shell.OutputIndicator.MUTED
+    route == app.podium.player.service.AudioRoute.BLUETOOTH -> app.podium.core.designsystem.shell.OutputIndicator.BLUETOOTH
+    route == app.podium.player.service.AudioRoute.WIRED -> app.podium.core.designsystem.shell.OutputIndicator.HEADPHONES
+    route == app.podium.player.service.AudioRoute.SPEAKER -> app.podium.core.designsystem.shell.OutputIndicator.PHONE_SPEAKER
+    else -> null
+}
 

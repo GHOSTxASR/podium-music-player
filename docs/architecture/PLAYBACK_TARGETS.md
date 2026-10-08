@@ -1,16 +1,16 @@
 # Playback Targets
 
-**Status:** Accepted (ADR-013) · **Date:** 2026-10-02 · Extends `audio-architecture.md`, `playback-state-machine.md`, ADR-003, ADR-006.
+**Status:** Accepted (ADR-013, updated by D-48) · **Date:** 2026-10-02 (updated 2026-10-06) · Extends `audio-architecture.md`, `playback-state-machine.md`, ADR-003, ADR-006.
 
 ## 1. The distinction that matters: who owns the audio?
 
 | Route | Who decodes and outputs audio | Podium controls via | Example |
 |---|---|---|---|
-| **Direct stream** | **Podium** (Media3/ExoPlayer) | its own player | Local files, OpenSubsonic, Audius, verified downloads |
-| **Remote provider** | **Another app, device, or server** | that provider's SDK/protocol (commands + state) | OpenSubsonic jukebox (server's speakers), Cast receivers (future), a provider's own app via its official remote SDK |
+| **Direct stream** | **Podium** (Media3/ExoPlayer) | its own player | Local files, YouTube Music (D-48), verified downloads |
+| **Remote provider** | **Another app, device, or server** | that provider's SDK/protocol (commands + state) | Cast receivers (future), historical delegated explorations |
 | **Embedded official player** | The provider's official embeddable player, inside Podium, visible | the embed's official API | An official video embed that must stay visible and foreground |
 
-A direct stream is a URL Podium may open. A remote target is **a session Podium may command**. They are different types and are never coerced into each other. In particular, a provider whose official platform only allows remote control is modelled as `RemoteProvider` — Podium never pretends that audio is Podium-owned.
+A direct stream is a URL Podium opens directly. Under **D-48**, YouTube Music resolves to `PlaybackTarget.DirectStream(PlayableMedia)` and is played directly within Podium via Media3 `DirectStreamEngine`. A remote target is **a session Podium commands**. They are different types and are never coerced into each other.
 
 ## 2. Types (`player:api` / `sources:api`)
 
@@ -149,7 +149,7 @@ Position = last reported position + elapsed since report timestamp (when playing
 ### 6.3 Candidate remote targets
 | Provider | Route basis | Policy sketch | Status |
 |---|---|---|---|
-| OpenSubsonic **jukebox** (`jukeboxControl`) | Official API of the user's server | queue PODIUM-mirrored to the server's jukebox list; controls PODIUM; mixes = false (server plays only its own library) | Good first real implementation (validates the abstraction legitimately) |
+| OpenSubsonic **jukebox** (`jukeboxControl`) | Official API of the user's server | queue PODIUM-mirrored to the server's jukebox list; controls PODIUM; mixes = false (server plays only its own library) | Historical validation of abstraction; OpenSubsonic retired |
 | Cast receivers | Media3 `CastPlayer` (Google Cast SDK, proprietary) | queue PODIUM; controls PODIUM | Future; adds a proprietary dependency → user decision |
 | A streaming provider's own app via its official remote SDK | Provider SDK | queue PROVIDER; controls PROVIDER; mixes per provider policy; attribution required | Only per `SOURCE_CAPABILITY_MATRIX.md` and an explicit user decision |
 

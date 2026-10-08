@@ -21,6 +21,7 @@ import app.podium.player.api.PlayIntent
 import app.podium.player.api.PlaybackController
 import app.podium.player.api.PlaybackSnapshot
 import app.podium.player.api.PlaybackStatusMapper
+import app.podium.player.api.Recovery
 import app.podium.player.api.PlayerFacts
 import app.podium.player.api.QueueEntry
 import app.podium.player.api.QueueOrigin
@@ -178,9 +179,15 @@ class MediaControllerPlaybackController(
         val c = controller ?: return
         val current = c.currentMediaItem
         if (c.playbackState == Player.STATE_READY) readyMediaId = current?.mediaId
-        val error = c.playerError?.let { PlaybackErrors.fromCode(it.errorCode) }
+        val extrasForItem = sessionExtras.takeIf { it.getString(PodiumExtras.CURRENT_UID) == current?.mediaId }
+        val recovery = extrasForItem?.getString(PodiumExtras.RECOVERY)?.let { runCatching { Recovery.valueOf(it) }.getOrNull() }
+        // While a refused stream is being replaced, the song is loading again, not failing.
+        val refreshing = recovery == Recovery.REFRESHING_STREAM
+        val error = if (refreshing) null else c.playerError?.let {
+            PlaybackErrors.fromKind(extrasForItem?.getString(PodiumExtras.LAST_ERROR)) ?: PlaybackErrors.fromCode(it.errorCode)
+        }
         val facts = PlayerFacts(
-            phase = when (c.playbackState) {
+            phase = if (refreshing) EnginePhase.BUFFERING else when (c.playbackState) {
                 Player.STATE_BUFFERING -> EnginePhase.BUFFERING
                 Player.STATE_READY -> EnginePhase.READY
                 Player.STATE_ENDED -> EnginePhase.ENDED
@@ -212,6 +219,7 @@ class MediaControllerPlaybackController(
                 sourceClaimed = if (sameItem) claimedQuality(extras) else null,
                 actualMedia = AudioQualityMapper.fromTracks(c.currentTracks),
             ),
+            recovery = recovery,
         )
         _queue.value = QueueView(
             entries = (0 until c.mediaItemCount).map { index -> toEntry(c.getMediaItemAt(index), index == c.currentMediaItemIndex) },

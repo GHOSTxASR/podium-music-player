@@ -109,8 +109,19 @@ data class PlaybackSnapshot(
     val remote: RemoteStatus? = null,
     /** The local queue is still there, paused, while another owner plays: "Back to my music" can resume it. */
     val canResumeLocal: Boolean = false,
+    /** What the player is doing about a problem with the current song, while it does it (shown instead of the error). */
+    val recovery: Recovery? = null,
 ) {
     val isActive: Boolean get() = item != null
+}
+
+/** The player's answer to a problem with the current song, while it's under way. */
+enum class Recovery {
+    /** The stream was refused (it expired, say): the same source is being asked for a fresh one. */
+    REFRESHING_STREAM,
+
+    /** The song can't play: the next one starts in a moment. */
+    SKIPPING,
 }
 
 /** Remote playback as the UI shows it, provider-neutral (YOUTUBE_MUSIC_ARCHITECTURE.md §8.4). */

@@ -7,17 +7,17 @@ Foundation written 2026-10-02 (Phases 0–2 and source research S0). Read in thi
 3. [decision-log.md](decision-log.md) — every decision; links to [ADRs](adr/)
 4. [architecture.md](architecture.md) — system shape, layering, contracts, risks
 5. [architecture/MUSIC_SOURCE_ARCHITECTURE.md](architecture/MUSIC_SOURCE_ARCHITECTURE.md) — provider-independent source model (facets, capabilities, matcher, resolver, health)
-   - [architecture/PLAYBACK_TARGETS.md](architecture/PLAYBACK_TARGETS.md) — direct streams vs remote providers vs embedded players
-   - [architecture/SOURCE_CAPABILITY_MATRIX.md](architecture/SOURCE_CAPABILITY_MATRIX.md) — what each provider officially allows, and Podium's positions
-   - [architecture/YOUTUBE_MUSIC_TRANSITION.md](architecture/YOUTUBE_MUSIC_TRANSITION.md) — proposal: replacing Online with YouTube Music while Offline stays frozen (2026-10-06)
-   - [architecture/YOUTUBE_MUSIC_ARCHITECTURE.md](architecture/YOUTUBE_MUSIC_ARCHITECTURE.md) — YouTube Music as built: catalogue, account, delegated playback, owner-aware controller (D-38)
+   - [architecture/PLAYBACK_TARGETS.md](architecture/PLAYBACK_TARGETS.md) — direct streams vs remote providers vs embedded players (updated for D-48)
+   - [architecture/SOURCE_CAPABILITY_MATRIX.md](architecture/SOURCE_CAPABILITY_MATRIX.md) — provider capability matrix and D-48 positions
+   - [architecture/YOUTUBE_MUSIC_ARCHITECTURE.md](architecture/YOUTUBE_MUSIC_ARCHITECTURE.md) — Authoritative YouTube Music specification (D-48): sole online provider, direct Media3 streaming, BitChord reference
+   - [architecture/YOUTUBE_MUSIC_TRANSITION.md](architecture/YOUTUBE_MUSIC_TRANSITION.md) — architectural transition roadmap (historical context)
    - [research/YOUTUBE_MUSIC_IMPLEMENTATION_NOTES.md](research/YOUTUBE_MUSIC_IMPLEMENTATION_NOTES.md) — what was observed live, what is assumed, what needs the phone
-   - [testing/YOUTUBE_MUSIC_DEVICE_ACCEPTANCE.md](testing/YOUTUBE_MUSIC_DEVICE_ACCEPTANCE.md) — the device run (not yet performed)
-   - [implementation/YOUTUBE_MUSIC_FINAL_REPORT.md](implementation/YOUTUBE_MUSIC_FINAL_REPORT.md) — final report: what was built, tests, limits, build and APK
+   - [testing/YOUTUBE_MUSIC_DEVICE_ACCEPTANCE.md](testing/YOUTUBE_MUSIC_DEVICE_ACCEPTANCE.md) — device acceptance plan
+   - [implementation/YOUTUBE_MUSIC_FINAL_REPORT.md](implementation/YOUTUBE_MUSIC_FINAL_REPORT.md) — interim build report (D-38 delegated playback, superseded by D-48)
    - [architecture/LYRICS_ARCHITECTURE.md](architecture/LYRICS_ARCHITECTURE.md) — lyrics provider, matching, LRC sync, cache, the full-screen lyric
    - [architecture/PODIUM_CUSTOMIZATION.md](architecture/PODIUM_CUSTOMIZATION.md) — body glitter, display fonts, the Custom theme, backgrounds, contrast, persistence
    - [testing/UI_DEVICE_ACCEPTANCE.md](testing/UI_DEVICE_ACCEPTANCE.md) — on-device steps for focus geometry, customization and lyrics
-   - [music-source-analysis.md](music-source-analysis.md) — original source analysis (technical vs. authorised vs. distributable)
+   - [music-source-analysis.md](music-source-analysis.md) — original source analysis (policy conclusions updated by D-48; technical findings preserved)
 6. [design-system.md](design-system.md) — tokens, glass materials, components, copy
 7. [interaction-model.md](interaction-model.md) — the Wheel, contexts, inputs, haptics
 8. [navigation-map.md](navigation-map.md) — hierarchy, stack rules, transitions

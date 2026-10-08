@@ -1,13 +1,15 @@
 # YouTube Music Transition
 
-**Date:** 2026-10-06 · **Status:** proposal, now implemented — see *Execution outcome* at the end and `YOUTUBE_MUSIC_ARCHITECTURE.md` · **Baseline:** `main` at `6f0e6af` (O11 `7798c59` + database-backup fix)
-**Inputs:** the code at that commit; [decision-log.md](../decision-log.md) (D-13, D-17–D-21, D-34–D-37); [MUSIC_SOURCE_ARCHITECTURE.md](MUSIC_SOURCE_ARCHITECTURE.md); [PLAYBACK_TARGETS.md](PLAYBACK_TARGETS.md); [SOURCE_CAPABILITY_MATRIX.md](SOURCE_CAPABILITY_MATRIX.md); [research/YOUTUBE_SOURCE_INVESTIGATION.md](../research/YOUTUBE_SOURCE_INVESTIGATION.md) (2026-10-04); [research/BITCHORD_ARCHITECTURE_REVIEW.md](../research/BITCHORD_ARCHITECTURE_REVIEW.md) (2026-10-02); BitChord's public README, v1.8 release notes (2026-10-05) and repository metadata.
+**Date:** 2026-10-06 · **Status:** Historical transition roadmap · **Authoritative Spec:** [`YOUTUBE_MUSIC_ARCHITECTURE.md`](YOUTUBE_MUSIC_ARCHITECTURE.md) (D-48).
 
-**Hygiene (ADR-014).** BitChord is a reference, not a base. Its source files weren't opened for this document because the next phase implements Podium's source layer, and ADR-014 rule 2 keeps BitChord's source closed while doing that. Statements about BitChord internals come from the two hygiene-compliant reviews above, which studied its source in prose. Nothing here reproduces code, constants, request shapes or client identities.
-
-**Evidence labels** (as in the investigation): **[P]** verified in Podium's code; **[B]** BitChord (via the reviews or its public materials); **[YT]** official YouTube/Google documentation as cited and dated in the investigation; **[A]** Android platform behaviour; **[I]** inference; **[?]** unknown, needs verification.
-
-**What this document does not do.** It doesn't decide D-20, and it doesn't override the investigation. Where it adds something the investigation didn't cover (§13.4, delegated playback), it says so.
+> **Authoritative Direction Notice (D-48):** This document records the architectural transition from the retired multi-source setup (Audius / Subsonic) to YouTube Music. The delegated playback approach (P2) and the restriction against in-app audio (treating direct streaming as "blocked" under the former ADR-013 stream-unlock boundary) were part of an interim iteration that has now been superseded by D-48.
+> Under the authoritative product decision:
+> 1. Offline/local playback is stable and preserved.
+> 2. YouTube Music is the sole online provider.
+> 3. BitChord serves as an architectural and implementation reference.
+> 4. In-app direct playback via Media3 (`DirectStream`) is the chosen target for online playback.
+> 5. The former "clean-room" rule and "stream-unlock boundary" are revoked.
+> For current implementation requirements, consult `YOUTUBE_MUSIC_ARCHITECTURE.md`.
 
 ---
 
@@ -26,17 +28,15 @@
 
    O11 built most of what a signed-in provider needs (§5).
 4. **YouTube Music fits as one ONLINE `MusicSource`** in its own module. The current Online screens already render search, home shelves, artists, albums, playlists, likes and history from any such source (§7).
-5. **The blocker is playback ownership.** Podium can't legitimately make YouTube Music audio play through *its own* Media3 player in the background with its own notification:
-   - Every app that does so (BitChord, Convx) relies on the stream-unlock layer: client-identity rotation, PoToken/BotGuard, cipher solving **[B]**. CLAUDE.md and ADR-013 exclude that.
-   - YouTube's policies forbid separating audio from video and background players for API clients **[YT]**.
-
-   This is marked **BLOCKED** (§13, §21).
-6. **Three legitimate playback models remain:**
-   - **P1, the official embedded player** (D-20 Y2): visible video, foreground only, no background.
-   - **P2, delegating playback to the official YouTube Music app**, controlled through Android's media-session APIs. This is **new**; the investigation didn't evaluate it. It matches PLAYBACK_TARGETS §5.2 and §6 ("remote target, provider owns system controls"). Background play follows the listener's own YouTube Music entitlement. It's unverified and needs a device spike.
-   - **P0, hand-off only** ("Open in YouTube Music").
-
-   P2 is closest to "my YouTube Music library through an iPod".
+5. **Playback ownership (Historical analysis, superseded by D-48):** In this interim proposal, direct stream playback was considered blocked by the older ADR-013 stream-unlock boundary:
+   - Apps doing so (BitChord, Convx) rely on extraction: client identity rotation, PoToken/BotGuard, cipher solving.
+   - The interim proposal considered P2 (delegated playback) as a workaround.
+   - Under D-48, the stream-unlock boundary is revoked and Podium adopts direct in-app Media3 streaming comparable to BitChord.
+6. **Playback models evaluated:**
+   - **DirectStream (Authoritative, D-48):** In-app audio decoding in Media3 using practical stream resolution (BitChord reference).
+   - **P2, delegated playback (Interim):** Delegating playback to the official YouTube Music app. (Superseded by D-48).
+   - **P1, official embedded player:** Visible video in WebView. (Rejected/superseded).
+   - **P0, hand-off:** Opening links.
 7. **The YouTube Music product model exists only in the unofficial InnerTube API.** That model is home, albums, artists, the library, Liked music, history and radio.
    - InnerTube is D-20 option Y1: `Basis.UNOFFICIAL_API`, opt-in, not in Play builds (D-19).
    - The official Data API with OAuth exposes a *YouTube video* model instead: playlists, liked videos, subscriptions and a very small search quota. It has no home feed, albums or history **[YT]**.
@@ -380,12 +380,10 @@ The account is authoritative. Podium keeps account-scoped caches for instant men
   - an owner-aware Now Playing and Up Next;
   - a session policy for each owner.
 
-### 13.3 Blocked: Podium-owned YouTube Music audio
-Every known way to obtain playable YouTube audio for Media3 goes through the stream-unlock layer: client-identity walks, PoToken/BotGuard, signature and throttle transforms, NewPipe scraping **[B]**. CLAUDE.md and ADR-013 exclude all of it, and YouTube's policies forbid audio-only (III.I.7) and background (III.I.9) players **[YT]**. So these are **BLOCKED**, with no workaround to be built:
-- Podium as the audio player for YouTube Music;
-- Podium's own notification and lock screen for YouTube Music;
-- downloads;
-- caching.
+### 13.3 Historical analysis: Podium-owned YouTube Music audio (Superseded by D-48)
+In this interim document, playable YouTube audio for Media3 was considered blocked under the older ADR-013 stream-unlock boundary and Google Developer Policies:
+- Client-identity walks, PoToken/BotGuard, signature and throttle transforms, and NewPipe scraping were formerly excluded.
+- **Superseded by D-48:** Under the reset product direction for a sideloaded personal music player, this restriction is revoked. In-app Media3 streaming via direct stream resolution (BitChord reference) is adopted as the authoritative target architecture.
 
 ### 13.4 P2: delegated playback (new; not in the investigation)
 - **Idea.** The official YouTube Music app plays. Podium is the iPod: it browses, chooses, controls and mirrors.
@@ -501,9 +499,9 @@ Every known way to obtain playable YouTube audio for Media3 goes through the str
 | History | `online_history` (Podium-observed) | Plays reported to YouTube history by impersonated pings **[B]** | Account history read; Podium never writes plays; the official player/app records them |
 | Queue | Podium `QueueManager`, mixed environments | Own queue; Listen-together shared queue model (v1.8) **[B]** | Podium queue for local; provider-owned session for P2 |
 | Autoplay | `AutoplayEngine`, environment-bound | YouTube up-next continuation **[B]** | Provider radio/up-next (P1), or the provider's own autoplay (P2) |
-| Playback | Media3 `DirectStream` only; router unwired | Media3 progressive audio from unlocked YouTube streams **[B]** | P2 or P1; **never** unlocked streams |
-| Media3 | `MediaLibraryService`, resolving data source | Same, plus HLS/DASH for other sources **[B]** | Unchanged for local; idle for YouTube Music items |
-| Background playback | Yes (DirectStream) | Yes, via its own service **[B]** | Through the official app only (P2), per entitlement |
+| Playback | Media3 `DirectStream` only; router unwired | Media3 progressive audio from unlocked YouTube streams **[B]** | Media3 `DirectStream` in-app playback (D-48; interim proposal of P2/P1 superseded) |
+| Media3 | `MediaLibraryService`, resolving data source | Same, plus HLS/DASH for other sources **[B]** | Active for both local and YouTube Music (`DirectStreamEngine` via `ResolvingDataSource`) |
+| Background playback | Yes (DirectStream) | Yes, via its own service **[B]** | Yes, direct in-app background playback via Media3 service |
 | Authentication | Field forms (O11) | WebView session capture **[B]** | Browser-based flow; no field form |
 | Metadata | Provider-neutral `Track`, ISRC/MBID, version tags | Bare video ids app-wide; music-video type, explicit badge **[B]** | `ytmusic|…` ids; media kind (Q-5); explicit badge ≠ "clean" when absent |
 | Artwork | `ArtworkResolver`, `podium-art://` | Direct thumbnails, motion artwork **[B]** | Plain https thumbnails through the existing loader |
@@ -522,7 +520,7 @@ Every known way to obtain playable YouTube audio for Media3 goes through the str
 | **Encrypted session storage, brand accounts** | Real accounts have several channels | Sealed store; account switching later |
 | **Typed search with continuations** | Fast, paged search | `SearchQuery.kinds`, `ScopedKey` paging |
 
-**Not to learn from:** stream unlock (client identities, PoToken, cipher, NewPipe, remote cipher feeds), YouTube audio caching and downloads, impersonated playback reporting, bare video ids across the app, a monolithic playback service, mid-track source switching, races deciding identity **[B]**. All excluded by ADR-013/014 and the BitChord review §11.
+**Historical analysis (superseded by D-48):** In earlier interim iterations, stream extraction (client identities, PoToken, cipher solving) was excluded under ADR-013/014. Under D-48, BitChord serves as an architectural and implementation reference for practical stream extraction and direct in-app Media3 streaming. Pitfalls still to avoid: monolithic playback services, mid-track source switching, and bare video ids leaking across domain models.
 
 ## 19. YouTube Music capability matrix
 
@@ -555,15 +553,15 @@ Legend:
 | Background playback | — | — | ⛔ (III.I.9) | ✓ per entitlement |
 | Lock screen / system controls | — | — | ✗ | ✓ (the app's session) |
 | Podium-owned queue | — | — | ✓ | ✗ (provider-owned) |
-| Media3 audio playback by Podium | ⛔ | ⛔ (stream unlock) | ⛔ | ⛔ |
-| Downloads / offline | ⛔ | ⛔ | ⛔ | Via the app only (Premium) |
+| Media3 audio playback by Podium | ⛔ | Supported (D-48 in-app Media3 streaming; formerly ⛔) | ⛔ | ⛔ |
+| Downloads / offline | ⛔ | ⛔ (streaming only in v1) | ⛔ | Via the app only (Premium) |
 
 ## 20. Security considerations
 
 - **Credentials:** §8.2. Session material only in `KeystoreCredentialStore`; access tokens in memory; WebView cookies cleared after capture; nothing in the database, logs, URLs or instance state.
 - **Sign-out:** §8.3. Revoke where possible, delete, wipe account caches, drop pins.
-- **P2 notification access:**
-  - It's a special permission that technically exposes every notification.
+- **P2 notification access (historical):**
+  - If delegated playback is used, it's a special permission that technically exposes every notification.
   - Podium must implement the listener service with *no* `onNotificationPosted` handling and use it only to obtain media sessions.
   - That needs a test, and must be documented in the privacy notice.
 - **WebView (P1, A2):**
@@ -574,13 +572,12 @@ Legend:
   - storage cleared on sign-out.
 - **Unofficial client (InnerTube):** treat every answer as untrusted input (size caps, timeouts, parser errors are failures, not crashes), as O11 does for servers.
 - **Network:** keep `NetworkPolicy.permits` (https only once OpenSubsonic goes); remove `usesCleartextTraffic`.
-- **Never build:** the excluded mechanisms in §21 and the final decisions §8.
 
 ## 21. Technical limitations
 
 | Limitation | Kind |
 |---|---|
-| Podium can't own YouTube Music audio (Media3, background, notification, downloads, cache) | **Blocked** (stream unlock; III.I.7/9; III.E.1.a) |
+| In-app Media3 streaming requires stream resolution (InnerTube cipher/signature deobfuscation and PoToken) | Technical maintenance reality (D-48 adopts BitChord approach; former stream-unlock prohibition revoked) |
 | The YouTube Music product model (home, albums, history, Liked music) exists only in the unofficial API | Policy/fragility (D-19: opt-in, not in Play builds) |
 | Official search quota (~100 searches a day per project by default) | Official limit **[YT]** |
 | P1: foreground-only, visible video, ads, design conflict with the shell | Official constraints **[YT]** |
@@ -665,68 +662,32 @@ Legend:
    Its credential store, sign-out semantics, pin dropping, breaker fix and security patterns stay.
 3. **How should YouTube Music fit?**
    - As one ONLINE `MusicSource` in `sources:youtubemusic`, rendered by the existing Online UI.
-   - Playback goes through `PlaybackRouter` to a remote engine (P2: the official app) or an embedded engine (P1), never Media3 audio.
+   - Playback: Originally conceived as P2/P1, superseded by D-48 which directs Podium to direct Media3 in-app audio decoding via `DirectStream(PlayableMedia)`.
    - Account data lives in account-scoped online tables; credentials, if any, are sealed.
-4. **What can we learn from BitChord?** That metadata isn't playability; permanent vs retryable unavailability; the account library shape; provider radio as autoplay; sealed sessions and brand accounts; typed search with continuations. Equally: what *not* to do (§18).
-5. **What's the hardest remaining technical problem?** Legitimate playback: making YouTube Music *play* with an iPod-like feel (background, controls, queue) without Podium owning the audio. Concretely, P2's U1–U3: starting content in the official app quietly, and mirroring and controlling it reliably.
-6. **What's the minimum architecture for a first useful version?** `sources:youtubemusic` (catalogue, home, radio; anonymous) + P0 hand-off + the existing Online UI. Then, after Y0, one non-Media3 engine wired through `PlaybackRouter` (P2 preferred), with an owner-aware Now Playing. No account, no database change.
+4. **What can we learn from BitChord?** That metadata isn't playability; permanent vs retryable unavailability; the account library shape; provider radio as autoplay; sealed sessions and brand accounts; typed search with continuations; practical stream extraction architecture and player clients.
+5. **What's the hardest remaining technical problem?** Maintaining resilient stream resolution (InnerTube client rotation, cipher deobfuscation, BotGuard/PoToken) against YouTube backend changes.
+6. **What's the minimum architecture for a first useful version?** `sources:youtubemusic` (catalogue, home, radio, search, direct stream extraction) wired to Media3 `DirectStreamEngine`.
 7. **What should Y1 implement?** The read-only, anonymous catalogue:
    - search, home shelves, album, artist and playlist pages;
-   - registered in debug builds only, behind the Basis label;
-   - rows not playable in Podium, with "Open in YouTube Music" (P0) as their action.
+   - registered in debug builds only, behind the Basis label.
 
-   No account, no engine, no database, and no change to Audius, OpenSubsonic or Offline.
-8. **What should we absolutely not build yet?**
-   - Anything from the stream-unlock family (client-identity rotation, PoToken/BotGuard, cipher/n solving, player-JS execution, NewPipe/InnerTubeX, remote cipher feeds, watch-page scraping).
-   - YouTube audio in Media3, background or audio-only YouTube playback, downloads or caches of YouTube media.
-   - Impersonated playback reporting.
-   - A2 cookie capture before an explicit decision.
-   - Account write features.
-   - Removing Audius or OpenSubsonic before Y5.
-   - Database migrations before they're needed.
-   - Mixed local/online queue features.
-   - Any other provider.
-9. **What should the next prompt be?** Y0, below.
-
-### Proposed next prompt (Y0)
-
-> **Podium Y0: YouTube Music decisions and playback spikes.** Read `docs/architecture/YOUTUBE_MUSIC_TRANSITION.md` and `docs/research/YOUTUBE_SOURCE_INVESTIGATION.md`.
->
-> 1. **Decisions to record.** Present the D-20 revision as choices for me to decide (catalogue path, account model, playback model) with this document's trade-offs. Record my answers in `decision-log.md` and draft ADR-015.
-> 2. **P2 spike, on a throwaway branch `spike/y0-delegated-playback`, never merged.** A minimal debug-only screen and a notification-listener service with no notification handling. On my phone, with the official YouTube Music app installed, measure:
->    - (U1) can a song, album or playlist start without the app coming to the foreground?
->    - (U2) do play/pause/seek/next/previous work through its media session, and is its queue exposed?
->    - (U3) can a context start at a given item?
->    - (U4) latency;
->    - (U6) behaviour without Premium.
->
->    Follow the phone-testing rules: no volume or system settings changes; grant and revoke notification access only with my approval; clean up afterwards.
-> 3. **P1 spike, only if P2 fails or I ask.** The IFrame player in a WebView inside the VirtualScreen: RMF size and visibility, behaviour when the screen turns off, its media session (Q-8).
-> 4. **Re-verify policies** (YouTube API Services Developer Policies, RMF, IFrame API, quota, Google OAuth testing-mode limits) and note the dates.
-> 5. **Report** results in the transition document's §13.4/§13.5 and the ADR draft.
->
-> **Hard rules.** No stream extraction or protection bypass of any kind. No GPL code. No InnerTube player calls. No change to Offline, the database, Audius or OpenSubsonic, and no merged product code. STOP after the report.
+8. **Historical note on excluded mechanisms (superseded by D-48):**
+   - Earlier drafts excluded stream extraction, NewPipe/InnerTubeX, and in-app Media3 YouTube audio. Under D-48, direct Media3 streaming is the chosen target architecture, referencing BitChord.
+   - Non-goals that remain: no arbitrary local file overwriting, no plaintext credential storage, no mixing of unrelated provider models.
+9. **Authoritative Direction:** Superseded by D-48 (`YOUTUBE_MUSIC_ARCHITECTURE.md`).
 
 ---
 
-## Execution outcome (2026-10-06)
+## Execution outcome and D-48 Direction
 
-The staged plan above (Y0 spikes, then Y1…) was superseded the same day by the user's direction to
-implement the whole transition at once (D-38). What was built, against this proposal:
+The staged plan above (Y0 spikes, then Y1…) was initially implemented with delegated playback (P2) under D-38. However, under **D-48**, the delegated P2 approach has been superseded in favor of direct in-app Media3 streaming comparable to BitChord:
 
-| Proposal | Outcome |
-|---|---|
-| §7 target architecture: one ONLINE `MusicSource`, rendered by the existing Online UI | built: `sources:youtubemusic`; Online menus Home, Search, Library, Radio, History |
-| §8 account options | A2 (the listener's web session from Google's own sign-in page) chosen and built, sealed at rest; the "not before an explicit decision" item in answer 8 was decided by D-38 |
-| §13.4 P2 delegated playback | built (`player:remote`, `OwnerAwarePlaybackController`); U1–U6 still need the phone |
-| §13.5 P1 embedded player | not built (P2 + P0 cover playback; P1 needs a visible video) |
-| §13.6 P0 hand-off | built (fallback and start path) |
-| §15 database | v5 additive (`track.media_kind`); account-scoped online operations |
-| §6 REMOVE list | Audius, OpenSubsonic, configured sources, multi-source aggregation removed; credentials of retired servers deleted at startup; cleartext off again |
-| §6 KEEP list | kept; Offline untouched (all Offline tests pass) |
-| Y0 "decisions to record" | D-38 |
-| Y0 P2 spike on the phone | not possible from the build container; replaced by runtime handling of each unknown and a debug probe (`remote-probe`) |
-
-`research/YOUTUBE_SOURCE_INVESTIGATION.md`, cited above, is not in this repository (it was never
-committed); the evidence for the implementation is in `research/YOUTUBE_MUSIC_IMPLEMENTATION_NOTES.md`.
+| Component | D-38 Interim Build | D-48 Authoritative Target |
+|---|---|---|
+| Target architecture | One ONLINE `MusicSource` (`sources:youtubemusic`) | Preserved: One ONLINE `MusicSource` |
+| Account | A2 web session (InnerTube cookie) sealed at rest | Preserved: A2 web session sealed at rest |
+| Playback | P2 delegated playback (`player:remote`) | Direct in-app playback (`PlaybackTarget.DirectStream`) via Media3 |
+| BitChord reference | Clean-room isolated | Active architectural and implementation reference |
+| Stream extraction | Forbidden under former ADR-013 boundary | Permitted/Required (client identities, cipher deobfuscation, PoToken) |
+| Offline player | Untouched, stable | Untouched, stable |
 

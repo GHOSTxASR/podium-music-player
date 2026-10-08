@@ -1,253 +1,160 @@
-# YouTube Music architecture
+# YouTube Music Architecture
 
-Status: implemented on branch `ccr-fcca9ac9-6juw47` (2026-10-06), D-38. Device acceptance on the
-Nothing Phone (3a) **not yet performed** (no device reachable from the build container; see
-`docs/testing/YOUTUBE_MUSIC_DEVICE_ACCEPTANCE.md`). The proposal this implements is
-`YOUTUBE_MUSIC_TRANSITION.md`; implementation facts and evidence are in
-`docs/research/YOUTUBE_MUSIC_IMPLEMENTATION_NOTES.md`.
+**Status:** Authoritative Specification · **Decisions:** D-38 (catalogue, account, library), D-48 (sole online provider, direct Media3 playback, BitChord reference, stable offline playback).
+
+This document is the authoritative architectural specification for YouTube Music in Podium. It supersedes earlier iterations that delegated playback to the official YouTube Music app (P2) or restricted in-app playback under the former "stream-unlock boundary".
+
+---
 
 ## 1. Summary
 
-Podium has two environments (D-34): **LOCAL** — music on the phone, played by Podium's own Media3
-player — and **ONLINE**, which is now one service, **YouTube Music**.
+Podium has two environments:
+1. **LOCAL (Offline):** Music on the device (MediaStore, Room, Media3 `PlaybackService`, `QueueManager`). This implementation is stable, fully functional, and must **not** be rewritten or disturbed during the YouTube Music migration.
+2. **ONLINE:** **YouTube Music** is the sole online music provider for the product. It runs in-app directly inside Podium, delivering an experience comparable to BitChord.
 
-| Concern | How | Owner |
+| Concern | Implementation Approach | Owner |
 |---|---|---|
-| Catalogue, search, home, albums, artists, playlists, radio | the music web client's browsing endpoints (`search`, `browse`, `next`) | `sources:youtubemusic` |
-| Account library, likes, history | the listener's own web session (signed in on Google's page), sealed at rest | `sources:youtubemusic` + app `KeystoreCredentialStore` |
-| Playback | **the official YouTube Music app**, under the listener's own account; Podium starts it and controls it through Android's media-session interface (P2), or hands the song over (P0) | `player:remote` + `OwnerAwarePlaybackController` |
-| Local playback | unchanged: Media3 in `PlaybackService`, `QueueManager` the only queue writer | `player:service` |
+| **Catalogue & Search** | Web client InnerTube endpoints (`search`, `browse`, `next`), typed renderers | `sources:youtubemusic` |
+| **Account & Session** | Google account session cookies via locked-down WebView sign-in, sealed at rest via Android Keystore | `sources:youtubemusic` + `KeystoreCredentialStore` |
+| **Library, Likes, History** | Account library endpoints (`VLLM`, `FEmusic_liked_playlists`, etc.); two-way like sync; listening history where technically supported | `sources:youtubemusic` + `core:database` |
+| **Online Playback** | **Direct in-app playback via Media3 ExoPlayer**; background playback supported natively via foreground service | `sources:youtubemusic` (resolver) + `player:service` (Media3) |
+| **Offline Playback** | Stable local playback via Media3 in `PlaybackService`; `QueueManager` single queue writer | `player:service` + `sources:local` |
 
-Podium never requests, extracts, decrypts, caches or plays a YouTube media stream, and never calls
-the player endpoint. Media3 never sees a YouTube item.
+Podium decodes and outputs YouTube Music audio directly within its own Media3 audio engine.
 
-## 2. Positions and boundaries
+---
 
-- **D-20 revised (D-38):** catalogue on `Basis.UNOFFICIAL_API` (Y1), approved by the user's
-  direction of 2026-10-06; playback delegated to the official app (P2) with hand-off (P0) as the
-  fallback. Y3 (Podium-owned YouTube audio) stays unbuilt: ADR-013 forbids it.
-- **Never built** (CLAUDE.md, ADR-013): cipher or throttle solving, PoToken/BotGuard, client-identity
-  rotation, age-gate bypass, DRM removal, downloads, background-audio unlocking, player-JS execution,
-  NewPipeExtractor/InnerTubeX or similar, impersonated playback reporting.
-- **Providers never leak:** features read capabilities, environment, route and owner. The only
-  provider-specific code is `sources:youtubemusic` (and one package name in the app's graph and
-  manifest `<queries>`).
-- **Settings ▸ Online music** is the one place the service is named in browsing UI (D-35).
+## 2. Positions and Principles
 
-## 3. Modules
+- **Product Decision (D-48):** Podium is a sideloaded personal Android music player. YouTube Music is its sole online music provider, offering direct in-app stream playback, background playback where supported, catalogue, search, library, and account sync.
+- **Reference Project:** BitChord is an active architectural and implementation reference. Developers may study BitChord's source, extraction pipeline, and design to inform Podium's implementation.
+- **Practical Architecture:** The former "clean-room" rule and "stream-unlock boundary" are revoked. Podium adopts the most practical, technically viable architecture (direct stream extraction via InnerTube, cipher deobfuscation, and token generation).
+- **Offline Invariant:** Offline/local playback is stable and independent. Online changes must never break or modify local playback pipelines.
+- **Providers Never Leak:** The UI interacts with generic music concepts (capabilities, availability, routes). Provider-specific network details and extraction mechanics are contained strictly within `sources:youtubemusic`.
+- **Quality Honesty:** YouTube Music serves lossy streams (typically Opus ~160 kbps in WebM or AAC ~128 kbps in M4A; 256 kbps with Premium accounts). Podium never labels YouTube Music streams as "Lossless" or "Hi-Res". The Now Playing UI reflects measured decoder values.
+
+---
+
+## 3. Module Architecture
 
 ```
-sources:api ──────────── facets, capabilities, AuthFacet.webSignIn, AccountLibraryFacet, RemoteContext
-sources:youtubemusic ─── pure JVM: Transport, YouTubeMusicClient, parsers, mapper, paging, YouTubeMusicSource
-player:api ───────────── RemotePlayback, RemoteSessionState, OwnerAwarePlaybackController, PlaybackRouter
-player:remote ────────── Android: MediaSessionRemotePlayback, MediaSessionAccessService
-core:database ────────── schema v5 (track.media_kind), account-scoped online tables
-feature:online ───────── Online menus, search, detail, library, history (provider-free)
-feature:settings ─────── OnlineServiceScreen (account, app, media-control access, hand-off choice)
-app ──────────────────── AppGraph wiring, OnlineMusicRepository, WebSignInActivity, RetiredSources
+sources:api ──────────── Facets, capabilities, Track/TrackId models, DirectStream target
+sources:youtubemusic ─── Pure Kotlin: Transport, InnerTube client, stream extractor, parsers, mapper, paging
+player:api ───────────── PlaybackController, QueueManager, PlaybackRouter
+player:service ───────── Media3 PlaybackService, ExoPlayer, ResolvingDataSource, audio focus, notification
+core:database ────────── Room database, schema v5, account-scoped online tables (likes, playlists, history)
+feature:online ───────── Online screens, search, detail, library, history (provider-neutral)
+feature:settings ─────── OnlineServiceScreen (account status, sign in/out)
+app ──────────────────── AppGraph wiring, OnlineMusicRepository, WebSignInActivity
 ```
 
-Retired: `sources:audius`, `sources:subsonic`, configured-source forms and multi-source aggregation
-(`MultiSourceCatalog`); their stored credentials are deleted at startup (`RetiredSources`).
+Retired online sources (`sources:audius`, `sources:subsonic`, and the multi-source aggregation layer `MultiSourceCatalog`) have been removed from online browsing.
 
-## 4. Identity and model
+---
 
-- Ids are source-qualified: `TrackId("ytmusic|<videoId>")`, `AlbumId("ytmusic|MPRE…")`,
-  `ArtistId("ytmusic|UC…")`, `PlaylistId("ytmusic|<playlistId>")`. Nothing outside the module
-  parses them.
-- `Track.kind: MediaKind` (`SONG`, `MUSIC_VIDEO`, `VIDEO`, `EPISODE`) — schema v5 `track.media_kind`
-  — so a video is never silently treated as a song; search has a separate Videos section.
-- `providerData` carries the module's own hints (`k=KIND;e=setVideoId`) and is opaque elsewhere.
-- Routes: every YouTube Music track is `{REMOTE}` only; local songs are `{DIRECT}`. The owner-aware
-  controller uses that to keep the environments apart (§8.3).
+## 4. Identity and Data Model
 
-## 5. Catalogue client and parsers
+- **Source-Qualified IDs:**
+  - Tracks: `TrackId("ytmusic|<videoId>")`
+  - Albums: `AlbumId("ytmusic|MPRE…")`
+  - Artists: `ArtistId("ytmusic|UC…")`
+  - Playlists: `PlaylistId("ytmusic|<playlistId>")`
+  Nothing outside `sources:youtubemusic` parses provider keys.
+- **Track Media Kind:**
+  `Track.kind: MediaKind` (`SONG`, `MUSIC_VIDEO`, `VIDEO`, `EPISODE`) backed by schema v5 `track.media_kind`. Videos are separated from songs in search results.
+- **Playback Route:**
+  YouTube Music tracks resolve to `PlaybackRoute.DIRECT` with a `PlaybackTarget.DirectStream(PlayableMedia)`.
 
-- **Transport** (`UrlConnectionTransport`): https only; allowed hosts `music.youtube.com`,
-  `*.googleusercontent.com`, `*.ytimg.com`, `*.ggpht.com`; no redirects followed; 12 MB answer cap;
-  exceptions reduced to their class name (no URL, header or body ever reaches a log).
-- **Client** (`YouTubeMusicClient`): `POST /youtubei/v1/{search|browse|next|like/like|like/removelike|account/account_menu}`
-  with the web client's context (`WEB_REMIX`, the page's own client version and visitor data read
-  from the home page's `ytcfg`, falling back to a recent version), the device's own browser user
-  agent and the listener's region. Signed in, it adds the session cookie, `Authorization:
-  SAPISIDHASH <ts>_<sha1(ts SAPISID origin)>` and `X-Goog-AuthUser`.
-- **Errors** (§11): 400 → refresh the page config once and retry; 401/403 signed in → `AuthExpired`;
-  404 → `NotFound`; 429 → `RateLimited(Retry-After)`; 5xx and unreadable JSON → `Server`; unknown
-  host → `Offline`; a signed-in answer with `logged_in = 0` → `AuthExpired`.
-- **Parsers fail soft, never crash** (`Json.kt` path helpers): a missing piece drops one row, not
-  the page. Renderers handled: responsive list items, two-row items, panel items, top result cards,
-  carousel and list shelves, album/playlist headers, artist pages, `next` queues, library and history
-  lists; podcasts and profiles are skipped.
-- **Paging**: search and pages carry continuations (both the legacy `ctoken` URL style and the
-  body `continuation` style); `Cursor`/`CursorCache` turn them into offset paging for the UI.
-  Albums and playlists follow continuations up to 1 000 tracks; home loads two more shelf pages.
-- **Search filters** (songs, videos, albums, artists, featured and community playlists) are the web
-  client's protobuf `params`, encoded in `SearchFilters`.
+---
 
-## 6. Account and sign-in
+## 5. Catalogue Client and Parsers
 
-- **Why a web session:** the account library, likes and history exist only behind the listener's
-  YouTube Music session; Google offers no OAuth scope for YouTube Music's library. Podium uses the
-  **service's own sign-in page** in a locked-down WebView (`WebSignInActivity`): Podium never sees
-  the password or second factor; it keeps only the resulting session cookies.
-- **WebView:** starts at `accounts.google.com/ServiceLogin?service=youtube` continuing to
-  music.youtube.com; https only, navigation limited to `google.com`, `youtube.com`, `gstatic.com`,
-  `googleusercontent.com`, `ggpht.com`, `ytimg.com`, `googleapis.com` and their subdomains; no file or content access; no mixed content; no geolocation;
-  safe browsing on; certificate errors always cancel; `FLAG_SECURE`; cookies, web storage, cache,
-  history and form data wiped before and after every sign-in.
-- **Done when** the music origin holds `SAPISID` (or `__Secure-3PAPISID`) after landing back on
-  music.youtube.com. The source validates the session with `account/account_menu` before keeping it.
-- **At rest:** `{session, account name, account key}` sealed by `KeystoreCredentialStore` (AES-256-GCM,
-  key in the Android Keystore, never leaves it). Never in the database, prefs plaintext, logs or
-  `toString` (`WebSession` prints only a cookie count).
-- **Account key:** `ytm-<sha-256 prefix of the account name>` — the database stores this, never the
-  name or e-mail.
-- **States:** `SignedOut`, `SigningIn` (the WebView), `SignedIn(name, key)`, `Expired` (any refused
-  account call deletes the session and asks to sign in again), and errors as `SignInResult.Refused`.
-- **Sign out / switch account:** wipe the account's online data (likes, playlists, observed history,
-  caches), delete the sealed session, then sign in again with the same flow.
-- **Known risk:** Google may refuse sign-in inside an embedded WebView ("This browser or app may not
-  be secure"). Unverified from the container; listed as device step A-1. Without sign-in the
-  signed-out catalogue, search and playback still work.
+- **Transport:** HTTPS client with timeouts, size limits, and sanitised error reporting.
+- **Client Endpoints:** `POST /youtubei/v1/{search|browse|next|like/like|like/removelike|account/account_menu}` using the `WEB_REMIX` client context and runtime visitor data.
+- **Authenticated Headers:** Signed-in requests include session cookies and `Authorization: SAPISIDHASH <ts>_<sha1(ts SAPISID origin)>` with `X-Goog-AuthUser`.
+- **Parser Robustness:** JSON parsers fail soft (omitting unrecognized fields or broken rows without crashing whole pages).
+- **Paging:** Continuation tokens (both `ctoken` and body continuations) mapped to offset-based paging for UI consumption.
 
-## 7. Library, likes, history
+---
 
-- **The account is authoritative** for liked songs, playlists, albums, artists and the service's
-  own history (browse ids `VLLM` (liked songs), `FEmusic_liked_playlists` (without the liked-songs
-  list), `FEmusic_liked_albums`, `FEmusic_library_corpus_track_artists`, `FEmusic_history`).
-- **Likes** are written to the service (`like/like`, `like/removelike`) and cached per account in
-  ONLINE's own table (write-through, reverted on failure, refreshed every 2 min at most, 500 kept).
-  Local favorites never change from online likes and vice versa (D-34).
-- **History has two lists:** "History" is the account's own (what the service says was played);
-  "Played on Podium" is what Podium observed playing (time actually heard, ≥ 5 s), stored per account
-  in ONLINE's history table.
-- **Playlists** play; editing them isn't offered (capability DEGRADED: "Playlists can be played, not
-  edited").
+## 6. Account and Authentication
 
-## 8. Playback
+- **Session Acquisition:** Google's account sign-in page in a secure WebView (`WebSignInActivity`). Podium captures the resulting session cookies upon successful redirect to `music.youtube.com`.
+- **Storage Security:** The session cookies, account display name, and account key are encrypted at rest using `KeystoreCredentialStore` (AES-256-GCM with keys held in the Android Keystore).
+- **Database Scope:** The local database references only the hashed account key (`ytm-<sha256>`), never plaintext credentials.
+- **Lifecycle:**
+  - `SignedOut`: Public browsing only.
+  - `SignedIn`: Full library, likes, history, and personalized recommendations.
+  - `Expired`: When session validation fails, credentials are wiped and the user is prompted to sign in again.
+  - `SignOut`: Wipes account-scoped online database tables and Keystore credentials.
 
-### 8.1 Options considered
+---
 
-| Option | What | Verdict |
+## 7. Library, Likes, and History
+
+- **Account Library:** Authoritative library data is fetched from YouTube Music:
+  - Liked songs (`browseId: VLLM`)
+  - Playlists (`browseId: FEmusic_liked_playlists`)
+  - Albums (`browseId: FEmusic_liked_albums`)
+  - Artists (`browseId: FEmusic_library_corpus_track_artists`)
+  - Service history (`browseId: FEmusic_history`)
+- **Like Synchronization:** Two-way write-through. Toggling a like writes to the account (`like/like` or `like/removelike`) and updates the local online cache. Local library favorites remain separate and unaffected (D-34).
+- **Listening History:**
+  - Account History: Synced from the YouTube Music service where technically available.
+  - Local History: Observed playback history within Podium (tracks played ≥ 5 seconds).
+
+---
+
+## 8. Playback Architecture
+
+### 8.1 In-App Direct Playback via Media3
+
+Podium plays YouTube Music audio natively in its own Media3 audio engine:
+- **Audio Engine:** `PlaybackService` (hosting ExoPlayer on the application main looper).
+- **Data Source:** `ResolvingDataSource` intercepts `podium://track/ytmusic|<videoId>` URIs and delegates resolution to `StreamResolver`.
+- **Resolution Output:** A `PlaybackTarget.DirectStream(PlayableMedia)` containing:
+  - An HTTPS progressive audio URL (Opus-in-WebM or AAC-in-MP4)
+  - Required request headers (e.g. User-Agent, Origin, Referer)
+  - Stream expiry timestamp
+  - Stable cache key
+- **Background Playback:** Managed natively by Android's `MediaLibraryService` foreground service with media session notifications, lock-screen controls, and Bluetooth integration.
+
+### 8.2 Stream Extraction Pipeline (BitChord Reference)
+
+To obtain valid progressive audio stream URLs, `sources:youtubemusic` implements a stream extraction pipeline informed by BitChord and established extraction practices:
+1. **Player Endpoint Request:** Requesting the video metadata and adaptive streaming formats from InnerTube (`/youtubei/v1/player`).
+2. **Client Identity Management:** Using supported client configurations (e.g., Android, Web Remix, iOS) capable of retrieving audio streams.
+3. **Cipher & Throttle Deobfuscation:** Extracting and executing signature deciphering and anti-throttle ("n" parameter) algorithms derived from the active YouTube player JavaScript.
+4. **Token Minting (PoToken / BotGuard):** Providing Proof-of-Origin tokens where required to prevent bot detection and 403 playback refusals.
+5. **URL Caching and Pre-expiry Refresh:** Caching resolved URLs with consideration for their TTL (typically ~6 hours) and refreshing proactively before expiry.
+
+### 8.3 Historical Note on Superseded Options
+
+| Option | Description | Status |
 |---|---|---|
-| Y3 | Podium plays YouTube audio in Media3 | **forbidden** (ADR-013) |
-| P1 | the official embedded player (IFrame) in a WebView | possible; visible video required (RMF), no background; not built |
-| **P2** | the official YouTube Music app plays; Podium controls it through Android media sessions | **built** |
-| **P0** | open the song in the official app | **built** (fallback, and how P2 starts when the session can't) |
+| **DirectStream (Media3)** | In-app audio decoding in Media3 via stream extraction (BitChord reference) | **Authoritative Direction (D-48)** |
+| **Delegated Playback (P2)** | Starting and controlling playback in the official YouTube Music app | Superseded by D-48 |
+| **Official Embed (P1 / Y2)** | Visible video iframe embed in a foreground WebView | Superseded by D-48 |
 
-### 8.2 Delegated playback (P2)
+---
 
-- `MediaSessionAccessService` is a notification-listener service with **no notification handling**:
-  Android requires that grant for an app to see other apps' media sessions
-  (`MediaSessionManager.getActiveSessions`). Settings ▸ Online music ▸ Media controls explains and
-  opens the system screen; Android 13+ may block the grant for sideloaded apps until "Allow
-  restricted settings" is chosen in the app's info (the screen says so).
-- `MediaSessionRemotePlayback` attaches to the official app's session (`com.google.android.apps.youtube.music`)
-  and mirrors it (`RemoteSessionState`: playing, buffering, position, duration, metadata, queue when
-  exposed, advertised actions).
-- **Starting a song:** `TransportControls.playFromUri(watch URL)` when the session advertises it
-  (Podium stays in front); otherwise `ACTION_VIEW` on the song's `music.youtube.com/watch` link. With
-  **After choosing a song: Stay here** (default) the app is started behind Podium, which returns to
-  the front (`startActivities`); **Show YouTube Music** leaves it visible.
-- Controls are sent only when the session advertises them (play, pause, seek, skip, queue item).
+## 9. Error Taxonomy and Health
 
-### 8.3 Owner-aware controller
+`sources:youtubemusic` maps errors to `PodiumError`:
+- `Offline`: No internet connectivity.
+- `AuthExpired`: Account session invalid or expired; requires re-authentication.
+- `RateLimited`: Backoff with `Retry-After`.
+- `StreamUnavailable`: Extraction or playback failure (e.g., region-locked track, content unavailable).
+- `Server`: Transient remote failure.
 
-`OwnerAwarePlaybackController` is the `PlaybackController` the UI uses:
+A circuit breaker in `SourceHealthMonitor` distinguishes between transport failures (which open the breaker) and content misses (empty searches or deleted tracks, which never trip the breaker).
 
-- **Owners:** LOCAL (Podium's Media3 player and queue) and REMOTE (the official app). Never both;
-  switching is a hard cut through `PlaybackRouter` (the outgoing owner pauses first).
-- **The local queue is never touched** by remote playback: it waits paused exactly as it was;
-  "Back to my music" (`resumeLocal`) or playing any local song resumes it.
-- **No mixed queues:** a remote-only song is never handed to the local player; Play next / Add to Up
-  Next are hidden for online songs; a context with online songs plays remotely as a whole
-  (`RemoteContext.Collection`, `Radio`, `ArtistRadio`).
-- **Start confirmation:** after a start, Podium waits up to 12 s for the session to show the song;
-  otherwise the state says it didn't start (`RemoteProblem.DID_NOT_START`) with a next step.
-- **Adoption:** if the listener starts playback in the app while nothing local plays, Podium adopts
-  it as REMOTE and mirrors it; a local intent to play takes over again.
+---
 
-### 8.4 Now Playing and Up Next when another app plays
+## 10. Open Technical Implementation Decisions
 
-- Now Playing shows the remote song with catalogue artwork when recognised; transport, scrub and
-  shuffle/repeat appear only as the session's actions allow; a quiet note says where it plays; More
-  ▸ Open app / Back to my music.
-- Up Next mirrors the app's queue read-only when the session exposes one; otherwise it says the
-  queue is in the app (hidden, never invented). "Back to my music" and "Open app" rows.
-- Problems are named: no app ("Install YouTube Music"), no access ("Allow media controls"),
-  didn't start, ended.
-
-### 8.5 Radio and autoplay
-
-Radio from a song (`RDAMVM<videoId>`) or an artist plays in the official app, which continues on
-its own (the provider's autoplay). Podium's autoplay engine stays LOCAL-only and never mixes
-environments.
-
-## 9. Online for the screens
-
-`OnlineMusicRepository` (app) is the only way the screens reach the service: every call has a 15 s
-timeout and goes through the source's health (`SourceHealthMonitor`: failures open the breaker,
-misses never count, offline counts against no one); home shelves are cached 10 min; status tells the
-screens what they can show (`canLibrary`, `canHistory`, `canExplore`, account). Screens never see the
-provider.
-
-## 10. Settings
-
-Settings ▸ Online music (`OnlineServiceScreen`): Online music (On/Off); Account (Sign in, Signing
-in, Sign in again, or the account's name, which opens Switch account and Sign out); YouTube Music
-(Installed / Install); Media controls (Allowed / Allow, with the restricted-settings hint); After
-choosing a song (Stay here / Show YouTube Music); the basis note (D-19).
-
-## 11. Error taxonomy and health
-
-`PodiumError`: `Offline`, `Network`, `Server(code)`, `RateLimited(retryAfter)`, `NotFound`,
-`AuthRequired`, `AuthExpired`, `Unsupported`, `NotPlayable(reason)`, `UserActionRequired(action)`.
-`isTransient` decides retry; misses (`NotFound`, empty) never trip the breaker. Copy explains and
-gives a next step ("Couldn't reach online music. Music on this phone still plays.").
-
-## 12. Database
-
-Schema v5 (AutoMigration 4→5, additive): `track.media_kind TEXT NOT NULL DEFAULT 'SONG'`. Content
-hashes of existing songs are unchanged (the kind is folded in only for non-songs). Online tables are
-keyed by account (`ytm-…`); sign-out deletes the account's rows. Migration tested (`MigrationTest`
-4→5, `SchemaV5Test`).
-
-## 13. Security and privacy
-
-See §6 for the session. Also: `usesCleartextTraffic=false` (the LAN-server exception left with
-OpenSubsonic); `allowBackup=false`; the playback service grants custom commands only to Podium's own
-package; debug commands exist only in debug builds; logs carry no URLs, cookies, account names or
-titles (the debug `remote-probe` prints facts, shapes and counts only). Audit: `docs/security.md` §9.
-
-## 14. Tests
-
-`sources:youtubemusic`: parser tests on hand-written fixtures (search, top card, shelves, album,
-playlist, artist, next, library, history, account, continuations, durations), source tests with a
-scripted transport (auth states, expiry, sign-in validation, capability changes, catalogue routing,
-likes, radio contexts, error mapping), session and paging tests (SAPISIDHASH test vector, cookie
-parsing, cursor offsets). `player:api`: owner-aware controller (hard cuts, local queue preserved,
-no remote songs in the local queue, start timeout, adoption). `player:remote`: Robolectric
-media-session tests. App: online repository (likes write-through and race guard, sign-out wipe),
-retired-source cleanup. Database: v4→v5 migration.
-
-## 15. Unknowns that need the phone (U1–U6)
-
-| # | Question | Handled now by |
-|---|---|---|
-| U1 | Does the app's session advertise `playFromUri`? | falls back to the link hand-off |
-| U2 | Is its queue exposed? | Up Next says the queue is in the app |
-| U3 | Does seek work through the session? | scrub shown only if advertised |
-| U4 | Does a start behind Podium actually play? | 12 s confirmation, "didn't start" state |
-| U5 | Does playback continue in the background without Premium? | the app's own rules apply; documented |
-| U6 | Does sign-in in the WebView succeed? | signed-out catalogue and playback still work |
-
-`adb shell am start -n app.podium.debug/app.podium.MainActivity --es podium.debug remote-probe`
-logs the facts for U1–U4 to logcat tag `PodiumDebug` (debug builds only).
-
-## 16. Limits
-
-- Unofficial basis: the web client's shapes can change; parsers fail soft and say "Couldn't load".
-- Signed-out catalogue from some regions/IPs is thin (podcasts and videos only from a US cloud IP).
-- No playlist editing, no downloads, no lyrics from the service, no Podium-side queue editing of
-  remote playback.
-- Device acceptance pending (§15 and the acceptance document).
+The following technical questions pertain to the upcoming implementation phase and represent engineering tradeoffs rather than product ambiguities:
+1. **Extractor Integration Strategy:** Choosing between leveraging an established standalone library (e.g., NewPipeExtractor, InnerTubeX) or implementing a dedicated Kotlin extraction pipeline within `sources:youtubemusic`.
+2. **Cipher Execution Engine:** Deciding whether to evaluate player JavaScript via a lightweight embedded engine (e.g., QuickJS) or via AST-derived pattern matching.
+3. **BotGuard PoToken Strategy:** Establishing the most resilient mechanism for generating Proof-of-Origin tokens on Android (e.g., headless WebView helper or equivalent).
+4. **Seeking & Buffer Configuration:** Tuning Media3 `DefaultLoadControl` and OkHttp data source buffer sizes for progressive audio streams.

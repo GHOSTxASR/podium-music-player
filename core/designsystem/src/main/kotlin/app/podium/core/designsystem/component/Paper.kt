@@ -1,5 +1,12 @@
 package app.podium.core.designsystem.component
 
+import android.os.Build
+import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.EnterExitState
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.ui.graphics.BlurEffect
+import androidx.compose.ui.graphics.TileMode
+import app.podium.core.designsystem.theme.PodiumMotion
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -52,6 +59,9 @@ import kotlinx.coroutines.delay
  * middle-right. [PaperGeometry] holds the measurements.
  */
 object Paper {
+    /** How much smaller a glimpse sits than its column: a step away. */
+    const val DistantScale = 0.94f
+
     /** Gap between the rows' right edge and the arc. */
     val ArcGap: Dp = 12.dp
 }
@@ -190,6 +200,15 @@ class PaperGeometry(val width: Dp, val height: Dp, val padTop: Dp, val padBottom
     val peekOriginX: Dp = maxOf(leftBoxX, 0.dp) + 4.dp - columnLeft * peekScale
     val peekOriginY: Dp = centreY - centreY * peekScale
 
+    /**
+     * The previous screen as the glimpse finally shows it (D-63): [peekScale], then a step away
+     * ([Paper.DistantScale], about the box's middle). A column moving into the left box ends at
+     * exactly this size and place, so the glimpse takes over without a jump.
+     */
+    val glimpseScale: Float = peekScale * Paper.DistantScale
+    val glimpseOriginX: Dp = (leftBoxX + boxHeight / 2) + (peekOriginX - (leftBoxX + boxHeight / 2)) * Paper.DistantScale
+    val glimpseOriginY: Dp = centreY + (peekOriginY - centreY) * Paper.DistantScale
+
     /** How far left of the apex the arc (and a row) sits at [dy] from mid-height. */
     fun bend(dy: Dp): Dp {
         val r = radius.value
@@ -209,6 +228,26 @@ class PaperGeometry(val width: Dp, val height: Dp, val padTop: Dp, val padBottom
     }
 }
 
+/**
+ * Where each column's lit row sits (its centre, in the column's own pixels), by the column's key
+ * (D-61). The moves along the paper read it so a column lands with its lit row exactly where the
+ * glimpse (left) or the box (right) shows it — the move ends where the preview takes over.
+ */
+class PaperLenses {
+    private val centres = HashMap<Any, Float>()
+
+    fun record(key: Any, centrePx: Float) {
+        centres[key] = centrePx
+    }
+
+    fun centreOf(key: Any?): Float? = key?.let(centres::get)
+}
+
+val LocalPaperLenses = staticCompositionLocalOf<PaperLenses?> { null }
+
+/** The key the column being composed is known by in [PaperLenses]. */
+val LocalPaperKey = staticCompositionLocalOf<Any?> { null }
+
 /** True while composing a live miniature of another column: no input, no glimpses, no side effects. */
 val LocalMiniature = staticCompositionLocalOf { false }
 
@@ -221,10 +260,59 @@ internal fun Modifier.distant(): Modifier {
     val dark = PodiumTheme.colors.isDark
     return graphicsLayer {
         alpha = if (dark) 0.6f else 0.68f
-        scaleX = 0.94f
-        scaleY = 0.94f
+        scaleX = Paper.DistantScale
+        scaleY = Paper.DistantScale
     }.blur(1.5.dp)
 }
+
+/**
+ * A glimpse arriving after a move along the paper (D-62): it comes in soft — a little blurred — and
+ * sharpens as it settles, so the column sinking into its box hands over to it gently instead of
+ * being swapped. Driven by [scope]'s own enter and exit: at rest it is exactly sharp. Android 12+;
+ * elsewhere, and with reduced motion, nothing changes.
+ */
+@Composable
+fun Modifier.softArrival(scope: AnimatedVisibilityScope?, delayMillis: Int, durationMillis: Int): Modifier {
+    if (scope == null || PodiumTheme.motion.reduced || Build.VERSION.SDK_INT < 31) return this
+    val soft by scope.transition.animateFloat(
+        transitionSpec = { tween(durationMillis, delayMillis, PodiumMotion.Smooth) },
+        label = "softArrival",
+    ) { state -> if (state == EnterExitState.Visible) 0f else 1f }
+    return graphicsLayer {
+        val s = soft
+        renderEffect = if (s > 0.01f) {
+            val r = SoftArrivalRadius.toPx() * s
+            BlurEffect(r, r, TileMode.Decal)
+        } else null
+    }
+}
+
+private val SoftArrivalRadius = 8.dp
+
+/**
+ * A column leaving for a box (D-64): over the move's last part it softens — a growing blur — as the
+ * glimpse or tile in that box takes over, so the hand-over is a melt, not a swap. Only the column
+ * leaving: the one arriving is never blurred, so nothing stays soft once a move is over. Driven by
+ * [scope]'s own exit; Android 12+, nothing with reduced motion.
+ */
+@Composable
+fun Modifier.softDeparture(scope: AnimatedVisibilityScope?, delayMillis: Int, durationMillis: Int): Modifier {
+    if (scope == null || PodiumTheme.motion.reduced || Build.VERSION.SDK_INT < 31) return this
+    val soft by scope.transition.animateFloat(
+        transitionSpec = { tween(durationMillis, delayMillis, PodiumMotion.Smooth) },
+        label = "softDeparture",
+    ) { state -> if (state == EnterExitState.PostExit) 1f else 0f }
+    return graphicsLayer {
+        val s = soft
+        renderEffect = if (s > 0.01f) {
+            val r = SoftDepartureRadius.toPx() * s
+            BlurEffect(r, r, TileMode.Decal)
+        } else null
+    }
+}
+
+/** In the leaving column's own size: about half that once it's shrunk into its box. */
+private val SoftDepartureRadius = 7.dp
 
 @Composable
 internal fun previewCorner(): Dp = if (PodiumTheme.colors.isIndustrial) 2.dp else 6.dp

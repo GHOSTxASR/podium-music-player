@@ -150,6 +150,9 @@ fun PodWheel(
                             continue
                         }
                         val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                        // Something above took the gesture (the two-finger pinch into Podium's
+                        // space, D-54): the Wheel lets go rather than turn under it.
+                        if (change.isConsumed) break
                         if (!change.pressed) {
                             tracker.onUp()?.let(::emit)
                             break

@@ -48,4 +48,7 @@ object PodiumExtras {
     const val CLAIMED_BIT_DEPTH = "podium.current.claimed.bits"
     const val CONTEXT_LABEL = "podium.queue.context"
     const val LAST_ERROR = "podium.error.kind"
+
+    /** A [app.podium.player.api.Recovery] name while the engine is dealing with the current song's problem. */
+    const val RECOVERY = "podium.error.recovery"
 }

@@ -111,6 +111,20 @@ class YouTubeMusicParserTest {
     }
 
     @Test
+    fun `an artist page's mix button that starts from a song is read too`() {
+        // Since 2026 the buttons carry a watchEndpoint (a song within the mix) instead of a playlist endpoint.
+        val page = Fixtures.artist
+            .replace("""{"watchPlaylistEndpoint":{"playlistId":"RDEMowls"}}""", """{"watchEndpoint":{"videoId":"aaaaaaaaaa1","playlistId":"RDEMowls","params":"wAEB"}}""")
+            .replace("""{"watchPlaylistEndpoint":{"playlistId":"RDAOowls"}}""", """{"watchEndpoint":{"videoId":"aaaaaaaaaa1","playlistId":"RDAOowls","params":"wAEB8gECGAE%3D"}}""")
+        assertTrue("watchPlaylistEndpoint" !in page)
+        val artist = assertNotNull(YouTubeMusicParser.artist(json(page)))
+        assertEquals("RDEMowls", artist.radioPlaylistId)
+        assertEquals("RDAOowls", artist.shufflePlaylistId)
+        assertEquals("aaaaaaaaaa1", artist.radioVideoId)
+        assertEquals("wAEB", artist.radioParams)
+    }
+
+    @Test
     fun `the radio list reads plain and wrapped rows and continues`() {
         val page = YouTubeMusicParser.next(json(Fixtures.radio))
         assertEquals(listOf("aaaaaaaaaa1", "bbbbbbbbbb1"), page.items.map { it.videoId })

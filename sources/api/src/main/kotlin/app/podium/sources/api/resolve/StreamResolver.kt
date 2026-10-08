@@ -162,6 +162,8 @@ class StreamResolver(
             val pinnedSource = request.pinned?.servedBy ?: track.source.sourceId
             val servedTrack = request.pinned?.servedTrack ?: track
             val path = request.pinned?.path ?: ResolutionPath.OWN_SOURCE
+            // The pinned stream was refused: the source mustn't answer with the same one.
+            runCatching { registry.get(pinnedSource)?.playback?.forgetStream(servedTrack) }
             return resolveFrom(pinnedSource, servedTrack, request, path, null, attempts)
                 ?: lastFailure(attempts)
         }
@@ -241,7 +243,7 @@ class StreamResolver(
             return null
         }
         val result = try {
-            withTimeoutOrNull(sourceTimeoutMillis) { playback.resolve(track, request.quality, request.purpose) }
+            withTimeoutOrNull(playback.resolveTimeoutMillis ?: sourceTimeoutMillis) { playback.resolve(track, request.quality, request.purpose) }
                 ?: FacetResolution.Failed(HealthOutcome.NETWORK_FAILURE, "timed out")
         } catch (t: Throwable) {
             if (t is kotlinx.coroutines.CancellationException) throw t
@@ -340,7 +342,10 @@ class StreamResolver(
     }
 
     companion object {
-        /** Inside the player's own wait for a resolution (15 s), with room for one fallback. */
+        /**
+         * Inside the player's own wait for a resolution, with room for one fallback. Sources that
+         * need longer say so ([app.podium.sources.api.PlaybackFacet.resolveTimeoutMillis]).
+         */
         const val DEFAULT_SOURCE_TIMEOUT_MILLIS = 6_000L
     }
 }

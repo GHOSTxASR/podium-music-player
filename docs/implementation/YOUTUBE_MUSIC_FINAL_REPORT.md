@@ -2,6 +2,8 @@
 
 Date: 2026-10-06 · Branch: `ccr-fcca9ac9-6juw47` (GitHub `GHOSTxASR/podium-music-player`) · Base: `main` at `b850587`.
 
+> **Historical Context Notice (D-48):** This report documents the interim implementation milestone executed under D-38, which implemented delegated playback (P2) through the official YouTube Music app. Under the authoritative product decision **D-48** ([`YOUTUBE_MUSIC_ARCHITECTURE.md`](../architecture/YOUTUBE_MUSIC_ARCHITECTURE.md)), the delegated playback approach is superseded in favor of **direct in-app Media3 stream playback** (`PlaybackTarget.DirectStream(PlayableMedia)`), with BitChord serving as an architectural and implementation reference. Offline/local playback remains stable and untouched. This report is preserved as a record of the D-38 transition work (catalogue, web session auth, database v5, lyrics, and UI enhancements).
+
 **Read this first.** Everything below was built and tested in a cloud container with no Android
 device attached. Builds, unit tests and Robolectric (rendered UI) tests ran and pass. **Nothing was
 installed or run on the Nothing Phone (3a).** Where a result depends on the phone, this report says
@@ -329,6 +331,6 @@ DEVICE SMOKE TEST: NOT RUN
 
 - **Text sat centred, then jumped to the side (D-46):** found by rendering the whole app frame by frame (new `AppShellTest`). Music's first row was the long "Allow access to music on this phone": focused, its clipped text sat mid-lens until the marquee started at full speed. Now the label is "Allow music access" (fits), and long focused titles rest 1.4 s and then ease into their scroll (`ScrollingTitleTest`). Album, artist and song lists no longer flash a centred "No albums yet" before the first sync.
 - **No permission screen (D-47):** Podium now asks once when it first switches on, offers "Allow music access" on Home, and opens its system settings page once Android stops asking (`PermissionAsksTest`).
-- **In-app YouTube Music playback, BitChord-style:** not implemented. It needs the stream-unlock layer ADR-013 and the source matrix (§3, Y3) rule out; that direction was also refused earlier in this session. The permitted options (the official embedded player, Y2; a quieter hand-off to the official app; a user-owned server source) are put to the user to choose.
+- **In-app YouTube Music playback, BitChord-style (historical note, superseded by D-48):** Not implemented in this interim build; at the time, stream extraction was ruled out under former ADR-013. Under **D-48**, this policy is superseded: Podium adopts in-app Media3 direct stream decoding using BitChord as an architectural and implementation reference.
 - **Device test:** not possible from this session. The phone is attached to the user's computer; this session runs in a cloud container with no route to it (`adb devices` lists nothing). Steps: `docs/testing/UI_DEVICE_ACCEPTANCE.md` §1.7 and §6.
 

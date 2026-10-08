@@ -282,6 +282,22 @@ class LrclibProviderTest {
     }
 
     @Test
+    fun `an exact match with only plain words gives way to the same song with times`() = runTest {
+        val plainOnly = """{"trackName":"Coastline","artistName":"Northern Sines","albumName":"Woodland","duration":200.0,"plainLyrics":"one
+two"}"""
+        val timedUpload = """[{"trackName":"Coastline","artistName":"Northern Sines","duration":199.0,"syncedLyrics":"[00:10.00] one
+[00:12.00] two"}]"""
+        val found = LrclibProvider(Script(listOf({ 200 to plainOnly }, { 200 to timedUpload }))).lookup(request)
+        val lyrics = assertIs<Lyrics.Synced>(assertIs<ProviderAnswer.Found>(found).lyrics)
+        assertEquals(listOf(10_000L, 12_000L), lyrics.lines.map { it.startMs })
+        // No timed copy anywhere: the exact match's plain words, not nothing.
+        val plain = LrclibProvider(Script(listOf({ 200 to plainOnly }, { 200 to "[]" }))).lookup(request)
+        assertEquals(listOf("one", "two"), (assertIs<ProviderAnswer.Found>(plain).lyrics as Lyrics.Plain).lines)
+        val searchDown = LrclibProvider(Script(listOf({ 200 to plainOnly }, { 500 to "" }))).lookup(request)
+        assertIs<Lyrics.Plain>(assertIs<ProviderAnswer.Found>(searchDown).lyrics)
+    }
+
+    @Test
     fun `an exact answer for another version isn't believed`() = runTest {
         val other = synced.replace("\"Coastline\"", "\"Coastline (Acoustic)\"")
         assertEquals(ProviderAnswer.NotFound, LrclibProvider(Script(listOf({ 200 to other }, { 200 to "[]" }))).lookup(request))

@@ -1,7 +1,7 @@
 # Music Source Architecture
 
-**Status:** Accepted (ADR-013, ADR-014) · **Date:** 2026-10-02 · **Normative:** this document supersedes `architecture.md` §4.2 and the source parts of ADR-002.
-Related: [`SOURCE_CAPABILITY_MATRIX.md`](SOURCE_CAPABILITY_MATRIX.md) · [`PLAYBACK_TARGETS.md`](PLAYBACK_TARGETS.md) · [`../research/BITCHORD_ARCHITECTURE_REVIEW.md`](../research/BITCHORD_ARCHITECTURE_REVIEW.md)
+**Status:** Accepted (ADR-013, ADR-014, updated by D-48) · **Date:** 2026-10-02 (updated 2026-10-06) · **Normative:** this document supersedes `architecture.md` §4.2 and the source parts of ADR-002.
+Related: [`SOURCE_CAPABILITY_MATRIX.md`](SOURCE_CAPABILITY_MATRIX.md) · [`PLAYBACK_TARGETS.md`](PLAYBACK_TARGETS.md) · [`YOUTUBE_MUSIC_ARCHITECTURE.md`](YOUTUBE_MUSIC_ARCHITECTURE.md) · [`../research/BITCHORD_ARCHITECTURE_REVIEW.md`](../research/BITCHORD_ARCHITECTURE_REVIEW.md)
 
 ## 0. The invariant
 
@@ -23,7 +23,7 @@ feature/* (UI)                    reads: Track, capabilities, availability, rout
 core:data use-cases/repositories  LibraryRepository · SearchRepository · LikesRepository · PlaylistRepository
    │                              (Podium-owned data: likes/playlists/history are local-first, ADR-008)
    ▼
-sources:api   SourceRegistry ──► MusicSource (facets) ◄── implemented by sources:local / subsonic / audius / …
+sources:api   SourceRegistry ──► MusicSource (facets) ◄── implemented by sources:local / youtubemusic
    │              │
    │              ├─ SourceHealthMonitor (circuit breaker)
    │              ├─ TrackMatcher (identity across sources)
@@ -37,7 +37,7 @@ player:api    PlaybackController ─► QueueManager ─► PlaybackRouter ─�
 ## 2. Source identity
 
 ```kotlin
-@JvmInline value class SourceId(val value: String)    // stable per connected instance: "local", "subsonic:9f2c…", "audius"
+@JvmInline value class SourceId(val value: String)    // stable per connected instance: "local", "ytmusic"
 
 data class SourceDescriptor(
     val id: SourceId,
@@ -398,8 +398,10 @@ Everything else follows from the registry. The new source then:
 
 No `if (provider)` anywhere outside its own module.
 
-### 11.4 Configured sources and OpenSubsonic (D-37, implemented)
-Some sources are *added by the listener*, not built in: one per music server, with its own sign-in. They're ordinary sources once registered (§11.3). Only how they come and go is new.
+### 11.4 Configured sources and OpenSubsonic (Historical: D-37, retired under D-48)
+> **Historical note:** The multi-source configured source setup below (D-37) was built for OpenSubsonic and Audius. Under **D-48**, YouTube Music is the sole online provider. This section is preserved as architectural reference for dynamic source configuration and credential storage patterns.
+
+Some sources were *added by the listener*, not built in: one per music server, with its own sign-in. They're ordinary sources once registered (§11.3). Only how they come and go is new.
 
 | Piece | Where | What it does |
 |---|---|---|
@@ -451,8 +453,8 @@ Some sources are *added by the listener*, not built in: one per music server, wi
 | Source label | `descriptor.displayName`, `basis` | ids |
 | Unavailable explanation | `availability` + `CapabilityState.note` | provider error strings |
 
-## 13. Module layout (delta to ADR-012)
-`sources:api` gains facets, `StreamResolver`, `TrackMatcher`, `TrackNormalizer`, `SourceHealthMonitor`, `SourceRegistry` (pure Kotlin, JVM-tested). Provider modules: `sources:local`, `sources:subsonic` (built, D-37), `sources:audius`, and — only if approved (§ matrix) — `sources:youtube-catalog`, `sources:spotify`. `player:api` gains `PlaybackRouter` and engine interfaces; `player:service` hosts `DirectStreamEngine`; remote engines live with their provider module (they implement `RemoteProviderController`).
+## 13. Module layout (delta to ADR-012, updated by D-48)
+`sources:api` gains facets, `StreamResolver`, `TrackMatcher`, `TrackNormalizer`, `SourceHealthMonitor`, `SourceRegistry` (pure Kotlin, JVM-tested). Provider modules: `sources:local` (offline MediaStore), `sources:youtubemusic` (online, D-48 direct stream). Retired provider modules: `sources:subsonic`, `sources:audius`. `player:api` hosts `PlaybackRouter` and engine interfaces; `player:service` hosts `DirectStreamEngine` (Media3); remote engines live with their provider module when applicable.
 
 ## 14. Testing (minimum, all JVM unless noted)
 | Area | Tests |

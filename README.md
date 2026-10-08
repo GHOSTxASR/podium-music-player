@@ -1,11 +1,16 @@
 # Podium (working name)
 
-A modern universal music player with an iPod-inspired interaction model and a restrained Liquid Glass interface. Music providers are interchangeable infrastructure behind a capability model; the wheel, the navigation, Now Playing and the library are Podium.
+A sideloaded personal Android music player with an iPod-inspired interaction model and a restrained Liquid Glass interface.
 
-**Status:** pre-implementation. Phases 0–2 (audit, product/UX specification, architecture) and the source-architecture research (S0) are complete; next is S1, the source and playback contracts in pure Kotlin. No application code exists yet.
+**Product Direction:**
+- **Local/Offline Music:** Stable, first-class offline music playback from the device (MediaStore, Room, Media3 `PlaybackService`, `QueueManager`).
+- **Online Music:** Redesigned exclusively around **YouTube Music** as the sole online music provider, delivering an experience comparable to BitChord:
+  - Full YouTube Music catalogue and search
+  - Albums, artists, playlists, user's library, liked music, listening history where supported
+  - User session authentication
+  - Direct in-app streaming via Media3 and background playback where supported
+  - BitChord serves as an architectural and implementation reference.
+- **Platform:** Native Android (Kotlin, Jetpack Compose, Media3) — minSdk 29, targetSdk 36.
+- **Start here:** [docs/README.md](docs/README.md).
 
-- Platform: native Android (Kotlin, Jetpack Compose, Media3) — minSdk 29, targetSdk 36.
-- Sources: music on the device, OpenSubsonic-compatible servers (Navidrome, Gonic, …) and Audius are planned; YouTube Music and Spotify integrations are optional and limited to what each provider's terms allow (see `docs/architecture/SOURCE_CAPABILITY_MATRIX.md`). Podium does not circumvent any service's access controls.
-- Start here: [docs/README.md](docs/README.md).
-
-License: not yet chosen (all rights reserved until decided).
+License: undecided (all rights reserved until decided). Third-party references and licenses are acknowledged factually.

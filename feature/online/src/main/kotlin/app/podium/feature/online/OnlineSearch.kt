@@ -69,8 +69,9 @@ private sealed interface SearchRow {
 
 /**
  * ONLINE ▸ Search (D-34): a deeper part of the same paper, not a separate search page. The field
- * sits at the top of the list; results arrive as you type — songs, artists, albums, playlists —
- * and "More songs" pages further without loading the whole catalogue. Turning the Wheel moves
+ * sits at the top of the list; results arrive as you type — a few songs, then albums, artists,
+ * playlists and videos — and "More songs" shows the rest of the songs, then pages further
+ * without loading the whole catalogue. Turning the Wheel moves
  * through results (and tucks the keyboard away).
  */
 @Composable
@@ -81,12 +82,15 @@ fun OnlineSearchScreen(repository: OnlineRepository, actions: OnlineActions, nav
     var results by remember { mutableStateOf<Remote<app.podium.sources.api.SearchResults>?>(null) }
     var songs by remember { mutableStateOf<List<Track>>(emptyList()) }
     var moreExhausted by remember { mutableStateOf(false) }
+    // The songs show a few at first, so albums, artists and playlists are a short turn away.
+    var songsExpanded by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val focusManager = LocalFocusManager.current
     val fieldFocus = remember { FocusRequester() }
 
     LaunchedEffect(Unit) {
         snapshotFlow { query.trim() }.distinctUntilChanged().collectLatest { text ->
+            songsExpanded = false
             if (text.length < MIN_QUERY) {
                 results = null
                 songs = emptyList()
@@ -116,7 +120,7 @@ fun OnlineSearchScreen(repository: OnlineRepository, actions: OnlineActions, nav
     }
 
     val ready = (results as? Remote.Ready)?.value
-    val rows = remember(results, songs, moreExhausted) {
+    val rows = remember(results, songs, moreExhausted, songsExpanded) {
         buildList {
             add(SearchRow.Field)
             when (val r = results) {
@@ -131,16 +135,17 @@ fun OnlineSearchScreen(repository: OnlineRepository, actions: OnlineActions, nav
                     }
                     if (songs.isNotEmpty()) {
                         add(SearchRow.Section("Songs"))
-                        songs.forEach { add(SearchRow.Song(it)) }
-                        if (!moreExhausted) add(SearchRow.MoreSongs)
-                    }
-                    if (v.artists.isNotEmpty()) {
-                        add(SearchRow.Section("Artists"))
-                        v.artists.forEach { add(SearchRow.Artist(it)) }
+                        val shown = if (songsExpanded) songs else songs.take(SONGS_PREVIEW)
+                        shown.forEach { add(SearchRow.Song(it)) }
+                        if (songs.size > shown.size || !moreExhausted) add(SearchRow.MoreSongs)
                     }
                     if (v.albums.isNotEmpty()) {
                         add(SearchRow.Section("Albums"))
                         v.albums.forEach { add(SearchRow.Album(it)) }
+                    }
+                    if (v.artists.isNotEmpty()) {
+                        add(SearchRow.Section("Artists"))
+                        v.artists.forEach { add(SearchRow.Artist(it)) }
                     }
                     if (v.playlists.isNotEmpty()) {
                         add(SearchRow.Section("Playlists"))
@@ -172,7 +177,8 @@ fun OnlineSearchScreen(repository: OnlineRepository, actions: OnlineActions, nav
         when (val row = rows.getOrNull(i)) {
             SearchRow.Field -> fieldFocus.requestFocus()
             is SearchRow.Song -> playable.indexOfFirst { it.id == row.track.id }.takeIf { it >= 0 }?.let { actions.play(playable, it, "Search") }
-            SearchRow.MoreSongs -> loadMoreSongs()
+            // First the songs already found, then further pages.
+            SearchRow.MoreSongs -> if (!songsExpanded) songsExpanded = true else loadMoreSongs()
             is SearchRow.Video -> ready?.videos?.let { videos -> actions.play(videos, videos.indexOfFirst { it.id == row.track.id }.coerceAtLeast(0), "Search") }
             is SearchRow.Artist -> navigate(OnlinePlace.Artist(row.artist.id, row.artist.name))
             is SearchRow.Album -> navigate(OnlinePlace.Collection(PlaylistId(row.album.id.value), row.album.title, isAlbum = true))
@@ -286,3 +292,6 @@ internal fun SearchField(
 private const val MIN_QUERY = 2
 private const val DEBOUNCE_MS = 350L
 private const val RESULTS = 20
+
+/** Songs shown before "More songs": enough to pick from, few enough that albums are near. */
+private const val SONGS_PREVIEW = 5

@@ -59,6 +59,15 @@ import app.podium.player.api.VolumeController
 import app.podium.player.api.VolumeState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import app.podium.core.designsystem.type.DisplayFont
+import app.podium.core.designsystem.theme.VirtualDisplay
+import app.podium.core.common.PodiumError
+import app.podium.player.api.Recovery
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -101,11 +110,62 @@ class NowPlayingLayoutTest {
     /** Another source's copy is playing: Podium knows which (D-36), the listener isn't told. */
     @Test fun fallbackCopyIsNotNamed() = check("phone-fallback", PHONE, Art.SQUARE, fallback = true)
 
-    private fun check(name: String, qualifiers: String, art: Art, longTitle: Boolean = false, fallback: Boolean = false) {
+    /** Faces set larger than Classic keep both status lines whole: the error and "Online" aren't cut. */
+    @Test fun handwrittenKeepsTheStatusLines() = largeFace(DisplayFont.HANDWRITTEN)
+
+    @Test fun scriptKeepsTheStatusLines() = largeFace(DisplayFont.SCRIPT)
+
+    @Test fun gothicKeepsTheStatusLines() = largeFace(DisplayFont.GOTHIC)
+
+    @Test fun timesKeepsTheStatusLines() = largeFace(DisplayFont.TIMES)
+
+    private fun largeFace(font: DisplayFont) {
+        check(
+            "phone-error-${font.name.lowercase()}", PHONE, Art.SQUARE,
+            status = PlaybackStatus.Error(PodiumError.NotPlayable("stream")), environment = "Online", font = font,
+        )
+        assertWhole("can't play")
+    }
+
+    /** While a refused stream is replaced the note says so (not an error); then the song goes on. */
+    @Test fun aRefreshingStreamSaysSo() {
+        check("phone-refreshing", PHONE, Art.SQUARE, status = PlaybackStatus.Buffering, recovery = Recovery.REFRESHING_STREAM, environment = "Online")
+        compose.onNodeWithText("The stream dropped. Getting it again…").assertExists()
+    }
+
+    /** Until an online song first plays, the bar says it's loading. */
+    @Test fun aLoadingSongSaysSoOnTheBar() {
+        check("phone-loading", PHONE, Art.SQUARE, status = PlaybackStatus.Loading, environment = "Online")
+        compose.onNodeWithText("Loading").assertExists()
+        compose.onNodeWithContentDescription("Song position").assertDoesNotExist()
+    }
+
+    /** No line of the text containing [fragment] is cut off (its layout fits its box). */
+    private fun assertWhole(fragment: String) {
+        val nodes = compose.onAllNodes(hasText(fragment, substring = true, ignoreCase = true), useUnmergedTree = true).fetchSemanticsNodes()
+        assertTrue(nodes.isNotEmpty(), "\"$fragment\" is shown")
+        for (node in nodes) {
+            val layouts = mutableListOf<TextLayoutResult>()
+            node.config[SemanticsActions.GetTextLayoutResult].action?.invoke(layouts)
+            assertTrue(layouts.none { it.hasVisualOverflow }, "\"$fragment\" is cut off: " + layouts.joinToString { "${it.size} lines=${it.lineCount} overflowW=${it.didOverflowWidth} overflowH=${it.didOverflowHeight}" })
+        }
+    }
+
+    private fun check(
+        name: String,
+        qualifiers: String,
+        art: Art,
+        longTitle: Boolean = false,
+        fallback: Boolean = false,
+        status: PlaybackStatus = PlaybackStatus.Paused(PauseReason.USER),
+        recovery: Recovery? = null,
+        environment: String? = null,
+        font: DisplayFont = DisplayFont.CLASSIC,
+    ) {
         RuntimeEnvironment.setQualifiers(qualifiers)
-        val controller = FakeController(art, longTitle, fallback)
+        val controller = FakeController(art, longTitle, fallback, status, recovery)
         compose.setContent {
-            PodiumTheme(darkTheme = true, glassTier = GlassTier.Solid) {
+            PodiumTheme(darkTheme = true, glassTier = GlassTier.Solid, display = VirtualDisplay(font = font)) {
                 val palette = DeviceAppearance(FinishPreset.STEEL_GRAY).palette(darkTheme = true)
                 CompositionLocalProvider(
                     LocalInputRouter provides InputRouter(),
@@ -118,7 +178,7 @@ class NowPlayingLayoutTest {
                             modifier = Modifier.fillMaxSize(),
                             screen = {
                                 CompositionLocalProvider(LocalScreenInsets provides ScreenInsets(top = ScreenHeaderHeight, bottom = 8.dp)) {
-                                    NowPlayingScreen(controller, FakeVolume, FakeFavorites, onUpNext = {})
+                                    NowPlayingScreen(controller, FakeVolume, FakeFavorites, onUpNext = {}, environmentOf = { environment })
                                 }
                                 ScreenHeader("Now Playing", canGoBack = true, onBack = {}, playing = false)
                             },
@@ -138,7 +198,9 @@ class NowPlayingLayoutTest {
             node.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty().any { it in DISPLAY_CONTENT }
         }
         val found = onScreen.flatMap { it.config[SemanticsProperties.ContentDescription] }.toSet()
-        assertTrue(found.containsAll(DISPLAY_CONTENT), "missing on the display: ${DISPLAY_CONTENT - found} ($name)")
+        // While a song loads, the bar is replaced by the word.
+        val expected = if (status == PlaybackStatus.Loading) DISPLAY_CONTENT - "Song position" else DISPLAY_CONTENT
+        assertTrue(found.containsAll(expected), "missing on the display: ${expected - found} ($name)")
         // Every node drawn by the display, labelled or not, stays inside it.
         displayNode.descendants().forEach { node ->
             val label = node.config.getOrNull(SemanticsProperties.ContentDescription)?.firstOrNull()
@@ -161,7 +223,13 @@ class NowPlayingLayoutTest {
     private fun Rect.contains(other: Rect) =
         other.left >= left - 0.5f && other.top >= top - 0.5f && other.right <= right + 0.5f && other.bottom <= bottom + 0.5f
 
-    private class FakeController(art: Art, longTitle: Boolean, fallback: Boolean = false) : PlaybackController {
+    private class FakeController(
+        art: Art,
+        longTitle: Boolean,
+        fallback: Boolean = false,
+        status: PlaybackStatus = PlaybackStatus.Paused(PauseReason.USER),
+        recovery: Recovery? = null,
+    ) : PlaybackController {
         private val item = NowPlayingItem(
             uid = QueueUid("q1"),
             trackId = TrackId("test|1"),
@@ -177,7 +245,7 @@ class NowPlayingLayoutTest {
             servedBy = if (fallback) SourceId("fake-provider") else null,
         )
         override val snapshot: StateFlow<PlaybackSnapshot> = MutableStateFlow(
-            PlaybackSnapshot(status = PlaybackStatus.Paused(PauseReason.USER), intent = PlayIntent.PAUSE, item = item),
+            PlaybackSnapshot(status = status, intent = PlayIntent.PAUSE, item = item, recovery = recovery),
         )
         override val queue: StateFlow<QueueView> = MutableStateFlow(QueueView())
         override fun positionMs() = 63_000L

@@ -18,8 +18,8 @@ Every significant decision, newest at the bottom. Major ones have an ADR in `adr
 | [ADR-010](adr/ADR-010-typography-and-iconography.md) | Instrument Sans + per-string Inter fallback; Material Symbols Rounded subset | Accepted |
 | [ADR-011](adr/ADR-011-navigation-and-input-routing.md) | Navigation 3 app-owned stack; `InputRouter` → `InputTarget` with `WheelContext` | Accepted |
 | [ADR-012](adr/ADR-012-modules-and-networking.md) | Module map, pure-JVM domain modules, OkHttp-only networking | Accepted |
-| [ADR-013](adr/ADR-013-provider-source-architecture.md) | Capability-faceted sources; `PlaybackTarget` = DirectStream / RemoteProvider / Embedded; identity-preserving fallback; `Basis`; stream-unlock boundary | Accepted — **optional providers pending user** |
-| [ADR-014](adr/ADR-014-bitchord-inspired-independent-implementation.md) | Learn from BitChord (GPL-3.0) as reference; reimplement from Podium specs; no GPL deps while D-13 open | Accepted |
+| [ADR-013](adr/ADR-013-provider-source-architecture.md) | Capability-faceted sources; `PlaybackTarget` = DirectStream; identity-preserving fallback; `Basis` | Superseded in part by D-48 (stream-unlock boundary revoked; YouTube Music plays via DirectStream) |
+| [ADR-014](adr/ADR-014-bitchord-inspired-independent-implementation.md) | BitChord as architectural and implementation reference | Superseded by D-48 (clean-room restrictions revoked) |
 
 ## Inline decisions
 
@@ -85,7 +85,7 @@ Every significant decision, newest at the bottom. Major ones have an ADR in `adr
 - **Decision:** every source declares `LOCAL_DEVICE` / `USER_SERVER` / `OFFICIAL_API` / `UNOFFICIAL_API`; Play-distributed builds link no `UNOFFICIAL_API` factory; UI labels unofficial sources ("Unofficial — may stop working"). **Why:** honest provenance; keeps Play distribution possible.
 
 ### D-20 · YouTube Music positions
-- **Status: Pending user.** Y1 (unofficial catalogue + matched playback via authorized sources) and Y2 (official embed) are buildable; Y3 (direct YouTube audio via stream unlock) is not built (ADR-013 boundary; brief §65). Y0 (none) is valid.
+- **Status: Superseded by D-48.** Originally framed options Y0–Y3 with direct audio (Y3) excluded under ADR-013. Superseded by D-48, which adopts YouTube Music as the sole online provider with direct in-app streaming in Media3 for Podium's sideloaded personal player.
 
 ### D-21 · Spotify positions
 - **Status: Pending user.** S-a (read-only playlist/library import, matched to the user's sources) and S-b (App Remote remote session: provider-owned queue, no mixing, hard cuts, attribution) are buildable for personal use with a bring-your-own client id (dev mode: 5 users, Premium owner). Direct Spotify audio: unavailable. Policy tension (III.5, III.11) documented in the matrix.
@@ -262,15 +262,14 @@ Every significant decision, newest at the bottom. Major ones have an ADR in `adr
   - Device acceptance and the security audit are recorded in `testing-strategy.md` §4.1 and `security.md` §8.
 
 ### D-38 · YouTube Music is ONLINE: unofficial catalogue, the listener's own session, playback in the official app
-- **Context:** user direction (2026-10-06, "execution mission"): make Online a working YouTube Music experience — search, home, albums, artists, playlists, library, likes, history, radio, account — with legitimate playback only, while Offline stays intact; retire Audius/OpenSubsonic and the multi-source machinery carefully. This is the D-20 answer: Y1 (unofficial catalogue) approved, playback by delegation; Y3 stays forbidden (ADR-013).
+- **Status: Superseded in part by D-48.** The playback delegation model (P2) to the official app and the prohibition against in-app playback (Y3) are superseded by D-48. D-48 establishes direct in-app streaming via Media3 comparable to BitChord for the sideloaded personal player. The single online provider scope, catalogue, account web session, and library facets established here remain active.
+- **Context:** user direction (2026-10-06, "execution mission"): make Online a working YouTube Music experience — search, home, albums, artists, playlists, library, likes, history, radio, account — while Offline stays intact; retire Audius/OpenSubsonic and the multi-source machinery carefully.
 - **Decision:**
   - **One online service.** `sources:youtubemusic` (pure JVM) is the only ONLINE source; `sources:audius`, `sources:subsonic`, configured sources and `MultiSourceCatalog` are removed; stored credentials of retired servers are deleted at startup (`RetiredSources`). The online UI stays provider-free.
-  - **Catalogue** from the music web client's browsing endpoints (`search`, `browse`, `next`; never `player`), `Basis.UNOFFICIAL_API`, page config read at runtime, parsers that fail soft. Signed out it's DEGRADED ("Sign in for the full catalogue").
+  - **Catalogue** from the music web client's browsing endpoints (`search`, `browse`, `next`), `Basis.UNOFFICIAL_API`, page config read at runtime, parsers that fail soft.
   - **Account (A2):** the service's own sign-in page in a locked-down WebView; only the session cookies are kept, sealed by the Keystore credential store; the database sees only a hashed account key. Expiry is detected and reported; sign-out wipes the account's online data.
-  - **Playback (P2, P0):** the official YouTube Music app plays under the listener's account. Podium starts it through its media session (`playFromUri`) or by opening the song's link, then controls and mirrors it through Android's media-session interface (notification-listener access, no notification handling). `OwnerAwarePlaybackController` owns the LOCAL/REMOTE split: hard cuts, the local queue preserved, remote songs never in the local queue. "After choosing a song: Stay here / Show YouTube Music."
+  - **Playback (Historical — superseded by D-48):** D-38 originally delegated playback to the official YouTube Music app (P2). Superseded by D-48, which specifies direct in-app playback via Media3 (`DirectStream`).
   - **Model:** `MediaKind` on tracks (schema v5, additive); `AccountLibraryFacet`, `AuthFacet.webSignIn`, `RemoteContext`, `RemotePlayback` in the provider-neutral APIs.
-- **Options considered:** OAuth (no YouTube Music library scope); the official embedded player P1 (needs a visible video, no background); Podium-owned audio (forbidden); keeping Audius/OpenSubsonic alongside (user direction: one service).
-- **Tradeoffs / limits:** unofficial basis; a web session gives Podium the account's YouTube Music session (necessary for the library, stated to the listener); embedded-WebView sign-in may be refused by Google; P2 depends on what the app's session exposes (U1–U6); device acceptance pending. Spec: `architecture/YOUTUBE_MUSIC_ARCHITECTURE.md`; evidence: `research/YOUTUBE_MUSIC_IMPLEMENTATION_NOTES.md`; device plan: `testing/YOUTUBE_MUSIC_DEVICE_ACCEPTANCE.md`.
 
 ### D-39 · Lyrics: LRCLIB by metadata, one line on the whole display
 - **Context:** user direction (2026-10-06, "secondary polish mission"): Now Playing ▸ Lyrics, synced when possible, plain without fake timing, a full-screen canvas that alternates light and dark per line, large justified type that never clips, browsing with the Wheel. D-11 already required consent for online lyrics.
@@ -343,6 +342,24 @@ Every significant decision, newest at the bottom. Major ones have an ADR in `adr
 - **Decision:** Podium asks once by itself, as soon as it first switches on (after the startup screen). Without access, Home leads with "Allow music access" as Music does. A refusal Android won't ask about again is remembered (`PermissionAsks`); then the row opens Podium's page in the system settings. If a press gets an instant refusal with no question shown (Android had already stopped asking before this version), the settings page opens at once. Empty library lists say which is true: access is missing ("Allow music access from Home…") or there's no music in the folders read.
 - **Options considered:** a Podium explanation screen before Android's question (Android's own wording already says "music and audio"; one fewer step); asking every launch (nagging; Android itself stops after two refusals).
 
+### D-48 · Authoritative YouTube Music Direction: Sole Online Provider with Direct Playback
+- **Context:** user direction (2026-10-06, "Repository Documentation Reset — Podium YouTube Music Direction"): Podium is a sideloaded personal Android music player. Older architectural decisions avoiding BitChord's implementation approach (the "clean-room" hygiene rules of ADR-014, the "stream-unlock boundary" of ADR-013, and the ban on direct YouTube audio / Y3) are no longer the product direction.
+- **Decision:**
+  1. **Offline/local playback is stable:** existing offline/local music playback (MediaStore, Room, Media3 `PlaybackService`, `QueueManager`, iPod interaction model, and Liquid Glass / Carbon / Bone UI) is stable and must not be rewritten as part of online changes.
+  2. **YouTube Music is the sole online provider:** online music is redesigned exclusively around YouTube Music to provide an experience comparable to BitChord:
+     - Full YouTube Music catalogue and search (songs, videos, albums, artists, playlists)
+     - Albums, artists, playlists
+     - User's library (albums, artists, playlists)
+     - Liked music (two-way sync with the account)
+     - Listening history (account history where technically supported + local history)
+     - User authentication/session (web session sealed at rest)
+     - **Direct in-app playback via Media3**
+     - **Background playback where technically supported**
+  3. **BitChord as architectural & implementation reference:** BitChord may be studied directly as an architectural and implementation reference.
+  4. **Practical, viable architecture over clean-room:** Podium uses the most practical technically viable architecture (drawing on proven extraction techniques, cipher deobfuscation, and token minting) rather than enforcing obsolete clean-room or stream-unlock restrictions.
+  5. **Licensing:** Factual licensing notices are preserved; third-party licenses (e.g. GPL-3.0 for BitChord, NewPipeExtractor, InnerTubeX) are acknowledged factually.
+- **Supersedes:** D-20, D-38 playback delegation (P2), ADR-013 stream-unlock boundary, ADR-014 clean-room restrictions.
+
 ### D-49 · The paper list follows its lens; the previous column dissolves; the background picture decodes
 - **Context:** user report (2026-10-06): the top of a list "suddenly pops left" as a menu opens; on a long list the indicator "freaks out trying to follow the highlight" when the Wheel turns a bit fast; a custom display background always says "Unavailable"; the previous column's glimpse is too sharp at its right edge and corners.
 - **Findings** (device recordings read frame by frame, a diagnostic log of the row geometry):
@@ -357,3 +374,90 @@ Every significant decision, newest at the bottom. Major ones have an ADR in `adr
   - The previous column's tile feathers out with an eased mask (22 dp at the right, about 18 dp at the top and bottom, at the left only when the tile sits wholly on the display), with no hard clip.
 - **Tests:** `PaperLensFollowTest` (wherever the lens is between two rows, the list puts it at the middle; the ends clamp; a jump far along the list; a two-rows-a-frame spin scrolls one way, keeps the focused row in view and settles at the middle), `DisplayImagesTest` (decoded and downsampled, a sideways photo stands upright, a missing picture is reported); `FocusListGeometryTest` passes unchanged.
 - **Device:** Nothing Phone (3a), test-tone library: Music ▸ Songs three times with no jump; fast spins on Songs with the indicator steady; the glimpse's edges soft. Acceleration (lists of 50 or more) is covered by tests only.
+
+### D-50 · Lyrics that follow the music, whatever the provider wrote; faces that look different
+- **Context:** user direction (2026-10-07): "sometimes the lyrics doesn't move … format the lyrics automatically so that it works well"; "add more fonts … italics, Times New Roman … gothic fonts for the lyrics screen … cursive fonts too".
+- **Decision (lyrics):** `LyricsFormatter` shapes every answer for the screen (LYRICS_ARCHITECTURE.md §5.2): usable synced lyrics kept as they are; shared stamps spread, overrunning stamps fitted, labels made gaps, over-long lines split at phrases; stamps that say nothing, and plain lyrics, paced across the song by line length with a lead-in and outro — marked `estimated`, said so in the details overlay, the Wheel still reading ahead. LRCLIB lookups prefer the same song with times over an exact match without them; the lyrics cache key is versioned (`v2`).
+- **Supersedes:** D-39's "plain without fake timing", and the screen's "plain lyrics never pretend to be synced": they now follow the music with an estimate that says so. Without the song's length, plain lyrics stay plain.
+- **Decision (fonts):** eleven more display faces — Italic (Instrument Sans Italic), Times and Times italic (Tinos, Times New Roman's metric twin; Times New Roman itself can't be bundled), Elegant and Elegant italic (Playfair Display), Typewriter (Courier Prime), Rounded (Nunito), Handwritten (Caveat), Script (Dancing Script), Bubbly (Pacifico), Gothic (Grenze Gotisch) — and a separate **Lyrics font** with those plus faces that only read at a lyric's size: Typewriter italic, Calligraphy (Great Vibes), French script (Parisienne), Loopy (Sacramento), Fraktur (UnifrakturMaguntia), Pirata (Pirata One), Jacquard (Jacquard 24). All SIL OFL 1.1, bundled unmodified, downloaded once from the official Google Fonts repository with the listener's approval (third_party/FONTS.md); coverage tables from their cmaps; whole-string fallback to Inter as before.
+- **Tradeoffs:** about 5 MB more APK; paced timing drifts from the singing (it's an estimate, and labelled one).
+- **Tests:** `LyricsFormatterTest` (kept, paced, stuck stamps, shared stamps, overrun, long lines, labels), `LrclibProviderTest` (an exact plain match gives way to a timed upload; falls back to it), `VirtualDisplayTest` (every new face sets its own strings, falls back whole; the lyrics font follows the display or its own face).
+
+### D-51 · The colour picker shows the whole palette; saturation and brightness bars
+- **Context:** user direction (2026-10-07): the background colour picker "should circulate in the whole colour palette and also show that to the user. and give a saturation slider". The old picker turned only the hue of the current colour in OKLCH, keeping its chroma — a greyish colour (the default slate) barely changed, and nothing showed where it was.
+- **Decision:** both colour editors (device finish and display background) show three bars — Hue (the full spectrum, a marker at the colour's hue, wrapping all the way round), Saturation (grey to full colour at that hue) and Brightness (black to full) — in HSV, so every colour is reachable. The Wheel turns the marked bar (hue 4° a detent, the others 2 %); skip forward and back choose the bar; touch sets a bar directly; hex entry stays; Center keeps the colour. Each bar is a slider to accessibility services.
+- **Tests:** `ColorPickerTest` (round trips, a full turn of the hue passes every sixth of the palette even from a greyish colour, ends stop).
+
+### D-52 · The status bar says where the music is heard
+- **Context:** user direction (2026-10-07): "in the status bar, where the play pause icon is … add an icon if mute, bluetooth, or phone speaker".
+- **Decision:** the virtual display's header shows an output glyph left of the play state: muted (media volume muted or at zero) outranks the route; otherwise Bluetooth, headphones (wired or USB) or the phone speaker; nothing for other outputs (HDMI, casting). `AudioOutputMonitor` asks the system which device media plays to (Android 13+; before that, what's connected), and updates on device changes, volume and mute broadcasts, and every 4 s while Podium is in front (a route switched in the system's output picker sends no event). Headphones come from the symbol font; the Bluetooth rune, the phone and the muted speaker — not in the bundled symbol subset — are drawn with the same stroke, rather than downloading the full symbol font.
+- **Tests:** `AudioOutputTest` (device types to routes). Device: Nothing Phone (3a) shows "Muted" with media volume at zero.
+
+### D-53 · Online playback that waits for real work, survives a stale URL, and finds albums and artist radio
+- **Context:** user direction (2026-10-07): fix the timeouts, the expired-URL retry, the weak spots of the in-app YouTube Music playback (D-48), search showing only songs, and radio mostly not working.
+- **Findings:** each source had 6 s to resolve a song, and a timeout counted as an infrastructure failure — three in a row benched the online source (search too) for 30 s, 2 min, then 10 min; the blocked extraction carried on unseen and its result was thrown away. A stream URL refused mid-play (HTTP 403 after a long pause) was classed "sign in again" and benched the source until the listener signed in again; the same-source refresh existed but nothing called it. Search listed 20 songs before any album, and the mixed answer holds only ~3 albums. The artist page's Mix button moved to a song-and-playlist endpoint in 2026, so artist radio found no playlist.
+- **Decision:**
+  - `PlaybackFacet.resolveTimeoutMillis` lets a source say it needs longer (YouTube Music: 20 s; the player's own wait 25 s). The YouTube resolver runs each extraction in its own scope — a caller that stops waiting doesn't cancel it — shares one extraction per song, runs at most two at once, and keeps results five minutes (never past the URL's expiry).
+  - A stream refused with 401/403/404/410 is asked for afresh from the same source, once, and playback resumes where it was (`PlaybackFacet.forgetStream` drops the refused URL first). A refusal is never "sign in again" and never benches the source: a second refusal is that song (`NotPlayable`, per item) and the queue moves on.
+  - The extractor's localization is (language, country) the right way round, with the content country set; bitrates are kbps whichever figure the extractor has.
+  - Nothing is handed to the official app any more: the source no longer offers remote playback or remote contexts, Settings ▸ Online service drops the app, media-controls and "after choosing a song" rows when the service's songs play in Podium.
+  - Search shows five songs, "More songs" (the rest, then further pages), then albums, artists, playlists, videos. Albums come from the album-only search — or, when the query is an artist's name, from that artist's own page (the album-only search answers with tributes and covers).
+  - Artist radio reads the Mix button's song-and-playlist endpoint (and its parameters), and falls back to a radio from the artist's best-known song.
+  - The live-network resolver test runs only with `PODIUM_LIVE_NETWORK=1`.
+- **Not changed:** how the extractor obtains streams (outside what Podium's own code decides).
+- **Tests:** `StreamRefreshTest` (a refused URL is refreshed from the same source and the song carries on; a second refusal is per item, never a sign-in, the source stays usable — served by a local HTTP server in the test), `YouTubeMusicStreamResolverTest` (shared extraction, a caller's timeout doesn't lose it, a refused stream is forgotten, kept results age out, kbps), `YouTubeMusicSourceTest` (an artist's search lists their own albums and singles; no remote playback), `YouTubeMusicParserTest` (the 2026 Mix button).
+- **Device:** Nothing Phone (3a): "the weeknd" lists five songs, then The Highlights, Dawn FM, After Hours, Starboy, Beauty Behind The Madness, Kiss Land…, then artists and playlists. Streaming itself wasn't exercised on the device in this pass.
+
+### D-54 · The physical Podium: pinch it out into its own space
+- **Context:** user direction (2026-10-07, Phase 2): a two-finger pinch turns the flat app into an object in a dark, sparsely starred space, front first; nothing about playback changes.
+- **Decision:** `PodiumSpace` (app/space) wraps the whole device in one `graphicsLayer` (scale, a slight perspective turn, a drawn slab edge and shadow); `PodiumSpaceState` owns `SpacePhase` (NORMAL → ENTERING → PHYSICAL ⇄ STICKER_EDITING → RETURNING) with `depth`, `zoom` and `edit` animatables, never persisted. The pinch is recognised in the Initial pass at the top and consumed once it's clearly a pinch; the Wheel lets go of a finger whose change an ancestor consumed. Spread, Back, Return to Podium or a tap on the close Podium return. Settings ▸ Podium body opens it without the gesture. See architecture/PHYSICAL_SPACE.md.
+- **Tests:** `PodiumSpaceTest` (a pinch enters, one finger never does, a pinch over the Wheel doesn't turn it, a small pinch springs back, Return).
+
+### D-55 · Stickers: cut out on the phone, stuck anywhere on the Podium
+- **Decision:** a sticker is made from a picture chosen in the system photo picker. Google's MediaPipe MagicTouch point-to-mask model (Apache-2.0, third_party/MODELS.md) runs on the bare LiteRT 2.3.0 runtime: no MediaPipe Tasks or ML Kit (both bring telemetry), nothing leaves the phone. The picture's centre is chosen first; a tap chooses another subject; Add and Erase brushes (round on the picture, whatever its shape) refine the edge with undo and redo. The border (off, black, white; fine to bold) follows the cut-out's own outline (a chamfer distance-transform dilation) with a faint shadow, previewed on neutral grey. `StickerStore` keeps `<id>.png` (border baked in, ≤ 640 px) and `<id>.cut.png`, and `stickers.json` (stickers and placements: centre as fractions of the object, scale of its width, rotation, z), written atomically off the main thread; a damaged index starts empty. `StickerLayer` draws placements in the object's coordinates and never takes touches; arranging (STICKER_EDITING) chooses, moves (one finger), resizes and turns (two fingers), raises and takes off.
+- **Tests:** `StickerStoreTest` (kept with border and thickness; moved, turned, resized after a restart; bounds; several stickers and z order; take off vs delete; damaged index; decode size and cache), `StickerArtTest` (the cut, nothing kept, the border follows the outline in colour and thickness, dilation is round, the brush, undo/redo, hit testing turned stickers).
+
+### D-56 · Outside the Podium: one settings page, large by default; Turn off Podium
+- **Context:** user direction (2026-10-07): the outside page holds only what isn't the Podium's own — stickers (as a gallery, with adding more), Help, and turning the app off; the Podium's look stays in its own Settings, reached from there ("Podium body").
+- **Decision:** every visit opens with the page large (60 % of the width, full height) and the Podium small beside it; a switch at the bottom, Podium | Settings, brings either close (`SpaceFocus`, `zoom`): the Podium large and the page small in its corner, or back. Personalize is gone from the outside page. **Turn off Podium** pauses the music at once, darkens the window with "Goodbye", then writes the stickers, releases the controller, removes the task, stops the playback service and ends the process 1.2 s later (the service saves its position as it goes). Labels say Podium, never another product's name.
+- **Tests:** `PodiumSpaceTest` (opens large every time, the switch both ways, a tap on the small Podium brings it close and a tap when close returns, the gallery lists every sticker, Turn off asks the app to close).
+
+### D-57 · The tour: a model of the Podium, not the Podium
+- **Context:** user direction (2026-10-07): the first-launch tour plays like a short film — the camera closes in on the part in question and shows how — in checkpoints, on a model rather than the real device.
+- **Decision:** `GuideTour` covers the window: a drawn model in the listener's finish on a dark stage; per checkpoint (Turn the Wheel, Press the center, Menu, Play and pause, Step outside, Make it yours) the camera moves slowly to its shot with a spotlight, a ghost finger loops the gesture, and the words sit beneath. The model can be tried by hand — a turn of 150°, a press on the right part, two fingers together, a tap on a sticker — which passes the checkpoint and moves on after a beat; Next, Back and Skip are always there. Finishing or skipping is remembered (`GuideStore`); Help replays it. Reduced motion holds one telling frame per checkpoint.
+- **Tests:** `GuideTest` (offered once, checkpoints in order and passed only while showing, Back stops at the first, replay), `GuideTourTest` (each shot renders; turning the model's Wheel, pressing its center, pinching it pass).
+
+### D-58 · Now Playing's cover leans to the right
+- **Context:** user direction (2026-10-07), with a sketch: the cover a little turned, its near edge at the left.
+- **Decision:** the artwork stage turns 26° about its vertical axis, hinged at its left edge, seen from close (camera distance 6), in every theme; the breathing scale stays centred. Covers still slide out left and in from the right.
+
+### D-59 · The previous column's glimpse has no backing
+- **Context:** user direction (2026-10-07): the glimpse of the previous screen showed an opaque tile over a background picture.
+- **Decision:** the glimpse draws no background of its own: the display (colour or picture) shows through.
+- **Tried and withdrawn:** a motion blur on columns moving along the paper. On the device it lingered on the menus for a second or two after the move; the listener asked for it gone (D-60 instead).
+- **Lyrics drift (open):** lyrics that ran ahead after leaving the app coincided on the device with a stream refused mid-song (HTTP 403) and refreshed (D-53). The lyrics screen now follows afresh whenever it's shown again and when the player's status changes, and logs (tag `PodiumLyrics`) any time the position moves more than 1.2 s off the clock; the engine logs where it resumes after a refresh. Root cause not confirmed yet.
+
+### D-60 · One smooth curve for moves along the paper
+- **Context:** user direction (2026-10-07): instead of the blur, "a smoother animation curve, like Apple's or ColorOS's".
+- **Finding:** each move along the paper ran in two eased halves (keyframes with FastOutSlowIn per segment), so it slowed almost to a stop at the midpoint of its arc and picked up again.
+- **Decision:** `PodiumMotion.Smooth` = cubic-bezier(0.3, 0, 0.1, 1): sets off gently, keeps going, settles with a long soft finish. A column's whole move — its arc (a quadratic curve through the old midpoint, sampled at 30 eased times), its scale and its fade — follows that one curve, over 560 ms. Reduced motion still cross-fades.
+
+### D-61 · A column lands where its glimpse shows it
+- **Context:** user direction (2026-10-07, with a screen recording): the previews on the left and right sat lower than where a column's move ended, so they seemed to pop into place after it.
+- **Finding:** the left glimpse shows the previous column with the item that led on centred in its box; the move shrank the live column with its own scroll, so a lit row near the top (Home's Music) ended well above where the glimpse then showed it. On the right, the whole column was fitted to the box's height, its rows high in it, while the tile appears centred.
+- **Decision:** every paper list records where its lit row sits (`PaperLenses`, by the column's key; never from a miniature). A move into or out of the left box offsets the column by (box middle − lit row) × peek scale; into or out of the right box by (column middle − lit row) × mini scale — the lit row lands on the box's middle, exactly where the preview takes over. A column not seen before is taken to light its first row. The column leaving is whichever of the two last in front isn't in front now, as the navigation sets a move up just after the change.
+- **Device:** Nothing Phone (3a): Home ▸ Music, the Music row lands where the glimpse shows it; back, Cover Flow lands on the right box's middle.
+
+### D-62 · Glimpses arrive soft, then sharpen
+- **Context:** user direction (2026-10-07): going back, the right preview replaced the column sinking into it abruptly; "a soft blur" instead.
+- **Decision:** both glimpses come in over the move's last 280 ms and beyond (fade 380 ms on `PodiumMotion.Smooth`), blurred 8 dp at first and sharp as they settle (`Modifier.softArrival`, core:designsystem, Android 12+), overlapping the column leaving for their box. The blur follows the glimpse's own enter state, so at rest it's exactly none — unlike the withdrawn motion blur (D-59).
+
+### D-63 · A column shrinks to exactly the glimpse's size
+- **Context:** user direction (2026-10-07, with a screenshot): the column leaving for the left box was still larger than the glimpse there, so it seemed to shrink suddenly at the end.
+- **Finding:** the glimpse is the previous screen at peek scale and then a step away (0.94, about the box's middle); the move aimed at peek scale alone, and the glimpse began arriving halfway through, while the column was still near 0.6.
+- **Decision:** `PaperGeometry.glimpseScale` and `glimpseOriginX/Y` describe the glimpse exactly as drawn (`Paper.DistantScale` is shared with `distant()`); moves into and out of the left box aim at them, lit row included (D-61). The glimpse arrives from 62 % of the move (300 ms), the column fades from 70 %.
+
+### D-64 · The column leaving melts into its box
+- **Context:** user direction (2026-10-07): "for the swap too, a smooth blur transition at the end".
+- **Decision:** `Modifier.softDeparture` (core:designsystem, Android 12+) blurs a column as it leaves, growing to 7 dp (in its own size) over the move's last 45 %, while the glimpse or tile in that box arrives soft and sharpens (D-62). Driven by the column's own exit state; a column arriving is never blurred, so nothing stays soft after a move.
+- **Device:** Nothing Phone (3a): Home ▸ Music and back — the sizes meet, the hand-over melts both ways, both menus sharp at rest.

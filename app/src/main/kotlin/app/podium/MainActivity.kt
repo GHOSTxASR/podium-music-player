@@ -51,7 +51,7 @@ class MainActivity : ComponentActivity() {
         handleDebugIntent(intent, graph)
         applyDebugWindowCommand(intent, this)
         setContent {
-            PodiumApp(graph, onSourceAction = ::perform)
+            PodiumApp(graph, onSourceAction = ::perform, onTurnOff = ::turnOff)
         }
         // Without music access, Podium asks once by itself, as soon as it has switched on (the
         // system's own question, over the device); after that, "Allow music access" on Home asks.
@@ -115,7 +115,27 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /**
+     * Turn off Podium (D-56), after the goodbye: the music stopped, everything kept, the player's
+     * service stopped, the window gone from Recents, and then the process itself — a moment later,
+     * so the service can write down where playback stood.
+     */
+    private fun turnOff() {
+        graph.prepareToTurnOff()
+        finishAndRemoveTask()
+        stopService(Intent(this, app.podium.player.service.PlaybackService::class.java))
+        val notifications = androidx.core.app.NotificationManagerCompat.from(applicationContext)
+        android.os.Handler(mainLooper).postDelayed({
+            // The paused player's notification goes with the service; make sure nothing is left.
+            notifications.cancelAll()
+            android.os.Process.killProcess(android.os.Process.myPid())
+        }, TURN_OFF_GRACE_MS)
+    }
+
     private companion object {
+        /** Long enough for the service's own goodbye (it saves the position, briefly). */
+        const val TURN_OFF_GRACE_MS = 1_200L
+
         const val KEY_ASKING = "asking_permission"
 
         /** An answer quicker than this came without a dialog (a person can't read and tap so fast). */

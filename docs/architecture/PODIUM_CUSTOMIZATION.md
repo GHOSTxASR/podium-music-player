@@ -54,6 +54,17 @@ font or a colour on its own.
 | Mono | JetBrains Mono | 0.90 | +0.1 sp | fixed width runs long |
 | Pixel | Pixelify Sans | 1.10 | +0.3 sp | drawn on a pixel grid; read best larger |
 | Condensed | Instrument Sans at `wdth` 75 | 1.04 | +0.1 sp | Podium's own face, narrow (no extra file) |
+| Italic | Instrument Sans Italic | 1.00 | — | Podium's own face, slanted (D-50) |
+| Times | Tinos (Times New Roman's metric twin) | 1.08 | — | serif; Regular and Bold |
+| Times italic | Tinos Italic | 1.08 | — | heavier weights drawn from the italic |
+| Elegant | Playfair Display | 1.02 | — | high-contrast serif |
+| Elegant italic | Playfair Display Italic | 1.04 | — | |
+| Typewriter | Courier Prime | 0.95 | — | Regular and Bold |
+| Rounded | Nunito | 1.00 | — | soft corners |
+| Handwritten | Caveat | 1.28 | +0.1 sp | a quick hand; small for its size |
+| Script | Dancing Script | 1.20 | +0.1 sp | cursive |
+| Bubbly | Pacifico | 0.92 | +0.2 sp | round cursive; large for its size |
+| Gothic | Grenze Gotisch | 1.10 | +0.1 sp | a readable blackletter |
 
 - `TypographyPreset.of(font)` builds the whole `PodiumType` scale in the face; size factors keep
   x-heights near Classic's, so rows, the paper and the focus geometry keep their rhythm.
@@ -62,9 +73,16 @@ font or a colour on its own.
   otherwise Inter — e.g. Cyrillic in Industrial, Greek in Pixel.
 - **The body is never restyled:** the Wheel's MENU legend stays Instrument Sans.
 - The font picker shows each row in its own face; turning the Wheel restyles the whole display.
+- **Lyrics font (D-50)**, separate from the display's: "Same as the display" (default), any display
+  face, or faces that only read at a lyric's size — Typewriter italic (Courier Prime Italic),
+  Calligraphy (Great Vibes), French script (Parisienne), Loopy (Sacramento), Fraktur
+  (UnifrakturMaguntia), Pirata (Pirata One), Jacquard (Jacquard 24, a pixel blackletter).
+  `LyricsTypeface` picks the family per line with the same whole-string fallback to Inter; in
+  Settings each is set in itself (`LyricsTypeface.specimen`).
 - All faces are bundled, unmodified, SIL OFL 1.1, from the official Google Fonts repository; license
   texts in `third_party/licenses/`, provenance in `third_party/FONTS.md`. No font is ever
-  downloaded at runtime. Added APK size: about 400 KB.
+  downloaded at runtime. Added APK size: about 400 KB for the first six, about 5 MB with the D-50
+  faces (Tinos alone is 1.7 MB: it covers Latin, Greek and Cyrillic).
 
 ## 4. Background
 
@@ -152,7 +170,7 @@ Settings
 └── Appearance
     ├── Device body
     │   ├── Finish ▸ (Glass, Steel gray, Burgundy, Glacier blue, Silver, Custom color)
-    │   ├── Custom color ▸ (hex or Wheel hue walk)
+    │   ├── Custom color ▸ (hex, or hue / saturation / brightness bars, D-51)
     │   ├── Grain ▸ (level)
     │   ├── Glitter (Off / On)
     │   ├── Glitter amount ▸   Glitter glow ▸ (levels)
@@ -160,9 +178,12 @@ Settings
     │   └── Glitter density ▸   Glitter size ▸   Glitter opacity ▸ (levels)
     └── Virtual display
         ├── Theme ▸ (Glass, Carbon, Bone, Custom)
-        ├── Font ▸ (Classic, Clean, Industrial, Mono, Pixel, Condensed)
+        ├── Font ▸ (Classic, Clean, Industrial, Mono, Pixel, Condensed, Italic, Times, Times italic,
+        │          Elegant, Elegant italic, Typewriter, Rounded, Handwritten, Script, Bubbly, Gothic)
+        ├── Lyrics font ▸ (Same as the display, the display faces, Typewriter italic, Calligraphy,
+        │                 French script, Loopy, Fraktur, Pirata, Jacquard)
         ├── Background ▸ (None, Solid, Picture / Choose a picture, Choose another picture)
-        ├── Background color ▸ (hex or Wheel hue walk)
+        ├── Background color ▸ (hex, or hue / saturation / brightness bars, D-51)
         ├── Background opacity ▸ (level; only with a picture)
         └── Contrast (Standard / High)
 ```

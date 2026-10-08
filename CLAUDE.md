@@ -3,17 +3,18 @@
 Read `docs/README.md` first. The docs are the source of truth; update them in the same commit as behaviour changes. Record significant decisions in `docs/decision-log.md` (ADR in `docs/adr/` if major).
 
 ## Non-negotiables
-- **No circumvention (stream-unlock boundary, ADR-013).** Never implement player-cipher/throttle solving, PoToken/BotGuard or other bot-detection evasion, client-identity rotation to obtain streams, age-gate bypass, DRM removal, paywall/subscription bypass, or downloads a source doesn't permit — and don't add libraries for those purposes (e.g., NewPipeExtractor, InnerTubeX). YouTube Music only as options Y1/Y2 and only once the user approves (D-20); Spotify only as S-a/S-b once approved (D-21). See `docs/architecture/SOURCE_CAPABILITY_MATRIX.md` §3.
-- **Providers never leak.** Features depend on capabilities, availability, route and owner — never on provider identity (no `if (spotify)`), never on provider id formats. Provider code lives only in `sources:<provider>`. Spec: `docs/architecture/MUSIC_SOURCE_ARCHITECTURE.md`.
+- **Offline/local playback is stable.** The existing offline/local music implementation (MediaStore, Room, Media3 `PlaybackService`, `QueueManager`) is stable and must not be rewritten or broken as part of online changes.
+- **YouTube Music is the sole online provider.** Podium is a sideloaded personal Android music player providing a YouTube Music experience comparable to BitChord: full catalogue, search, albums, artists, playlists, user library, liked music, listening history where supported, user session/auth, in-app playback via Media3, and background playback where technically supported.
+- **BitChord as architectural and implementation reference.** BitChord may be studied directly as an architectural and implementation reference. Podium should use the most practical, technically viable architecture (including practical extraction, cipher deobfuscation, and token minting) rather than enforcing obsolete "clean-room" or "stream-unlock boundary" restrictions.
+- **Factual licensing and integrity.** Maintain factual licensing notices and never misrepresent third-party licenses (e.g., GPL-3.0 for BitChord/extractors). Factual attribution is preserved.
+- **Providers never leak into generic UI.** Features depend on capabilities, availability, route and owner — never on hard-coded provider checks in UI screens. Provider-specific logic lives inside its source module.
 - **Identity is sacred.** Cross-source fallback only at matcher tier EXACT (nothing else, no setting), never across version/explicitness boundaries, never mid-track, never across environments (LOCAL ↔ ONLINE) (D-17, D-18, D-36). The serving source is recorded (session, history, logs), never named on normal Now Playing (D-36). Only EXACT equivalence is persisted; a user's "not the same song" is final.
-- **No GPL code or GPL dependencies** while Podium's license is open (D-13). BitChord is an architectural reference only: don't open its source while implementing; follow ADR-014.
-- **No secrets** in code or git. No analytics/crash SDKs.
+- **No secrets in code or git.** No analytics/crash SDKs.
 - **Glass only via `:core:designsystem`** (`Modifier.glass` / `GlassSurface`). Never `Modifier.blur`, `RenderEffect`, `RuntimeShader`, or Backdrop imports elsewhere. Glass only on functional elements (wheel, power button, mini player, title-bar controls, menus, sheets, HUDs, focus lens) — never rows, cards, artwork, the virtual screen, or text containers.
 - **No Material3 components.** Compose foundation/ui + Podium tokens only.
 - **Never claim quality you can't measure.** "Lossless"/"Hi-Res" only per `docs/audio-architecture.md` §5.
 - **UI never touches ExoPlayer**; everything goes through `PlaybackController`. `QueueManager` is the only queue writer.
 - **Identity is source-qualified** (`TrackId = "<sourceId>|<id>"`; also `ArtistId`, `AlbumId`, `PlaylistId`, `ScopedKey`), never title+artist.
-- **Online is multi-source (D-35).** Ask the `SourceRegistry`/`MultiSourceCatalog`, never "the online source". Route anything source-local by its id's source. Group copies across sources only at matcher tier EXACT. Never name a source in music browsing (Settings ▸ Online sources is the one place).
 - **Domain modules stay pure Kotlin** (`core:model`, `core:common`, `player:api`, `sources:api`).
 - **The device shell (D-26):** the whole UI lives inside `VirtualScreen` above the Wheel; finishes change the body and Wheel only, never the screen's colours.
 - **Carbon and Bone (D-29):** no glass, no gloss, no blue, no pills on the display; selection is lit (text, band, indicator), never highlighted; album art is the only colour. Lists use the paper (`FocusList` default) — don't hand-roll vertical lists.

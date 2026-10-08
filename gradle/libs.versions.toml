@@ -16,6 +16,8 @@ room3 = "3.0.3"
 sqlite = "2.7.1"
 ksp = "2.3.12"
 junit = "4.13.2"
+# On-device subject cutout for stickers (D-55): the bare LiteRT runtime, no telemetry dependencies.
+litert = "2.3.0"
 robolectric = "4.17"
 turbine = "1.2.1"
 androidxTestCore = "1.7.0"
@@ -66,6 +68,7 @@ sqlite-bundled = { module = "androidx.sqlite:sqlite-bundled", version.ref = "sql
 sqlite-bundled-jvm = { module = "androidx.sqlite:sqlite-bundled-jvm", version.ref = "sqlite" }
 
 junit = { module = "junit:junit", version.ref = "junit" }
+litert = { module = "com.google.ai.edge.litert:litert", version.ref = "litert" }
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
 kotlin-test-junit = { module = "org.jetbrains.kotlin:kotlin-test-junit", version.ref = "kotlin" }
 robolectric = { module = "org.robolectric:robolectric", version.ref = "robolectric" }

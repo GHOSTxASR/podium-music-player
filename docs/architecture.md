@@ -67,7 +67,7 @@ These are normative sketches; names may be refined, semantics may not.
 
 ### 4.1 Identity
 ```kotlin
-@JvmInline value class SourceId(val value: String)          // "local", "subsonic:9f2c", "audius"
+@JvmInline value class SourceId(val value: String)          // "local", "ytmusic"
 @JvmInline value class TrackId(val value: String)           // "<sourceId>|<sourceTrackId>"
 @JvmInline value class AlbumId(val value: String)
 @JvmInline value class ArtistId(val value: String)
@@ -76,10 +76,10 @@ These are normative sketches; names may be refined, semantics may not.
 Identity is always source-qualified. Cross-source "same song" matching (ISRC/MBID) is a *hint* for dedupe UI, never a primary key.
 
 ### 4.2 Music sources (`sources:api`)
-**Normative spec: [`architecture/MUSIC_SOURCE_ARCHITECTURE.md`](architecture/MUSIC_SOURCE_ARCHITECTURE.md)** (ADR-013, which replaced the original sketch here). Summary:
+**Normative specs: [`architecture/MUSIC_SOURCE_ARCHITECTURE.md`](architecture/MUSIC_SOURCE_ARCHITECTURE.md) and [`architecture/YOUTUBE_MUSIC_ARCHITECTURE.md`](architecture/YOUTUBE_MUSIC_ARCHITECTURE.md)** (ADR-013, updated by D-48). Summary:
 - `MusicSource` = `SourceDescriptor` (incl. `Basis`) + observable effective `SourceCapabilities` + optional facets (`catalog`, `library`, `playback`, `artwork`, `lyrics`, `recommendations`, `downloads`, `auth`, `queueSync`).
 - Canonical provider-neutral `Track` (identifiers, version info, explicitness, advertised qualities, availability) with an opaque `SourceRef`.
-- `StreamResolver` → `ResolveOutcome` → **`PlaybackTarget`** = `DirectStream(PlayableMedia)` | `RemoteProvider(...)` | `Embedded(...)` — see [`architecture/PLAYBACK_TARGETS.md`](architecture/PLAYBACK_TARGETS.md).
+- `StreamResolver` → `ResolveOutcome` → **`PlaybackTarget`** = `DirectStream(PlayableMedia)` | `RemoteProvider(...)` | `Embedded(...)` — see [`architecture/PLAYBACK_TARGETS.md`](architecture/PLAYBACK_TARGETS.md). Under D-48, YouTube Music resolves to `DirectStream(PlayableMedia)`.
 - `TrackMatcher` (identity-preserving fallback & dedupe), `SourceHealth` (circuit breaker), `ConnectedSource` (auth/connection state).
 - Library sources are still synchronised into Room (ADR-002/ADR-008); provider availability per [`architecture/SOURCE_CAPABILITY_MATRIX.md`](architecture/SOURCE_CAPABILITY_MATRIX.md).
 UI asks capabilities, availability, route, and owner — never provider identity.
@@ -208,18 +208,18 @@ sealed interface PodiumError {
 
 | ID | Risk | Likelihood | Impact | Mitigation |
 |---|---|---|---|---|
-| R-01 | Users expect a mainstream free catalog (YouTube) | High | High | Clear positioning; Audius for discovery; source abstraction; user decision recorded |
+| R-01 | Users expect a mainstream free catalog (YouTube) | High | High | Addressed by D-48: YouTube Music is the sole online provider for personal sideloaded player |
 | R-02 | Glass performance on mid-range GPUs | Medium | High | Single capture, ≤ 4 persistent glass surfaces, tiers, frame-time auto-downgrade |
 | R-03 | Wheel feel (latency, gesture ambiguity) not "right" | Medium | High | Physical-device tuning loop, tokenised detent/slop/acceleration, measured latency budget |
 | R-04 | Room 3 maturity | Low–Med | Medium | Fallback to Room 2.8 documented (ADR-004) |
 | R-05 | Backdrop single maintainer / RenderThread crash class | Low–Med | Medium | Wrapper API; Solid tier needs no library; device tests for sheets |
-| R-06 | Subsonic server variance (Navidrome vs Gonic vs Ampache) | High | Medium | Capability probing (`getOpenSubsonicExtensions`), contract tests against recorded fixtures from 3 servers |
+| R-06 | Subsonic server variance (Navidrome vs Gonic vs Ampache) | High | Medium | Subsonic retired; preserved as historical note |
 | R-07 | Media3 1.11 session/notification regressions on Android 17 | Medium | High | Explicit `onConnectAsync` grants; verify on API 36/37 in slice; can pin 1.10.x |
 | R-08 | Low-RAM dev machine slows iteration | High | Medium | Physical device, JVM screenshot tests, Gradle heap caps |
 | R-09 | Lyrics copyright | Medium | Low–Med | Consent, local cache only, no redistribution, source-provided lyrics first |
 | R-10 | Name/trademark ("Podium") | Medium | Medium | Clearance before public release; name isolated to resources |
 | R-11 | Large-screen requirements (target 36 ignores orientation locks) | High | Medium | Adaptive layouts planned (P1), landscape phone layout in P0 |
-| R-12 | Cross-source fallback plays the wrong recording | Medium | High | Rule-based matcher tiers, EXACT-only automatic fallback, version/explicitness vetoes, surfaced source, user "not the same song" override, test corpus |
-| R-13 | Provider policy changes (Spotify Nov 2024 / May 2025 / Feb 2026; YouTube policies Sep 2026) | High | Medium–High | Capability states with `DISABLED_BY_POLICY`; providers isolated in modules; re-verify matrix before each provider phase |
-| R-14 | Accidental GPL derivative work from studying BitChord | Low | High | ADR-014 hygiene rules; no GPL deps while D-13 open; prose-only review |
+| R-12 | Cross-source fallback plays the wrong recording | Medium | High | Matcher dedupe; single online provider eliminates cross-source fallback risk |
+| R-13 | Provider policy changes (Spotify Nov 2024 / May 2025 / Feb 2026; YouTube policies Sep 2026) | High | Medium–High | Capability states with `DISABLED_BY_POLICY`; providers isolated in modules; InnerTube client fallback |
+| R-14 | Accidental GPL derivative work from studying BitChord | Low | High | Superseded in part by D-48: BitChord is an active implementation reference; factual GPL-3.0 licensing notices respected on extracted/shared modules |
 | R-15 | Remote/embedded engines complicate the router and session ownership | Medium | Medium | Hard-cut handoffs only; session release/restore rules; fakes + tests (PLAYBACK_TARGETS.md §9) |

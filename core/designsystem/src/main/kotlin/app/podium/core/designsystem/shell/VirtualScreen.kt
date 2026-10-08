@@ -13,11 +13,13 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -132,6 +134,8 @@ fun ScreenHeader(
     modifier: Modifier = Modifier,
     /** How deep in the hierarchy this title is: deeper titles arrive from the right, like the content. */
     depth: Int = 0,
+    /** Where the music is heard, or muted (D-52); null shows nothing. */
+    output: OutputIndicator? = null,
 ) {
     val colors = PodiumTheme.colors
     val type = PodiumTheme.type
@@ -170,15 +174,19 @@ fun ScreenHeader(
         ) { (shown, _) ->
             PodiumText(shown, type.title, colors.labelPrimary, Modifier.semantics { heading() }, maxLines = 1)
         }
-        if (playing != null) {
-            Row(Modifier.align(Alignment.CenterEnd).padding(end = Spacing.l)) {
-                Symbol(
-                    if (playing) PodiumSymbol.Play else PodiumSymbol.Pause,
-                    colors.labelSecondary,
-                    size = 16.dp,
-                    weight = 600,
-                    filled = true,
-                )
+        if (playing != null || output != null) {
+            Row(Modifier.align(Alignment.CenterEnd).padding(end = Spacing.l), verticalAlignment = Alignment.CenterVertically) {
+                output?.let { OutputIcon(it, colors.labelSecondary) }
+                if (output != null && playing != null) Spacer(Modifier.width(Spacing.xs))
+                if (playing != null) {
+                    Symbol(
+                        if (playing) PodiumSymbol.Play else PodiumSymbol.Pause,
+                        colors.labelSecondary,
+                        size = 16.dp,
+                        weight = 600,
+                        filled = true,
+                    )
+                }
             }
         }
     }

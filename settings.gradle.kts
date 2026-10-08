@@ -12,6 +12,7 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        maven { url = java.net.URI.create("https://jitpack.io") }
     }
 }
 
@@ -38,3 +39,7 @@ include(":feature:online")
 include(":feature:nowplaying")
 include(":feature:settings")
 include(":app")
+
+// Isolated POC tools
+include(":tools:newpipe-poc")
+

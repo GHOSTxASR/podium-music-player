@@ -33,7 +33,8 @@ data class OnlineServiceState(
     /** "Unofficial — may stop working" for a service reached without an official API (D-19). */
     val basisNote: String?,
     val account: ServiceAccount,
-    val app: ServiceApp,
+    /** The app that plays the service's songs; null when they play in Podium itself. */
+    val app: ServiceApp?,
     /** Bring Podium back to the front after handing a song to the app. */
     val stayInPodium: Boolean,
 )
@@ -104,7 +105,8 @@ fun OnlineServiceScreen(settings: OnlineServiceSettings) {
     val rows = ServiceRow.entries.filter {
         when (it) {
             ServiceRow.Account -> state.account != ServiceAccount.NotOffered
-            ServiceRow.Control -> state.app.installed
+            ServiceRow.App, ServiceRow.AfterChoosing -> state.app != null
+            ServiceRow.Control -> state.app?.installed == true
             ServiceRow.Basis -> state.basisNote != null
             else -> true
         }
@@ -141,8 +143,8 @@ fun OnlineServiceScreen(settings: OnlineServiceSettings) {
                 settings.setEnabled(!state.enabled)
             }
             ServiceRow.Account -> if (!state.enabled) haptics.reject() else accountMenu()
-            ServiceRow.App -> if (state.app.installed) settings.openApp() else settings.installApp()
-            ServiceRow.Control -> if (state.app.controlAllowed) haptics.reject() else settings.allowControl()
+            ServiceRow.App -> if (state.app?.installed == true) settings.openApp() else settings.installApp()
+            ServiceRow.Control -> if (state.app?.controlAllowed == true) haptics.reject() else settings.allowControl()
             ServiceRow.AfterChoosing -> {
                 haptics.confirm()
                 settings.setStayInPodium(!state.stayInPodium)
@@ -191,17 +193,17 @@ fun OnlineServiceScreen(settings: OnlineServiceSettings) {
                 },
                 enabled = state.enabled,
             )
-            ServiceRow.App -> MenuRow(state.app.name, focused, value = if (state.app.installed) "Installed" else "Install")
+            ServiceRow.App -> MenuRow(state.app?.name.orEmpty(), focused, value = if (state.app?.installed == true) "Installed" else "Install")
             ServiceRow.Control -> MenuRow(
                 "Media controls",
                 focused,
-                value = if (state.app.controlAllowed) "Allowed" else "Allow",
-                showChevron = !state.app.controlAllowed,
+                value = if (state.app?.controlAllowed == true) "Allowed" else "Allow",
+                showChevron = state.app?.controlAllowed != true,
             )
             ServiceRow.AfterChoosing -> MenuRow(
                 "After choosing a song",
                 focused,
-                value = if (state.stayInPodium) "Stay here" else "Show ${state.app.name}",
+                value = if (state.stayInPodium) "Stay here" else "Show ${state.app?.name.orEmpty()}",
                 showChevron = false,
             )
             ServiceRow.Basis -> MenuRow(state.basisNote.orEmpty(), focused, enabled = false, showChevron = false)

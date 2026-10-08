@@ -48,7 +48,6 @@ import app.podium.core.designsystem.component.MenuRow
 import app.podium.core.designsystem.component.PodiumTextField
 import app.podium.core.designsystem.shell.DeviceAppearance
 import app.podium.core.designsystem.shell.FinishPreset
-import app.podium.core.designsystem.shell.HueWalk
 import app.podium.core.designsystem.shell.formatHex
 import app.podium.core.designsystem.shell.palette
 import app.podium.core.designsystem.shell.parseHex
@@ -67,7 +66,7 @@ import app.podium.core.interaction.WheelContext
 import app.podium.core.interaction.rememberFocusListState
 import app.podium.core.interaction.rememberPodiumHaptics
 
-private enum class SettingsRow { Appearance, Keyboard, MusicFolders, OnlineSources, Autoplay, Recommendations, AvoidRepeats, OnlineLyrics, LyricsCredit, Haptics, Clicks, StartupSound }
+private enum class SettingsRow { Appearance, PodiumSpace, Keyboard, MusicFolders, OnlineSources, Autoplay, Recommendations, AvoidRepeats, OnlineLyrics, LyricsCredit, Haptics, Clicks, StartupSound }
 
 /**
  * Settings (D-26, D-32, D-35): the device's look, which folders hold its music, which online sources it
@@ -81,6 +80,8 @@ fun SettingsScreen(
     onAppearance: () -> Unit,
     onMusicFolders: () -> Unit,
     onOnlineService: () -> Unit,
+    /** Podium's space (D-54) without the two-finger pinch: personalize, stickers, help. */
+    onPodiumSpace: () -> Unit = {},
 ) {
     val appearance by repository.appearance.collectAsStateWithLifecycle()
     val startupSound by repository.startupSound.collectAsStateWithLifecycle()
@@ -101,6 +102,7 @@ fun SettingsScreen(
     val activate: (Int) -> Unit = { index ->
         when (rows[index]) {
             SettingsRow.Appearance -> onAppearance()
+            SettingsRow.PodiumSpace -> onPodiumSpace()
             SettingsRow.Keyboard -> {
                 haptics.confirm()
                 repository.setPodiumKeyboard(!podiumKeyboard)
@@ -155,6 +157,7 @@ fun SettingsScreen(
     ) { row, _, focused ->
         when (row) {
             SettingsRow.Appearance -> MenuRow("Appearance", focused, value = appearance.display.label)
+            SettingsRow.PodiumSpace -> MenuRow("Podium body", focused, value = "Stickers, help, turn off")
             // Typing: the Wheel becomes Podium's keyboard, or the phone's keyboard appears (D-45).
             SettingsRow.Keyboard -> MenuRow("Keyboard", focused, value = if (podiumKeyboard) "Podium" else "Phone", showChevron = false)
             SettingsRow.MusicFolders -> MenuRow(
@@ -311,8 +314,17 @@ fun CustomColorScreen(repository: DeviceSettingsRepository, target: ColorTarget 
     val focusManager = LocalFocusManager.current
     val appearance = remember { repository.appearance.value }
     val initial = if (target == ColorTarget.Finish) appearance.customArgb else appearance.screen.solidArgb
+    var text by remember { mutableStateOf(formatHex(initial).drop(1)) }
+    var invalid by remember { mutableStateOf(false) }
     var argb by remember { mutableIntStateOf(initial) }
-    var walk by remember { mutableStateOf(HueWalk.of(initial)) }
+    var hsv by remember { mutableStateOf(Hsv.of(initial)) }
+    var channel by remember { mutableStateOf(ColorChannel.HUE) }
+    fun choose(next: Hsv) {
+        hsv = next
+        argb = next.argb
+        text = formatHex(argb).drop(1)
+        invalid = false
+    }
     fun applied(color: Int): DeviceAppearance = when (target) {
         ColorTarget.Finish -> appearance.copy(preset = FinishPreset.CUSTOM, customArgb = color)
         ColorTarget.DisplayBackground -> appearance.copy(
@@ -322,8 +334,6 @@ fun CustomColorScreen(repository: DeviceSettingsRepository, target: ColorTarget 
             ),
         )
     }
-    var text by remember { mutableStateOf(formatHex(argb).drop(1)) }
-    var invalid by remember { mutableStateOf(false) }
 
     val miniature = LocalMiniature.current
     if (!miniature) {
@@ -340,16 +350,24 @@ fun CustomColorScreen(repository: DeviceSettingsRepository, target: ColorTarget 
     InputTargetEffect(WheelContext.VOLUME) { input ->
         when (input) {
             is PodiumInput.Rotate -> {
-                walk = walk.turned(input.detents * HUE_STEP_DEGREES)
-                argb = walk.argb
-                text = formatHex(argb).drop(1)
-                invalid = false
+                choose(hsv.turned(channel, input.detents))
                 true
             }
-            is PodiumInput.Press -> if (input.button == WheelButton.CENTER) {
-                apply()
-                true
-            } else false
+            is PodiumInput.Press -> when (input.button) {
+                WheelButton.CENTER -> {
+                    apply()
+                    true
+                }
+                // Skip forward and back choose the bar the Wheel turns.
+                WheelButton.NEXT, WheelButton.PREVIOUS -> {
+                    val all = ColorChannel.entries
+                    val step = if (input.button == WheelButton.NEXT) 1 else all.size - 1
+                    channel = all[(channel.ordinal + step) % all.size]
+                    haptics.step()
+                    true
+                }
+                else -> false
+            }
             else -> false
         }
     }
@@ -360,7 +378,7 @@ fun CustomColorScreen(repository: DeviceSettingsRepository, target: ColorTarget 
         Box(
             Modifier
                 .fillMaxWidth()
-                .height(88.dp)
+                .height(56.dp)
                 .background(Color(argb), RoundedCornerShape(16.dp))
                 .border(1.dp, colors.separator, RoundedCornerShape(16.dp))
                 .semantics { contentDescription = "Color preview ${formatHex(argb)}" },
@@ -386,7 +404,7 @@ fun CustomColorScreen(repository: DeviceSettingsRepository, target: ColorTarget 
                     invalid = cleaned.length == 6 && parsed == null
                     if (parsed != null) {
                         argb = parsed
-                        walk = HueWalk.of(parsed)
+                        hsv = Hsv.of(parsed)
                     }
                 },
                 textStyle = type.title.copy(color = colors.labelPrimary),
@@ -405,13 +423,19 @@ fun CustomColorScreen(repository: DeviceSettingsRepository, target: ColorTarget 
                 modifier = Modifier.weight(1f),
             )
         }
-        Spacer(Modifier.height(Spacing.s))
+        Spacer(Modifier.height(Spacing.m))
+        // The whole palette, and how much colour and light: the Wheel turns the marked bar.
+        for (c in ColorChannel.entries) {
+            ColorBar(c, hsv, chosen = c == channel, onChoose = { channel = c }, onSet = { fraction -> choose(hsv.with(c, fraction)) })
+            Spacer(Modifier.height(Spacing.s))
+        }
         PodiumText(
-            if (text.length < 6) "Use six hex digits, like 2F6F5E. Or turn the wheel to change the hue." else "Turn the wheel to change the hue.",
+            if (text.length in 1..5) "Use six hex digits, like 2F6F5E." else "Turn the Wheel to change ${channel.label.lowercase()}. Skip forward or back for the next bar.",
             type.footnote,
             colors.labelSecondary,
+            maxLines = 2,
         )
-        Spacer(Modifier.height(Spacing.l))
+        Spacer(Modifier.height(Spacing.m))
         Box(
             Modifier
                 .fillMaxWidth()
@@ -446,4 +470,3 @@ internal fun Swatch(color: Color?) {
     )
 }
 
-private const val HUE_STEP_DEGREES = 6.0

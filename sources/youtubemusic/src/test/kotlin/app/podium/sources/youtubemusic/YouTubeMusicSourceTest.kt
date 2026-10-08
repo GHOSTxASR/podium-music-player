@@ -5,28 +5,31 @@ import app.podium.core.common.PodiumError
 import app.podium.core.model.AlbumId
 import app.podium.core.model.ArtistId
 import app.podium.core.model.ArtworkRef
+import app.podium.core.model.AudioQuality
+import app.podium.core.model.Codec
 import app.podium.core.model.Explicitness
 import app.podium.core.model.MediaKind
 import app.podium.core.model.PlaybackRoute
 import app.podium.core.model.PlaylistId
+import app.podium.core.model.SourceId
+import app.podium.core.model.SourceRef
+import app.podium.core.model.Track
 import app.podium.core.model.TrackId
 import app.podium.sources.api.AuthState
 import app.podium.sources.api.Capability
-import app.podium.sources.api.CapabilityState
 import app.podium.sources.api.CapabilityStatus
 import app.podium.sources.api.FacetResolution
 import app.podium.sources.api.InMemoryCredentialStore
 import app.podium.sources.api.MissReason
+import app.podium.sources.api.PlayableMedia
 import app.podium.sources.api.PlaybackTarget
 import app.podium.sources.api.Purpose
 import app.podium.sources.api.QualityRequest
-import app.podium.sources.api.QueueOwnership
 import app.podium.sources.api.RemoteContext
 import app.podium.sources.api.SearchKind
 import app.podium.sources.api.SearchQuery
 import app.podium.sources.api.SignInResult
 import app.podium.sources.api.WebSignIn
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.runTest
 import java.io.IOException
 import java.net.UnknownHostException
@@ -61,10 +64,25 @@ class YouTubeMusicSourceTest {
 
     private val service = FakeService()
     private val credentials = InMemoryCredentialStore()
-    private val app = MutableStateFlow(CapabilityState.Available)
-    private val source by lazy { YouTubeMusicSource(credentials, service, { "TestBrowser/1.0" }, { "GB" }, app, { 1_700_000_000_000L }) }
+    private val source by lazy { YouTubeMusicSource(credentials, service, { "TestBrowser/1.0" }, { "GB" }, { 1_700_000_000_000L }) }
 
     private val session = "SID=abc; HSID=def; SAPISID=sapi-secret/123; __Secure-3PAPISID=sapi-secret/123"
+
+    @Test
+    fun `searching an artist's name lists their own albums and singles, not look-alikes`() = runTest {
+        service.answer = { s ->
+            when {
+                s.url.contains("/search?") && "SONGS-PARAMS" in s.body -> ok(Fixtures.searchSongs)
+                s.url.contains("/search?") -> ok(Fixtures.searchAll)
+                s.url.contains("/browse") && "UCnightowls" in s.body -> ok(Fixtures.artist)
+                else -> HttpResponse(404, ByteArray(0))
+            }
+        }
+        val results = (source.catalog.search(SearchQuery("Night  Owls")) as Outcome.Success).value
+        assertEquals(listOf("ytmusic|MPREb_dawn000", "ytmusic|MPREb_dusk000"), results.albums.map { it.id.value })
+        // The albums-only search wasn't needed.
+        assertTrue(service.sent.none { it.url.contains("/search?") && "ALBUMS-PARAMS" in it.body })
+    }
 
     @Test
     fun `search returns songs from the songs-only search and the other kinds from the main answer`() = runTest {
@@ -77,7 +95,7 @@ class YouTubeMusicSourceTest {
         }
         val results = (source.catalog.search(SearchQuery("night owls")) as Outcome.Success).value
         assertEquals(listOf("ytmusic|aaaaaaaaaa1", "ytmusic|aaaaaaaaaa2"), results.tracks.map { it.id.value })
-        assertTrue(results.tracks.all { it.kind == MediaKind.SONG && it.routes == setOf(PlaybackRoute.REMOTE) })
+        assertTrue(results.tracks.all { it.kind == MediaKind.SONG && it.routes == setOf(PlaybackRoute.DIRECT) })
         assertEquals(listOf("ytmusic|vvvvvvvvvv1"), results.videos.map { it.id.value })
         assertEquals(MediaKind.VIDEO, results.videos.single().kind)
         assertEquals(listOf("ytmusic|MPREb_dawn000"), results.albums.map { it.id.value })
@@ -125,9 +143,8 @@ class YouTubeMusicSourceTest {
         assertEquals(2021, first.releaseDate?.year)
         // An unplayable row says so.
         assertIs<app.podium.core.model.Availability.Unavailable>(album.tracks[1].availability)
-        // The album's playlist is now known, so the album can be handed over as a context.
-        val handoff = assertNotNull(source.playback!!.remoteContext(RemoteContext.Collection(PlaylistId("ytmusic|MPREb_dawn000")), first))
-        assertEquals("https://music.youtube.com/watch?v=aaaaaaaaaa1&list=OLAK5uy_dawn", handoff.providerItemRef)
+        // Songs play in Podium: nothing is handed to another app.
+        assertNull(source.playback!!.remoteContext(RemoteContext.Collection(PlaylistId("ytmusic|MPREb_dawn000")), first))
     }
 
     @Test
@@ -181,22 +198,59 @@ class YouTubeMusicSourceTest {
     }
 
     @Test
-    fun `every song plays in the official app, never as a stream`() = runTest {
+    fun `every song resolves directly as a stream, download is not permitted`() = runTest {
+        val fakeResolver = object : YouTubeMusicStreamResolver(
+            YouTubeMusicSource.SOURCE_ID,
+            YouTubeMusicDownloader({ "TestBrowser/1.0" })
+        ) {
+            override suspend fun resolve(track: Track, quality: QualityRequest): FacetResolution {
+                return FacetResolution.Resolved(
+                    PlaybackTarget.DirectStream(
+                        trackId = track.id,
+                        media = PlayableMedia(
+                            uri = "https://rr---sn.googlevideo.com/videoplayback?expire=1700021600",
+                            mimeType = "audio/webm",
+                            claimedQuality = AudioQuality(
+                                codec = Codec.OPUS,
+                                container = "webm",
+                                bitrateKbps = 160,
+                                sampleRateHz = 48_000,
+                                channels = 2,
+                            ),
+                            durationMs = 210_000L,
+                            expiresAtMillis = 1700021600000L,
+                            headers = emptyMap(),
+                            sourceId = YouTubeMusicSource.SOURCE_ID,
+                            cacheKey = "${track.id.value}|251",
+                        ),
+                    ),
+                )
+            }
+        }
+        val customSource = YouTubeMusicSource(
+            credentials,
+            service,
+            { "TestBrowser/1.0" },
+            { "GB" },
+            { 1_700_000_000_000L },
+            fakeResolver,
+        )
+
         val track = YouTubeMusicMapper(YouTubeMusicSource.SOURCE_ID).track(YtmSong("aaaaaaaaaa1", "First Light", emptyList()))
-        val resolved = source.playback!!.resolve(track, QualityRequest.Maximum, Purpose.PLAYBACK)
-        val target = assertIs<PlaybackTarget.RemoteProvider>(assertIs<FacetResolution.Resolved>(resolved).target)
-        assertEquals(YouTubeMusicSource.PROVIDER_APP_PACKAGE, target.controllerId)
-        assertEquals("https://music.youtube.com/watch?v=aaaaaaaaaa1", target.providerItemRef)
-        assertEquals(QueueOwnership.PROVIDER, target.policy.queueOwnership)
-        assertEquals(FacetResolution.Miss(MissReason.NOT_PERMITTED), source.playback!!.resolve(track, QualityRequest.Maximum, Purpose.DOWNLOAD))
-        assertFalse(source.capabilities.value.isUsable(Capability.DIRECT_STREAM))
-        assertEquals("aaaaaaaaaa1", source.playback!!.remoteTrackKey("aaaaaaaaaa1"))
-        assertNull(source.playback!!.remoteTrackKey("not a video id"))
-        // Without the official app, nothing resolves.
-        app.value = CapabilityState(CapabilityStatus.REQUIRES_PROVIDER_APP, "Install YouTube Music")
-        assertEquals(FacetResolution.Miss(MissReason.UNSUPPORTED_ROUTE), source.playback!!.resolve(track, QualityRequest.Maximum, Purpose.PLAYBACK))
-        // No request ever went to a player endpoint.
-        assertTrue(service.sent.none { "/player" in it.url })
+        val resolved = customSource.playback.resolve(track, QualityRequest.Maximum, Purpose.PLAYBACK)
+        val target = assertIs<PlaybackTarget.DirectStream>(assertIs<FacetResolution.Resolved>(resolved).target)
+        assertEquals("https://rr---sn.googlevideo.com/videoplayback?expire=1700021600", target.media.uri)
+        assertEquals("audio/webm", target.media.mimeType)
+        assertEquals(160, target.media.claimedQuality?.bitrateKbps)
+        assertEquals(Codec.OPUS, target.media.claimedQuality?.codec)
+        assertEquals(FacetResolution.Miss(MissReason.NOT_PERMITTED), customSource.playback.resolve(track, QualityRequest.Maximum, Purpose.DOWNLOAD))
+        assertTrue(customSource.capabilities.value.isUsable(Capability.DIRECT_STREAM))
+        assertFalse(customSource.capabilities.value.isUsable(Capability.REMOTE_PLAYBACK), "nothing is handed to another app")
+        assertNull(customSource.playback.remoteTrackKey("aaaaaaaaaa1"))
+        // A first extraction gets more time than a lookup before it counts as a failure.
+        assertEquals(YouTubeMusicSource.RESOLVE_TIMEOUT_MS, customSource.playback.resolveTimeoutMillis)
+        val foreignTrack = track.copy(id = TrackId.of(SourceId("local"), "123"), source = SourceRef(SourceId("local"), "123"))
+        assertEquals(FacetResolution.Miss(MissReason.NO_SOURCE), customSource.playback.resolve(foreignTrack, QualityRequest.Maximum, Purpose.PLAYBACK))
     }
 
     @Test

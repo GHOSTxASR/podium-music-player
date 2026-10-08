@@ -10,6 +10,7 @@ import app.podium.core.designsystem.theme.DisplayTheme
 import app.podium.core.designsystem.theme.TextContrast
 import app.podium.core.designsystem.theme.VirtualDisplay
 import app.podium.core.designsystem.type.DisplayFont
+import app.podium.core.designsystem.type.LyricsFont
 import app.podium.feature.settings.DeviceSettingsRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -41,6 +42,7 @@ class SharedPrefsDeviceSettings(context: Context) : DeviceSettingsRepository {
             ),
             screen = VirtualDisplay(
                 font = enumOf(prefs.getString(KEY_DISPLAY_FONT, null), DisplayFont.CLASSIC),
+                lyricsFont = enumOf(prefs.getString(KEY_LYRICS_FONT, null), LyricsFont.SAME_AS_DISPLAY),
                 background = enumOf(prefs.getString(KEY_DISPLAY_BACKGROUND, null), DisplayBackground.NONE),
                 solidArgb = prefs.getInt(KEY_DISPLAY_SOLID, VirtualDisplay.DEFAULT_SOLID) or OPAQUE,
                 imageUri = prefs.getString(KEY_DISPLAY_IMAGE, null),
@@ -138,6 +140,7 @@ class SharedPrefsDeviceSettings(context: Context) : DeviceSettingsRepository {
             }
             with(appearance.screen) {
                 putString(KEY_DISPLAY_FONT, font.name)
+                putString(KEY_LYRICS_FONT, lyricsFont.name)
                 putString(KEY_DISPLAY_BACKGROUND, background.name)
                 putInt(KEY_DISPLAY_SOLID, solidArgb)
                 // A reference only, never the picture itself (PODIUM_CUSTOMIZATION.md §7).
@@ -180,6 +183,7 @@ class SharedPrefsDeviceSettings(context: Context) : DeviceSettingsRepository {
         const val KEY_GLITTER_GLOW = "glitter_glow"
         const val KEY_GLITTER_TILT = "glitter_tilt"
         const val KEY_DISPLAY_FONT = "display_font"
+        const val KEY_LYRICS_FONT = "lyrics_font"
         const val KEY_DISPLAY_BACKGROUND = "display_background"
         const val KEY_DISPLAY_SOLID = "display_solid"
         const val KEY_DISPLAY_IMAGE = "display_image_uri"

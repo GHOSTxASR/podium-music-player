@@ -75,24 +75,38 @@ class LrclibProvider(
     override suspend fun lookup(request: LyricsRequest): ProviderAnswer {
         if (request.title.isBlank() || request.artist.isBlank()) return ProviderAnswer.NotFound
         val exact = fetch(getUrl(request)) { body -> listOf(json.decodeFromString(Record.serializer(), body)) }
+        // The service's own exact match is checked against Podium's rules too. Synced words win at
+        // once; an exact match with only plain words is kept while the search looks for the same
+        // song with times (often another upload of it has them).
+        var plainExact: Record? = null
         when (exact) {
             is Fetched.Records -> {
                 val record = exact.records.singleOrNull()
-                // The service's own exact match is checked against Podium's rules too.
-                if (record != null && LyricsMatcher.matches(request, record.candidate())) return answer(record)
+                if (record != null && LyricsMatcher.matches(request, record.candidate())) {
+                    if (record.instrumental || record.isSynced) return answer(record)
+                    plainExact = record
+                }
             }
             Fetched.NotFound -> Unit
             is Fetched.Problem -> return exact.answer
         }
         return when (val search = fetch(searchUrl(request)) { body -> json.decodeFromString(ListSerializer(Record.serializer()), body) }) {
-            is Fetched.Records -> LyricsMatcher.best(request, search.records.filter { it.hasWords || it.instrumental }) { it.candidate() }
-                ?.let(::answer) ?: ProviderAnswer.NotFound
-            Fetched.NotFound -> ProviderAnswer.NotFound
-            is Fetched.Problem -> search.answer
+            is Fetched.Records -> {
+                val usable = search.records.filter { it.hasWords || it.instrumental }
+                val best = LyricsMatcher.best(request, usable.filter { it.isSynced }) { it.candidate() }
+                    ?: plainExact
+                    ?: LyricsMatcher.best(request, usable) { it.candidate() }
+                best?.let(::answer) ?: ProviderAnswer.NotFound
+            }
+            Fetched.NotFound -> plainExact?.let(::answer) ?: ProviderAnswer.NotFound
+            is Fetched.Problem -> plainExact?.let(::answer) ?: search.answer
         }
     }
 
     private val Record.hasWords get() = !syncedLyrics.isNullOrBlank() || !plainLyrics.isNullOrBlank()
+
+    /** Times the service has for this record: its LRC, or its structured file. */
+    private val Record.isSynced get() = LrcParser.synced(syncedLyrics) != null || !lyricsfile.isNullOrBlank()
 
     private fun Record.candidate() = LyricsMatcher.Candidate(
         title = trackName.orEmpty(),

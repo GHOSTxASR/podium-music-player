@@ -19,6 +19,8 @@ import app.podium.core.designsystem.glass.GlassTier
 import app.podium.core.designsystem.glass.LocalGlassTier
 import app.podium.core.designsystem.type.DefaultType
 import app.podium.core.designsystem.type.LocalTypographyPreset
+import app.podium.core.designsystem.type.LocalLyricsTypeface
+import app.podium.core.designsystem.type.LyricsTypeface
 import app.podium.core.designsystem.type.PodiumType
 import app.podium.core.designsystem.type.TypographyPreset
 
@@ -40,6 +42,12 @@ data class PodiumMotion(val reduced: Boolean) {
     companion object {
         val Standard = CubicBezierEasing(0.2f, 0f, 0f, 1f)
         val EmphasizedDecelerate = CubicBezierEasing(0.05f, 0.7f, 0.1f, 1f)
+
+        /**
+         * Moves across the display (D-60): sets off gently, keeps going, and settles with a long,
+         * soft finish — the feel of iOS's and ColorOS's own transitions. One curve end to end.
+         */
+        val Smooth = CubicBezierEasing(0.3f, 0f, 0.1f, 1f)
     }
 }
 
@@ -116,6 +124,7 @@ fun PodiumTheme(
         LocalPodiumColors provides colors,
         LocalDisplaySurface provides surface,
         LocalTypographyPreset provides preset,
+        LocalLyricsTypeface provides LyricsTypeface.of(display.lyricsFont, preset),
         LocalPodiumType provides preset.type,
         LocalPodiumMotion provides PodiumMotion(reducedMotion),
         LocalGlassTier provides if (displayTheme.isIndustrial) GlassTier.Solid else glassTier,

@@ -30,7 +30,6 @@ import app.podium.sources.api.CapabilityAction
 import app.podium.sources.api.CapabilityState
 import app.podium.sources.api.CapabilityStatus
 import app.podium.sources.api.CatalogFacet
-import app.podium.sources.api.ControlsOwner
 import app.podium.sources.api.CredentialStore
 import app.podium.sources.api.DiscoveryFacet
 import app.podium.sources.api.FacetResolution
@@ -44,10 +43,7 @@ import app.podium.sources.api.PlaylistDetail
 import app.podium.sources.api.PlaylistSummary
 import app.podium.sources.api.Purpose
 import app.podium.sources.api.QualityRequest
-import app.podium.sources.api.QueueOwnership
 import app.podium.sources.api.RecommendationFacet
-import app.podium.sources.api.RemoteContext
-import app.podium.sources.api.RemotePolicy
 import app.podium.sources.api.SearchKind
 import app.podium.sources.api.SearchQuery
 import app.podium.sources.api.SearchResults
@@ -74,9 +70,9 @@ import java.util.concurrent.ConcurrentHashMap
  *   browsing endpoints — `Basis.UNOFFICIAL_API` (D-19, D-20 Y1 approved 2026-10-06).
  * - **Account** (liked songs, library, history, likes): the listener's own web session, signed in on
  *   Google's page, sealed at rest by the app's [CredentialStore] (§6).
- * - **Playback** is never Podium's: every song resolves to a [PlaybackTarget.RemoteProvider] for the
- *   official YouTube Music app, which plays it under the listener's own account (§8). No stream URL
- *   is ever requested.
+ * - **Playback** is Podium's own (D-48): a song resolves to a [PlaybackTarget.DirectStream] through
+ *   [YouTubeMusicStreamResolver], without the listener's session, and plays in Media3 like local
+ *   music — queue, background playback, notification and lock-screen controls included.
  *
  * Nothing outside this module knows any of that: the rest of Podium sees facets and capabilities.
  */
@@ -85,26 +81,30 @@ class YouTubeMusicSource internal constructor(
     transport: HttpTransport,
     userAgent: () -> String,
     region: () -> String,
-    private val providerApp: StateFlow<CapabilityState>,
     private val now: () -> Long,
+    streamResolver: YouTubeMusicStreamResolver? = null,
 ) : MusicSource {
 
     /**
      * [userAgent] is the device's own web browser user agent (the same one Google's sign-in page
-     * saw); [region] the listener's country; [providerApp] whether the official app is there to play
-     * songs (installed, and Podium may control it).
+     * saw); [region] the listener's country.
      */
     constructor(
         credentials: CredentialStore,
         userAgent: () -> String,
         region: () -> String = { "US" },
-        providerApp: StateFlow<CapabilityState> = MutableStateFlow(CapabilityState.Available),
-    ) : this(credentials, UrlConnectionTransport(), userAgent, region, providerApp, System::currentTimeMillis)
+    ) : this(credentials, UrlConnectionTransport(), userAgent, region, System::currentTimeMillis)
 
     private val id = SOURCE_ID
     private val mapper = YouTubeMusicMapper(id)
     private val client = YouTubeMusicClient(transport, userAgent, ::currentSession, now, region = region)
     private val cursors = CursorCache()
+    private val resolver = streamResolver ?: YouTubeMusicStreamResolver(
+        sourceId = id,
+        downloader = YouTubeMusicDownloader(userAgent),
+        region = region,
+        now = now,
+    )
 
     @Volatile private var session: WebSession? = credentials.read(id)?.get(KEY_SESSION)?.let(WebSession::parse)
 
@@ -130,21 +130,16 @@ class YouTubeMusicSource internal constructor(
         } ?: AuthState.SignedOut,
     )
 
-    private val _capabilities = MutableStateFlow(capabilitiesFor(_auth.value, providerApp.value))
+    private val _capabilities = MutableStateFlow(capabilitiesFor(_auth.value))
     override val capabilities: StateFlow<SourceCapabilities> = _capabilities.asStateFlow()
-
-    /** The app reports the official app's state; capabilities follow it. */
-    fun onProviderAppChanged() {
-        _capabilities.value = capabilitiesFor(_auth.value, providerApp.value)
-    }
 
     private fun setAuth(state: AuthState) {
         if (state != _auth.value) cursors.clear()
         _auth.value = state
-        _capabilities.value = capabilitiesFor(state, providerApp.value)
+        _capabilities.value = capabilitiesFor(state)
     }
 
-    private fun capabilitiesFor(state: AuthState, app: CapabilityState): SourceCapabilities {
+    private fun capabilitiesFor(state: AuthState): SourceCapabilities {
         val signedIn = state is AuthState.SignedIn
         val signIn = CapabilityState(
             CapabilityStatus.REQUIRES_SIGN_IN,
@@ -160,12 +155,11 @@ class YouTubeMusicSource internal constructor(
                 Capability.RECOMMENDATIONS to CapabilityState.Available,
                 Capability.ARTWORK to CapabilityState.Available,
                 Capability.AUTHENTICATION to CapabilityState.Available,
-                Capability.REMOTE_PLAYBACK to app,
                 Capability.ACCOUNT_LIBRARY to account(CapabilityState.Available),
                 Capability.LIKES to account(CapabilityState.Available),
                 Capability.PLAYLISTS to account(CapabilityState(CapabilityStatus.DEGRADED, "Playlists can be played, not edited")),
                 Capability.HISTORY to account(CapabilityState.Available),
-                Capability.DIRECT_STREAM to CapabilityState(CapabilityStatus.UNAVAILABLE, "Plays in the YouTube Music app"),
+                Capability.DIRECT_STREAM to CapabilityState.Available,
                 Capability.DOWNLOADS to CapabilityState(CapabilityStatus.UNAVAILABLE, "Not permitted"),
             ),
         )
@@ -249,9 +243,30 @@ class YouTubeMusicSource internal constructor(
             if (all is Outcome.Failure) return all
             val page = YouTubeMusicParser.search((all as Outcome.Success).value)
             lastFilters[text] = page.filters
-            // The songs list comes from the songs-only search, when the catalogue offers one.
-            val songs = if (SearchKind.TRACKS in query.kinds) songSearch(text).range(0, query.limit).let { it as? Outcome.Success }?.value else null
             val items = page.items
+            // Searching an artist's name means their albums: the albums-only search answers with
+            // anything titled like them (tributes, covers), so their own page's albums come first.
+            val artist = items.filterIsInstance<YtmArtist>().firstOrNull { sameName(it.name, text) }
+            // The songs and the albums come from the typed searches, when the catalogue offers them
+            // (the mixed answer holds only a few of each); all at once.
+            val (songs, typedAlbums, artistAlbums) = coroutineScope {
+                val songs = async { if (SearchKind.TRACKS in query.kinds) songSearch(text).range(0, query.limit).let { it as? Outcome.Success }?.value else null }
+                val wantAlbums = SearchKind.ALBUMS in query.kinds
+                val own = async {
+                    if (wantAlbums && artist != null) (artistPage(artist.browseId) as? Outcome.Success)?.value?.let { it.albums + it.singles } else null
+                }
+                val albums = async {
+                    if (wantAlbums && artist == null) albumSearch(text).range(0, ALBUM_RESULTS).let { it as? Outcome.Success }?.value else null
+                }
+                Triple(songs.await(), albums.await(), own.await())
+            }
+            // The mixed answer's albums are its best guesses: they lead, the typed search fills in.
+            val albums = if (!artistAlbums.isNullOrEmpty()) {
+                (artistAlbums + items.filterIsInstance<YtmAlbum>().filter { a -> a.artists.any { sameName(it.name, text) } })
+                    .distinctBy { it.browseId }.take(ALBUM_RESULTS)
+            } else {
+                (items.filterIsInstance<YtmAlbum>() + typedAlbums.orEmpty()).distinctBy { it.browseId }
+            }
             val playable = items.filterIsInstance<YtmSong>()
             return Outcome.Success(
                 SearchResults(
@@ -261,7 +276,7 @@ class YouTubeMusicSource internal constructor(
                     videos = if (SearchKind.VIDEOS in query.kinds) {
                         playable.filter { it.kind == MediaKind.MUSIC_VIDEO || it.kind == MediaKind.VIDEO }.map { mapper.track(it) }
                     } else emptyList(),
-                    albums = if (SearchKind.ALBUMS in query.kinds) items.filterIsInstance<YtmAlbum>().map(mapper::album) else emptyList(),
+                    albums = if (SearchKind.ALBUMS in query.kinds) albums.map(mapper::album) else emptyList(),
                     artists = if (SearchKind.ARTISTS in query.kinds) items.filterIsInstance<YtmArtist>().map(mapper::artist) else emptyList(),
                     playlists = if (SearchKind.PLAYLISTS in query.kinds) items.filterIsInstance<YtmPlaylist>().map(mapper::playlist) else emptyList(),
                 ),
@@ -323,13 +338,34 @@ class YouTubeMusicSource internal constructor(
         )
     }
 
-    /** An album's page: its summary and its songs (which inherit the album's artists and art). */
-    private val albumPlaylists = ConcurrentHashMap<String, String>()
+    /** The same name, whatever the case, spacing or punctuation ("the weeknd" is "The Weeknd"). */
+    private fun sameName(a: String, b: String): Boolean {
+        fun key(s: String) = s.lowercase().filter { it.isLetterOrDigit() }
+        return key(a).isNotEmpty() && key(a) == key(b)
+    }
 
+    private fun albumSearch(text: String): Cursor<YtmAlbum> = cursors.get("search:albums:$text") {
+        Cursor(
+            first = {
+                val params = SearchFilter.ALBUMS.fromAnswer(lastFilters[text].orEmpty()) ?: SearchFilter.ALBUMS.encoded()
+                client.search(text, params).watch().map { json ->
+                    val page = YouTubeMusicParser.search(json)
+                    YtmPage(page.items.filterIsInstance<YtmAlbum>(), page.continuation)
+                }
+            },
+            more = { token ->
+                client.search(text, continuation = token).watch().map { json ->
+                    YtmPage(YouTubeMusicParser.searchContinuation(json, YouTubeMusicParser.Hint.ALBUM).items.filterIsInstance<YtmAlbum>(), null)
+                }
+            },
+            key = { it.browseId },
+        )
+    }
+
+    /** An album's page: its summary and its songs (which inherit the album's artists and art). */
     private suspend fun albumPage(browseId: String): Outcome<Pair<AlbumSummary, List<Track>>> =
         client.browse(browseId).watch().flatMap { json ->
             val page = YouTubeMusicParser.collection(json, albumPage = true) ?: return@flatMap Outcome.Failure(PodiumError.NotFound("album"))
-            page.playlistId?.let { albumPlaylists[browseId] = it }
             val summary = AlbumSummary(
                 id = AlbumId.of(id, browseId),
                 title = page.title,
@@ -449,17 +485,24 @@ class YouTubeMusicSource internal constructor(
 
         override suspend fun artistRadio(artist: ArtistId, limit: Int, exclude: Set<TrackId>): Outcome<List<Track>> =
             artistPage(artist.value.substringAfter(TrackId.SEPARATOR)).flatMap { page ->
-                val list = page.radioPlaylistId ?: page.shufflePlaylistId ?: return@flatMap Outcome.Failure(PodiumError.Unsupported("artist radio"))
-                radio(null, list, limit, exclude)
+                val list = page.radioPlaylistId ?: page.shufflePlaylistId
+                val mix = list?.let { radio(page.radioVideoId, it, limit, exclude, page.radioParams.takeIf { _ -> list == page.radioPlaylistId }) }
+                if (mix is Outcome.Success && mix.value.isNotEmpty()) return@flatMap mix
+                // No mix on the page (or it came back empty): a radio from their best-known song.
+                val top = page.songs.firstOrNull { TrackId.of(id, it.videoId) !in exclude } ?: page.songs.firstOrNull()
+                    ?: return@flatMap mix ?: Outcome.Failure(PodiumError.Unsupported("artist radio"))
+                radio(top.videoId, "RDAMVM${top.videoId}", limit, exclude).map { found ->
+                    (listOf(mapper.track(top)) + found).distinctBy { it.id }.take(limit)
+                }
             }
 
         override suspend fun relatedArtists(artist: ArtistId, limit: Int): Outcome<List<ArtistSummary>> =
             artistPage(artist.value.substringAfter(TrackId.SEPARATOR)).map { page -> page.related.take(limit).map(mapper::artist) }
     }
 
-    private suspend fun radio(videoId: String?, playlistId: String, limit: Int, exclude: Set<TrackId>): Outcome<List<Track>> {
+    private suspend fun radio(videoId: String?, playlistId: String, limit: Int, exclude: Set<TrackId>, params: String? = null): Outcome<List<Track>> {
         val found = LinkedHashMap<String, YtmSong>()
-        var page = when (val r = client.next(videoId, playlistId).watch()) {
+        var page = when (val r = client.next(videoId, playlistId, params).watch()) {
             is Outcome.Failure -> return r
             is Outcome.Success -> YouTubeMusicParser.next(r.value)
         }
@@ -468,69 +511,29 @@ class YouTubeMusicSource internal constructor(
             page.items.filter { it.kind != MediaKind.EPISODE && TrackId.of(id, it.videoId) !in exclude }.forEach { found.putIfAbsent(it.videoId, it) }
             val token = page.continuation
             if (found.size >= limit || token == null || rounds >= RADIO_PAGES) break
-            page = (client.next(videoId, playlistId, continuation = token).watch() as? Outcome.Success)?.value
+            page = (client.next(videoId, playlistId, params, continuation = token).watch() as? Outcome.Success)?.value
                 ?.let(YouTubeMusicParser::nextContinuation) ?: break
             rounds++
         }
         return Outcome.Success(found.values.take(limit).map { mapper.track(it) })
     }
 
-    // --- Playback: always the official app ---------------------------------------------------------------
+    // --- Playback: in Podium, through Media3 -------------------------------------------------------------
 
     override val playback: PlaybackFacet = object : PlaybackFacet {
-        override val routes = setOf(PlaybackRoute.REMOTE)
+        override val routes = setOf(PlaybackRoute.DIRECT)
+
+        /** The first extraction of a run fetches and reads the player; give it room before it counts as a failure. */
+        override val resolveTimeoutMillis: Long = RESOLVE_TIMEOUT_MS
 
         override suspend fun resolve(track: Track, quality: QualityRequest, purpose: Purpose): FacetResolution {
             if (track.source.sourceId != id) return FacetResolution.Miss(MissReason.NO_SOURCE)
             if (purpose == Purpose.DOWNLOAD) return FacetResolution.Miss(MissReason.NOT_PERMITTED)
-            if (!providerApp.value.status.isUsable) return FacetResolution.Miss(MissReason.UNSUPPORTED_ROUTE)
-            return FacetResolution.Resolved(remote(track.id, watchUrl(track.source.providerKey, null)))
+            return resolver.resolve(track, quality)
         }
 
-        override fun remoteTrackKey(sessionMediaId: String): String? =
-            sessionMediaId.takeIf(YouTubeMusicMapper::isVideoId)
-
-        override fun remoteContext(context: RemoteContext, start: Track?): PlaybackTarget.RemoteProvider? {
-            val startId = start?.source?.providerKey?.takeIf { start.source.sourceId == id }
-            val trackId = start?.id ?: TrackId.of(id, "context")
-            return when (context) {
-                is RemoteContext.Collection -> {
-                    if (context.id.sourceId != id) return null
-                    val key = context.id.providerKey
-                    val list = if (YouTubeMusicMapper.isAlbumBrowseId(key)) albumPlaylists[key] ?: return null else key
-                    remote(trackId, if (startId != null) watchUrl(startId, list) else "${YouTubeMusicClient.ORIGIN}/playlist?list=$list")
-                }
-                is RemoteContext.Radio -> {
-                    val seed = context.seed.source.providerKey.takeIf { context.seed.source.sourceId == id } ?: return null
-                    remote(context.seed.id, watchUrl(seed, "RDAMVM$seed"))
-                }
-                is RemoteContext.ArtistRadio -> {
-                    val page = artistPages[context.artist.value.substringAfter(TrackId.SEPARATOR)]?.second ?: return null
-                    val list = page.radioPlaylistId ?: return null
-                    remote(trackId, "${YouTubeMusicClient.ORIGIN}/watch?list=$list")
-                }
-            }
-        }
+        override fun forgetStream(track: Track) = resolver.forget(track)
     }
-
-    private fun remote(trackId: TrackId, link: String) = PlaybackTarget.RemoteProvider(
-        trackId = trackId,
-        controllerId = PROVIDER_APP_PACKAGE,
-        providerItemRef = link,
-        policy = RemotePolicy(
-            queueOwnership = QueueOwnership.PROVIDER,
-            mixesWithOtherSources = false,
-            allowsTransitions = false,
-            systemControlsOwner = ControlsOwner.PROVIDER,
-            requiresProviderApp = PROVIDER_APP_PACKAGE,
-            // Playing in the background is the app's Premium feature; Podium never works around it.
-            requiresSubscription = false,
-            attribution = descriptor.attribution,
-        ),
-    )
-
-    private fun watchUrl(videoId: String, list: String?) =
-        "${YouTubeMusicClient.ORIGIN}/watch?v=$videoId" + (list?.let { "&list=$it" } ?: "")
 
     // --- Artwork -----------------------------------------------------------------------------------------------
 
@@ -598,12 +601,19 @@ class YouTubeMusicSource internal constructor(
         val SOURCE_ID = SourceId("ytmusic")
 
         /** The official app that plays YouTube Music for Podium (§8). */
+        /** The official app; Podium no longer hands songs to it, but the generic remote-playback wiring names it. */
         const val PROVIDER_APP_PACKAGE = "com.google.android.apps.youtube.music"
+
+        /** Room for a cold first extraction (fetching and reading the player) on a slow network. */
+        internal const val RESOLVE_TIMEOUT_MS = 20_000L
 
         private const val KEY_SESSION = "session"
         private const val KEY_NAME = "account-name"
         private const val KEY_ACCOUNT = "account-key"
         private const val HOME = "FEmusic_home"
+
+        /** Albums a search shows: a screenful, not the whole discography. */
+        private const val ALBUM_RESULTS = 12
         private const val LIKED_PLAYLIST = "LM"
         private const val HOME_PAGES = 2
         private const val RADIO_PAGES = 3

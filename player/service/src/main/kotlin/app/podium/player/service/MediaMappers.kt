@@ -116,6 +116,41 @@ class PodiumResolveException(val healthOutcome: HealthOutcome?, message: String)
 
 /** Maps player errors to Podium's classified errors — raw exception text never reaches the UI. */
 object PlaybackErrors {
+    /**
+     * The server refused the stream URL (401/403/404/410) — for a signed, expiring URL that means
+     * it went stale or was revoked, and the same source can be asked for a fresh one.
+     */
+    fun isRefusedStream(error: PlaybackException): Boolean {
+        var cause: Throwable? = error.cause
+        while (cause != null) {
+            if (cause is HttpDataSource.InvalidResponseCodeException) return cause.responseCode in REFUSED_CODES
+            cause = cause.cause
+        }
+        return false
+    }
+
+    private val REFUSED_CODES = setOf(401, 403, 404, 410)
+
+    /**
+     * The engine's own classification (published by kind, [PodiumExtras.LAST_ERROR]) back as an
+     * error, so the UI says what actually happened rather than what an error code suggests.
+     */
+    fun fromKind(kind: String?): PodiumError? = when (kind) {
+        "Offline" -> PodiumError.Offline
+        "Network" -> PodiumError.Network()
+        "Server" -> PodiumError.Server()
+        "AuthRequired" -> PodiumError.AuthRequired()
+        "AuthExpired" -> PodiumError.AuthExpired()
+        "RateLimited" -> PodiumError.RateLimited()
+        "NotFound" -> PodiumError.NotFound("stream")
+        "InvalidMedia" -> PodiumError.InvalidMedia()
+        "UnsupportedFormat" -> PodiumError.UnsupportedFormat()
+        "PolicyDisabled" -> PodiumError.PolicyDisabled()
+        "NotPlayable" -> PodiumError.NotPlayable("stream")
+        "Unexpected" -> PodiumError.Unexpected()
+        else -> null
+    }
+
     fun classify(error: PlaybackException): PodiumError {
         var cause: Throwable? = error.cause
         while (cause != null) {

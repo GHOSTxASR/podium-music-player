@@ -1,7 +1,8 @@
 # YouTube Music device acceptance
 
-Target: Nothing Phone (3a), its current Android release, the official YouTube Music app installed
-and signed in to the listener's account; Podium debug build `app.podium.debug` 0.1.0 (1).
+Target: Nothing Phone (3a), its current Android release; Podium debug build `app.podium.debug` 0.1.0 (1).
+
+> **Authoritative Direction Update (D-48):** This acceptance plan was originally drafted for the interim D-38 delegated playback model (controlling the external YouTube Music app). Under **D-48** ([`YOUTUBE_MUSIC_ARCHITECTURE.md`](../architecture/YOUTUBE_MUSIC_ARCHITECTURE.md)), online playback is direct in-app Media3 stream decoding (`PlaybackTarget.DirectStream(PlayableMedia)`). Catalogue and account verification steps (steps 1–6, 21–25) remain valid; playback steps (steps 7–20, 26–27) will verify direct in-app playback, background service audio, notification controls, and audio focus owned directly by Podium's `PlaybackService`. Offline/local music playback remains stable and verified.
 
 **Status (2026-10-06): NOT RUN.** The implementation was built and tested in a cloud container with
 no phone attached (no USB, no emulator acceleration). Every step below is open. Nothing in this
