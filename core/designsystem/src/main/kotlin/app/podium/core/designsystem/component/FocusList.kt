@@ -4,7 +4,6 @@ import android.os.Build
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.snap
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
@@ -113,6 +112,7 @@ fun <T> FocusList(
     val listState = state.listState
     val activate by rememberUpdatedState(onActivate)
     val longPress by rememberUpdatedState(onLongPress)
+    val severalFingers = LocalSeveralFingers.current
     val miniature = paper && LocalMiniature.current
 
     val currentFocusable by rememberUpdatedState(focusable)
@@ -130,13 +130,19 @@ fun <T> FocusList(
     val lensPosition = remember { Animatable(state.focusedIndex.toFloat()) }
     LaunchedEffect(state, paper) {
         var lastMoves = state.focusMoves
+        var lastMoveAt = 0L
         snapshotFlow { state.focusMoves to state.focusedIndex }.collectLatest { (moves, index) ->
             val target = index.toFloat()
             val byInput = moves != lastMoves
             lastMoves = moves
+            // FOCUS (D-65): one detent glides; detents arriving at spin speed lock the lens to the
+            // Wheel (critically damped, no overshoot), so a spin never trails and stops dead.
+            val now = System.nanoTime()
+            val spinning = byInput && now - lastMoveAt < SpinGapNanos
+            if (byInput) lastMoveAt = now
             if (byInput && !motion.reduced && kotlin.math.abs(lensPosition.value - target) <= MaxLensSlideRows) {
                 if (paper) state.centreLens(lensPosition.value)
-                lensPosition.animateTo(target, motion.focus()) { if (paper) state.centreLensNow(value) }
+                lensPosition.animateTo(target, if (spinning) motion.focusFast() else motion.focus()) { if (paper) state.centreLensNow(value) }
             } else {
                 lensPosition.snapTo(target)
                 if (paper) state.centreLens(target)
@@ -162,7 +168,8 @@ fun <T> FocusList(
             modifier = listModifier,
         ) {
             itemsIndexed(items, key = { _, item -> key(item) }) { index, item ->
-                val focused = index == state.focusedIndex
+                // Only the two rows whose light changes recompose on a detent.
+                val focused by remember(state, index) { derivedStateOf { index == state.focusedIndex } }
                 Box(
                     Modifier
                         .fillMaxWidth()
@@ -177,8 +184,11 @@ fun <T> FocusList(
                                     activate(index)
                                 },
                                 onLongPress = {
-                                    state.focus(index)
-                                    longPress(index)
+                                    // Not under a pinch that's still starting (D-65).
+                                    if (!severalFingers()) {
+                                        state.focus(index)
+                                        longPress(index)
+                                    }
                                 },
                             )
                         },
@@ -237,7 +247,9 @@ fun <T> FocusList(
             ) {
                 AnimatedContent(
                     targetState = focusedItem?.let(preview) ?: MenuPreview.None,
-                    transitionSpec = { fadeIn(tween(if (motion.reduced) 0 else 320)) togetherWith fadeOut(tween(if (motion.reduced) 0 else 200)) },
+                    // CONTENT (D-65): the preview belongs to the focus — it arrives while the lens
+                    // settles, and the one before gets out of the way rather than lingering.
+                    transitionSpec = { fadeIn(motion.contentIn()) togetherWith fadeOut(motion.contentOut()) },
                     label = "nextColumn",
                 ) { p -> PreviewPane(p, g.boxHeight) }
             }
@@ -369,6 +381,9 @@ private val PeekFeather = 22.dp
 
 /** A focus move further than this (a jump, not a step) moves the lens at once. */
 private const val MaxLensSlideRows = 3f
+
+/** Detents closer together than this are a spin (about 11 a second or faster). */
+private const val SpinGapNanos = 90_000_000L
 
 /**
  * The focus lens between [left] and [right]. Glass: a stained capsule (or the solid classic bar).

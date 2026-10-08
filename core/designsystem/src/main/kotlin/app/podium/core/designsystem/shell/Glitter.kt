@@ -314,8 +314,8 @@ fun Modifier.glitter(glitter: Glitter, light: Color, dark: Color, tiltOverride: 
     val pxPerDp = LocalDensity.current.density
     val tiles = remember(glitter.density, glitter.amount, glitter.size, pxPerDp) { GlitterTileCache.tiles(glitter, pxPerDp) }
     val reduced = PodiumTheme.motion.reduced
-    val sensed by rememberDeviceTilt(enabled = tiltOverride == null && glitter.tilt && !reduced && glitter.glow > 0f)
-    val tilt = tiltOverride ?: sensed
+    // Read only while drawing: a new tilt redraws the glitter, it never recomposes the body.
+    val sensed = rememberDeviceTilt(enabled = tiltOverride == null && glitter.tilt && !reduced && glitter.glow > 0f)
     val opacity = glitter.opacity.coerceIn(0f, 1f)
     val glow = glitter.glow.coerceIn(0f, 1f)
     return drawWithCache {
@@ -325,7 +325,7 @@ fun Modifier.glitter(glitter: Glitter, light: Color, dark: Color, tiltOverride: 
         onDrawWithContent {
             drawContent()
             drawRect(dull, alpha = opacity * 0.55f, colorFilter = dullFilter)
-            val t = tilt ?: Offset.Zero
+            val t = tiltOverride ?: sensed.value ?: Offset.Zero
             val centre = Offset(size.width * (0.5f + 0.45f * t.x), size.height * (0.42f + 0.35f * t.y))
             val radius = maxOf(size.width, size.height) * 0.7f
             var best = 0

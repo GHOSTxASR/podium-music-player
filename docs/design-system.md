@@ -268,7 +268,7 @@ Lint rule (custom detector in `build-logic`): `Modifier.blur`, `RenderEffect`, `
 ### 6.2 `FocusLens`
 - Shape: rounded rect r 14, inset 8dp horizontally from list edges, 3dp vertically within the row.
 - Material: `GlassFocus` (Full/Blur) / solid highlight (Solid, HC).
-- Motion: spring `focus` (stiffness 1400, damping 0.86); fast rotation (> 16 detents/s) uses `focusFast` (2400, 1.0). Boundary hit: scaleY 0.94 for 120ms + boundary haptic.
+- Motion: spring `focus` (stiffness 1400, damping 0.86); detents arriving < 90 ms apart (a spin) use `focusFast` (2400, 1.0) (D-65). Boundary hit: boundary haptic.
 - Non-glass indicators (always): focused row text weight 600 (animated with the same spring), trailing chevron `FILL=1`, semantics `selected`.
 - Keep-in-view (D-40): on the paper the focused row rides at the readable region's middle and the list's own scroll limits put the first and last rows flush with the region's edges; plain lists (menus) keep one neighbour in view each side, the first and last rows flush. On the paper the list follows the lens: it is scrolled from the lens's own `focus` animation frames (`FocusListState.centreLensNow`), so however fast the Wheel turns the two can't drift apart — mid-list the lens and its indicator hold still at the middle while the rows move, and only an end of the list (where the scroll stops) lets the lens travel. A move of more than three rows jumps lens and list together. Plain lists glide with their own short scroll; jumps (> 1.5 rows) are immediate.
 - The lens is glued to the rows: it slides between rows in content space (a fractional row position), so it moves with the list while the list scrolls, and it is clipped to the readable region. It never clamps to a fixed band.
@@ -336,7 +336,7 @@ Glyph set (v1): play, pause, skip_next, skip_previous, fast_forward, fast_rewind
 ---
 
 ## 8. Motion (summary — full spec in `animation-system.md`)
-Springs: `focus` 1400/0.86 · `focusFast` 2400/1.0 · `press` 2000/0.70 · `navigate` 380/0.92 · `sheet` 300/0.88 · `flow` 260/0.82. Fades: fast 120ms, standard 220ms, atmosphere 900ms. Reduced motion: cross-fades ≤ 150–200ms, no 3D, lens jumps.
+The motion language and its tokens are in animation-system.md §2 (D-65): TACTILE `pressIn` 6000/0.9 · `pressOut` 1500/0.6 · `pop` 1200/0.82; MECHANICAL `detent` 1800/0.75; FOCUS `focus` 1400/0.86 · `focusFast` 2400/1.0; SPATIAL 420 ms on cubic-bezier(0.2, 0.7, 0.2, 1); CONTENT 160/90 ms; DRAMATIC 220/0.85; PERSONAL `settleIn` 200/0.86 · `settleBack` 300/1.0 · `rearrange` 220/0.88. Fades: fast 120ms, standard 220ms, atmosphere 900ms. Reduced motion: cross-fades ≤ 150–200ms, no 3D, lens jumps.
 
 ---
 

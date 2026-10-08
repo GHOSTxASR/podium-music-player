@@ -80,6 +80,13 @@ val LocalPaperPeek = staticCompositionLocalOf<(@Composable (Modifier) -> Unit)?>
  */
 val LocalPaperDecor = staticCompositionLocalOf<@Composable () -> Modifier> { { Modifier } }
 
+/**
+ * The navigation's own enter and exit for the column being composed (null outside a move, in
+ * miniatures and previews). A screen uses it to choreograph its anchor inside the move — Now
+ * Playing's cover settling into place (D-65) — never to delay what the listener can operate.
+ */
+val LocalColumnTransition = staticCompositionLocalOf<AnimatedVisibilityScope?> { null }
+
 /** Horizontal padding rows use; paper lists narrow it because the peek strip already gives air. */
 val LocalRowPadding = staticCompositionLocalOf { 20.dp }
 
@@ -185,9 +192,20 @@ class PaperGeometry(val width: Dp, val height: Dp, val padTop: Dp, val padBottom
     val columnLeft: Dp = apexX - Paper.ArcGap - columnWidth
     val boxHeight: Dp = readable * 0.34f
     val boxTop: Dp = centreY - boxHeight / 2
-    /** Scale at which a whole screen fits a box's height: the next column growing out of its box. */
+    /** Scale at which a whole screen fits a box's height. */
     val miniScale: Float = boxHeight / height
     val rightBoxX: Dp = apexX + 12.dp
+
+    /**
+     * The right box's tile as it is drawn — a step away ([Paper.DistantScale], about the box's
+     * middle) — and a whole column at the scale that fills exactly that frame (D-66). A column
+     * growing out of the box or sinking into it starts or ends in this frame, its left edge on the
+     * tile's and centred on the box's middle, so the tile hands over to the column (and back)
+     * without a jump in size or place: the box shows the column's artwork, not the column, so the
+     * frame is what can match.
+     */
+    val tileScale: Float = miniScale * Paper.DistantScale
+    val tileLeft: Dp = rightBoxX + boxHeight * (1f - Paper.DistantScale) / 2
 
     /** The previous column's box mirrors the next one: the same square, running off the left edge. */
     val leftBoxRight: Dp = columnLeft - 10.dp
@@ -275,7 +293,7 @@ internal fun Modifier.distant(): Modifier {
 fun Modifier.softArrival(scope: AnimatedVisibilityScope?, delayMillis: Int, durationMillis: Int): Modifier {
     if (scope == null || PodiumTheme.motion.reduced || Build.VERSION.SDK_INT < 31) return this
     val soft by scope.transition.animateFloat(
-        transitionSpec = { tween(durationMillis, delayMillis, PodiumMotion.Smooth) },
+        transitionSpec = { tween(durationMillis, delayMillis, PodiumMotion.Standard) },
         label = "softArrival",
     ) { state -> if (state == EnterExitState.Visible) 0f else 1f }
     return graphicsLayer {
@@ -299,7 +317,7 @@ private val SoftArrivalRadius = 8.dp
 fun Modifier.softDeparture(scope: AnimatedVisibilityScope?, delayMillis: Int, durationMillis: Int): Modifier {
     if (scope == null || PodiumTheme.motion.reduced || Build.VERSION.SDK_INT < 31) return this
     val soft by scope.transition.animateFloat(
-        transitionSpec = { tween(durationMillis, delayMillis, PodiumMotion.Smooth) },
+        transitionSpec = { tween(durationMillis, delayMillis, PodiumMotion.Standard) },
         label = "softDeparture",
     ) { state -> if (state == EnterExitState.PostExit) 1f else 0f }
     return graphicsLayer {

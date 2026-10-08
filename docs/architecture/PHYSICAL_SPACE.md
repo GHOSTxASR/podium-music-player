@@ -53,13 +53,21 @@ restart is always the flat Podium.
 ## 4. Gestures
 
 - One finger: everything as before (Wheel, lists, buttons).
-- Two fingers pinching *in* on the object (closer by a quarter and 40 dp) enter the space, the
-  object following the fingers; release settles in or springs back. Recognised in the
-  `PointerEventPass.Initial` pass at the top: once it's a pinch the changes are consumed, and the
-  Wheel stops tracking a finger whose change an ancestor consumed (the one change inside the
-  existing controls). Two fingers resting or turning on the Wheel are never a pinch.
-- In the space: a tap on the small Podium brings it close; pinching *out*, Back, "Return to Podium"
-  or a tap on the close Podium return it. A tap on the small page brings it back large.
+- Two fingers pinching *in* on the object (closer by a fifth and 40 dp) take it into the space.
+  Recognised in the `PointerEventPass.Initial` pass at the top: once it's a pinch the changes are
+  consumed, and the Wheel stops tracking a finger whose change an ancestor consumed (the one change
+  inside the existing controls). Two fingers resting or turning on the Wheel are never a pinch.
+- The object follows the fingers (D-65): measured from the moment the pinch is recognised and from
+  the depth the object already has, so it never lurches to catch up; closing by half the fingers'
+  distance takes it all the way in, and reversing the fingers reverses it. On release it goes where
+  it was heading — depth + velocity × 0.12 s past 0.3, in — on a spring that keeps the fingers'
+  speed (`settleIn`, `settleBack`); a quick short flick goes in, fingers that stopped carry no speed.
+- In the space, two fingers spreading on the object bring it back the same way (all the way at 60 %
+  wider; it stays out unless heading below 0.7). A tap on the small Podium brings it close; Back,
+  "Return to Podium" or a tap on the close Podium return it. A tap on the small page brings it back
+  large.
+- While two fingers are down, holds don't fire (`LocalSeveralFingers`): a slow pinch starting on a
+  row or on the Wheel can't open a menu, go Home or switch the display off first.
 - Sticker editing: one finger moves the chosen sticker, two scale and rotate it
   (`detectTransformGestures` in the object's own coordinates).
 - Accessible path: Settings ▸ Podium space opens the space without the gesture.
@@ -69,8 +77,11 @@ restart is always the flat Podium.
 Compose only — `graphicsLayer` (scale, `rotationX/Y` with a long camera distance, `shape`/`clip`),
 `Canvas` for the slab edge, the shadow and the stars. No 3D engine: the object is a slab seen
 almost face on, which a perspective layer plus a drawn edge renders convincingly at a fraction of
-the cost. Stars: ~40 procedural points and four glints, slow drift and twinkle, drawn in one Canvas
-whose only per-frame work is reading the clock; nothing is drawn while flat.
+the cost. Stars: ~40 procedural points and four glints, slow drift and twinkle, drawn in one layer
+whose only per-frame work is reading the clock (brush and glint shape built once); nearer specks
+gather in a touch as the object recedes and slide the other way as it comes close — depth, not
+decoration (D-65). Still under reduced motion; nothing is drawn while flat. The settings page
+swings in from a 9° turn under the object's own camera as it lands, tied to depth like the object.
 
 ## 6. Stickers
 
@@ -84,7 +95,9 @@ whose only per-frame work is reading the clock; nothing is drawn while flat.
   another subject; Add and Erase brushes with undo and redo) ▸ border (off, black, white) and
   thickness, previewed on neutral grey ▸ save ▸ stuck on and arranged at once. A tile in the gallery
   opens one sticker: stick on another, arrange, take it off, delete (a second tap confirms).
-  Arranging: one finger moves, two resize and turn; Take it off; Done.
+  Arranging: one finger moves, two resize and turn; Take it off; Done. The gesture writes a live
+  placement read only while drawing — the sticker is under the finger on the frame it moves — and
+  the store once, when the fingers lift; a sticker taken hold of lifts a hair (D-65).
 - **Cut-out**: MediaPipe MagicTouch (Apache-2.0) on the bare LiteRT runtime, on the phone
   (third_party/MODELS.md).
 - **Border**: dilating the cut-out's alpha by the thickness (a disc kernel) and filling it with the

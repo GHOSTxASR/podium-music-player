@@ -1,5 +1,7 @@
 package app.podium.feature.library
 
+import androidx.compose.runtime.derivedStateOf
+import kotlinx.coroutines.CoroutineStart
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.spring
@@ -7,7 +9,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -32,10 +33,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -371,35 +376,45 @@ fun CoverFlowScreen(repository: LibraryRepository, onOpen: (AlbumId) -> Unit) {
         val cover = minOf(maxWidth * 0.5f, maxHeight * 0.58f)
         val stageY = (maxHeight - cover) * 0.38f
         val spacingPx = cover.value * 0.62f
+        // Which covers exist changes only when the middle one does; where each one is, how far it's
+        // turned and how dim, are read while drawing — the stage never recomposes per frame (D-65).
+        val middle by remember { derivedStateOf { position.value.roundToInt() } }
+        val pxPerDp = LocalDensity.current.density
         Box(
             Modifier
                 .fillMaxWidth()
                 .height(cover)
                 .offset(y = stageY)
-                .pointerInput(albums.size) {
-                    detectHorizontalDragGestures(
-                        onDragEnd = { focus.focus(position.value.roundToInt().coerceIn(0, albums.lastIndex)) },
-                    ) { change, dx ->
-                        change.consume()
-                        scope.launch { position.snapTo((position.value - dx / (spacingPx * density)).coerceIn(0f, albums.lastIndex.toFloat())) }
-                    }
-                },
+                .draggable(
+                    state = rememberDraggableState { dx ->
+                        val next = (position.value - dx / (spacingPx * pxPerDp)).coerceIn(0f, albums.lastIndex.toFloat())
+                        scope.launch(start = CoroutineStart.UNDISPATCHED) { position.snapTo(next) }
+                    },
+                    orientation = Orientation.Horizontal,
+                    onDragStopped = { pixelsPerSecond ->
+                        // A flick carries on to the cover it was heading for, keeping its speed; a
+                        // finger that stopped before lifting settles on the nearest.
+                        val speed = -pixelsPerSecond / (spacingPx * pxPerDp)
+                        val target = (position.value + speed * FLING_SECONDS).roundToInt().coerceIn(0, albums.lastIndex)
+                        scope.launch { position.animateTo(target.toFloat(), spring(dampingRatio = 0.92f, stiffness = 380f), initialVelocity = speed) }
+                        focus.focus(target)
+                    },
+                ),
         ) {
-            val centre = position.value
-            val window = (centre.roundToInt() - 4)..(centre.roundToInt() + 4)
+            val window = (middle - 4)..(middle + 4)
             for (i in window) {
                 val album = albums.getOrNull(i) ?: continue
-                val d = i - centre
-                val near = d.coerceIn(-1f, 1f)
-                // Within one step the cover travels to its slot; beyond, neighbours stack closer.
-                val x = if (abs(d) <= 1f) d * cover.value * 0.62f else sign(d) * (cover.value * 0.62f + (abs(d) - 1f) * cover.value * 0.24f)
                 Box(
                     Modifier
-                        .zIndex(-abs(d))
+                        .zIndex(-abs(i - middle).toFloat())
                         .align(Alignment.Center)
-                        .offset(x = x.dp)
                         .size(cover)
                         .graphicsLayer {
+                            val d = i - position.value
+                            val near = d.coerceIn(-1f, 1f)
+                            // Within one step the cover travels to its slot; beyond, neighbours stack closer.
+                            val x = if (abs(d) <= 1f) d * spacingPx else sign(d) * (spacingPx + (abs(d) - 1f) * cover.value * 0.24f)
+                            translationX = x * density
                             rotationY = -near * 58f
                             cameraDistance = 14f * density
                             val s = 1f - 0.16f * abs(near)
@@ -432,3 +447,6 @@ fun CoverFlowScreen(repository: LibraryRepository, onOpen: (AlbumId) -> Unit) {
         }
     }
 }
+
+/** How far ahead a Cover Flow flick looks along its speed. */
+private const val FLING_SECONDS = 0.15f

@@ -13,6 +13,7 @@ import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -35,6 +36,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import app.podium.core.designsystem.component.KeyTravel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlin.math.abs
@@ -46,7 +48,30 @@ import kotlin.math.sin
 @Stable
 class StickerEditorState {
     var selected: String? by mutableStateOf(null)
+
+    /**
+     * PERSONAL (D-65): the placement under the fingers right now. The gesture writes it on the frame
+     * the fingers move and the layers read it only while drawing, so the sticker is where the finger
+     * is with no recomposition between them; the store is written once, when the fingers lift, and
+     * this is let go once the store shows the same.
+     */
+    var live: StickerPlacement? by mutableStateOf(null)
+
+    /** The sticker taken hold of lifts a hair off the surface, and settles back when let go (TACTILE). */
+    internal val lift = KeyTravel(LiftScale)
+
+    /** [placement] as it is now: the live one while it's being moved. */
+    fun current(placement: StickerPlacement): StickerPlacement = live?.takeIf { it.id == placement.id } ?: placement
+
+    /** Its scale as drawn: lifted while held. */
+    internal fun drawn(placement: StickerPlacement): StickerPlacement {
+        val p = current(placement)
+        return if (p.id == selected && lift.value != 1f) p.copy(scale = p.scale * lift.value) else p
+    }
 }
+
+/** How much a sticker grows as it's lifted by the finger (a hair, not a pop). */
+private const val LiftScale = 1.035f
 
 /**
  * The listener's stickers, stuck on the Podium (D-55): drawn in the object's own coordinates so
@@ -54,14 +79,22 @@ class StickerEditorState {
  * beneath work as ever. Its own layer: the screen changing never redraws the stickers.
  */
 @Composable
-fun StickerLayer(store: StickerStore, modifier: Modifier = Modifier) {
+fun StickerLayer(store: StickerStore, modifier: Modifier = Modifier, editor: StickerEditorState? = null) {
     val placements by store.placements.collectAsStateWithLifecycle()
+    // The store has caught up with the gesture: draw from it again.
+    if (editor != null) {
+        LaunchedEffect(placements) {
+            val live = editor.live
+            if (live != null && placements.any { it == live }) editor.live = null
+        }
+    }
     if (placements.isEmpty()) return
     val images = rememberStickerImages(store, placements.mapTo(HashSet()) { it.stickerId })
+    val ordered = remember(placements) { placements.sortedBy { it.z } }
     Canvas(modifier.fillMaxSize().graphicsLayer()) {
-        for (p in placements.sortedBy { it.z }) {
+        for (p in ordered) {
             val image = images[p.stickerId] ?: continue
-            drawSticker(image, p)
+            drawSticker(image, editor?.drawn(p) ?: p)
         }
     }
 }
@@ -77,6 +110,7 @@ fun StickerEditor(store: StickerStore, editor: StickerEditorState, modifier: Mod
     val images = rememberStickerImages(store, placements.mapTo(HashSet()) { it.stickerId })
     val latestImages by rememberUpdatedState(images)
     val minTouch = with(androidx.compose.ui.platform.LocalDensity.current) { 48.dp.toPx() }
+    val scope = rememberCoroutineScope()
     Canvas(
         modifier
             .fillMaxSize()
@@ -85,52 +119,53 @@ fun StickerEditor(store: StickerStore, editor: StickerEditorState, modifier: Mod
                 awaitEachGesture {
                     val down = awaitFirstDown()
                     val box = Size(size.width.toFloat(), size.height.toFloat())
-                    val hit = hitTest(store.placements.value, latestImages, down.position, box, minTouch)
+                    val placed = store.placements.value.map(editor::current)
+                    val hit = hitTest(placed, latestImages, down.position, box, minTouch)
                     if (hit != null) {
                         editor.selected = hit.id
                         store.raise(hit.id)
                     }
                     var targetId = hit?.id ?: editor.selected
+                    // Taken hold of: it lifts as the finger lands.
+                    if (targetId != null) editor.lift.press(scope)
                     var travelled = 0f
-                    var transformed = false
+                    var moving: StickerPlacement? = targetId?.let { id -> placed.firstOrNull { it.id == id } }
                     while (true) {
                         val event = awaitPointerEvent()
                         val pressed = event.changes.count { it.pressed }
                         if (pressed == 0) break
                         travelled += event.changes.sumOf { abs(it.positionChange().x.toDouble()) + abs(it.positionChange().y.toDouble()) }.toFloat()
                         // One finger moves only the sticker it touched; two fingers work on the chosen one.
-                        val id = targetId
-                        if (id != null && (hit != null || pressed >= 2)) {
-                            val current = store.placements.value.firstOrNull { it.id == id }
-                            if (current == null) {
-                                targetId = null
-                            } else {
-                                val pan = event.calculatePan()
-                                val zoom = event.calculateZoom()
-                                val turn = event.calculateRotation()
-                                store.update(
-                                    current.copy(
-                                        x = current.x + pan.x / box.width,
-                                        y = current.y + pan.y / box.height,
-                                        scale = current.scale * zoom,
-                                        rotation = current.rotation + turn,
-                                    ),
-                                    persistNow = false,
-                                )
-                                transformed = true
-                            }
+                        val current = moving
+                        if (current != null && (hit != null || pressed >= 2)) {
+                            val pan = event.calculatePan()
+                            val zoom = event.calculateZoom()
+                            val turn = event.calculateRotation()
+                            val next = StickerStore.clamp(
+                                current.copy(
+                                    x = current.x + pan.x / box.width,
+                                    y = current.y + pan.y / box.height,
+                                    scale = current.scale * zoom,
+                                    rotation = current.rotation + turn,
+                                ),
+                            )
+                            moving = next
+                            // Drawn this frame; the store hears about it when the fingers lift.
+                            editor.live = next
                         }
                         event.changes.forEach { it.consume() }
                     }
-                    if (transformed) {
-                        targetId?.let { id -> store.placements.value.firstOrNull { it.id == id }?.let(store::update) }
+                    editor.lift.release(scope)
+                    val moved = editor.live
+                    if (moved != null && moved.id == targetId) {
+                        if (store.placements.value.none { it.id == moved.id }) editor.live = null else store.update(moved)
                     } else if (hit == null && travelled < viewConfiguration.touchSlop) {
                         editor.selected = null
                     }
                 }
             },
     ) {
-        val selected = editor.selected?.let { id -> placements.firstOrNull { it.id == id } }
+        val selected = editor.selected?.let { id -> placements.firstOrNull { it.id == id } }?.let(editor::drawn)
         if (selected != null) {
             val image = images[selected.stickerId]
             if (image != null) drawSelection(image, selected)

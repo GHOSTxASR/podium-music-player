@@ -44,6 +44,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import app.podium.core.designsystem.component.pressFeedback
 import app.podium.core.designsystem.symbol.PodiumSymbol
 import app.podium.core.designsystem.symbol.Symbol
 import app.podium.core.designsystem.theme.DisplaySurface
@@ -146,6 +147,7 @@ fun ScreenHeader(
                     .align(Alignment.CenterStart)
                     .padding(start = Spacing.xs)
                     .size(ScreenHeaderHeight)
+                    .pressFeedback(0.86f)
                     .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onBack)
                     .semantics {
                         role = Role.Button
@@ -164,9 +166,10 @@ fun ScreenHeader(
                 if (motion.reduced) {
                     fadeIn(motion.fadeFast()) togetherWith fadeOut(motion.fadeFast())
                 } else {
+                    // SPATIAL (D-65): the title travels on its column's own curve, so the two never drift apart.
                     val dir = if (targetState.second >= initialState.second) 1 else -1
-                    (slideInHorizontally(motion.navigateOffset()) { dir * it / 2 } + fadeIn(motion.fadeStandard())) togetherWith
-                        (slideOutHorizontally(motion.navigateOffset()) { -dir * it / 2 } + fadeOut(motion.fadeFast()))
+                    (slideInHorizontally(motion.spatial()) { dir * it / 2 } + fadeIn(motion.fadeStandard())) togetherWith
+                        (slideOutHorizontally(motion.spatial()) { -dir * it / 2 } + fadeOut(motion.fadeFast()))
                 }
             },
             modifier = Modifier.align(Alignment.Center).padding(horizontal = 56.dp),

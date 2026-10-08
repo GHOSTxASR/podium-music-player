@@ -141,3 +141,32 @@ about again; without access Home leads with "Allow music access" and the row hol
 | 6.4 | Press "Allow music access"; deny again | the question showed again; after this Android won't ask any more |
 | 6.5 | Press "Allow music access" | Podium's page in the system settings opens; Permissions ▸ Music and audio ▸ Allow; back to Podium: the library fills |
 | 6.6 | Revoke access in system settings, return | the library hides the phone's songs and the row comes back |
+
+## 7. Motion and responsiveness (D-65 – D-67)
+
+**Device run (2026-10-08, Nothing Phone (3a), Carbon, glitter on, test-tone library):** done for
+7.1–7.10 except where noted. `MotionProbe` (androidTest) makes real two-finger touches, which
+`adb shell input` can't. Install the app and the probe, then (`am instrument` keeps the data;
+`connectedAndroidTest` would uninstall the app):
+
+```bash
+adb shell am instrument -w -e class app.podium.MotionProbe -e record true app.podium.debug.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+It records only once Podium is in front, puts screenshots in `Android/data/app.podium.debug/files/probe/`
+and leaves the app closed (instrumentation ends its process): open Podium again afterwards.
+
+| # | Step | Expect | 2026-10-08 |
+|---|---|---|---|
+| 7.1 | Press and hold Center, then a quarter of the Wheel | the part goes down on touch, comes up with a faint settle on release | ✓ (recorded: down within ~45 ms) |
+| 7.2 | Turn the Wheel slowly, then fast, stop dead, reverse (matte finish) | the band turns under the finger; on lift it clicks into a detent; the lens glides a step, locks on in a spin, stops with the Wheel | ✓ band (screenshots mid-turn and after); spins scripted and timed, the lens not inspected frame by frame |
+| 7.3 | Center on Music, Menu back, several times quickly | the move starts on release (no pause), arcs, settles softly; no queue of moves | ✓ 56 ms / 33 ms to first motion |
+| 7.4 | Back from Music | the column shrinks into the right tile's frame and the cover melts in over it (D-66) | ✓ frame by frame |
+| 7.5 | Forward into Music | the column lands where the left glimpse shows it (D-61, D-63) | ✓ within a pixel or two |
+| 7.6 | Home ▸ Now Playing | the cover settles into place and lean as the screen arrives; controls live at once | ✓ |
+| 7.7 | Hold Center on a song | the menu pops in at once; Menu dismisses it instantly | ✓ |
+| 7.8 | Pinch in slowly / quickly / reverse / let go halfway / flick short | the object follows from where it is, no lurch; reverses with the fingers; let go still, short of a third: springs back; a quick short flick goes in | ✓ by `MotionProbe` |
+| 7.9 | Spread on the object in the space | it comes forward with the fingers and settles flat | ✓ by `MotionProbe` |
+| 7.10 | A slow pinch starting on a row (or the Wheel's ⏯) | no menu, no focus change, no power-off before the pinch takes over | ✓ by `MotionProbe` |
+| 7.11 | Arrange a sticker: drag fast, change direction, resize and turn | the sticker stays under the finger, lifts a hair while held | not driven on the phone (Robolectric `StickerEditorTest`) |
+| 7.12 | Settings ▸ Accessibility ▸ Remove animations, while Podium runs | moves become cross-fades at once; the space's stars stand still; the charging light stays lit | not run (it changes a system setting) |

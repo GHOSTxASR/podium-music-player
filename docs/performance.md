@@ -52,3 +52,22 @@
 - Library sync: periodic 12 h on unmetered + charging (manual "Sync now" anytime).
 - Audio offload for lossy, screen-off playback when no processing is active.
 - Glass rendering only while visible; no off-screen animations.
+
+## 6. Measured on the Nothing Phone (3a), 2026-10-08 (D-65, D-67)
+120 Hz display (8.3 ms a frame). Same scripted input each time, Carbon finish with glitter at full glow, the phone charging, Home ▸ Music and back six times, three spins across the Wheel's top, 4 s idle on Home. `dumpsys gfxinfo` (frame time p50/p90/p99, GPU p50); release → motion from screen recordings read frame by frame (the frame where Center or Menu comes back up, to the first frame the display changes).
+
+| | Before (debuggable, warm) | After (D-65, not debuggable, compiled) |
+|---|---|---|
+| Release → first motion, forward | 111 ms (a 100 ms frame gap, then a first frame that barely moves) | 56 ms (and that first frame moves 14 %) |
+| Release → first motion, back | 79 ms | 33 ms |
+| Navigation frames p50 / p90 / p99 | 22 / 36 / 150 ms | 19 / 30 / 73 ms |
+| Spin frames p50 / p90 / p99 | 17 / 38 / 53 ms | 15 / 34 / 42 ms |
+| Idle on Home: frames a second, GPU p50 | 94, 19 ms | 39, 9 ms |
+
+What moved the numbers, and by how much where it could be isolated:
+- **Not debuggable, compiled (D-67).** Same code: navigation p90 / p99 44 / 133 → 28 / 61 ms; the trace's two long frames on a forward move 38 + 71 → 18–25 + 26–47 ms across runs. Composing a column (about 1.2 ms a row, the new column's rows plus the live glimpse) is what remains; switching the glimpse off changed nothing measurable, so the cost is the column itself.
+- **The body in a cached layer.** Idle GPU per frame 19 → 9 ms: the gradients, grain and six full-window glitter passes no longer run when something else on the screen moves.
+- **The charging light at ~20 steps a second.** Idle frames 94 → 39 a second (the rest are the previews' slow cycles).
+- **The curves.** The paper move's first 50 ms: 4 % → 42 % of the way; presses start on the touch-down frame and are down in ~50 ms.
+
+Remaining: navigation still costs two long frames (≈ 20 and 26–47 ms, composing the next column); spins still exceed 16 ms at p90 on this phone at 120 Hz. `adb shell input` taps don't get the touch boost real fingers do, so real use runs somewhat faster than these scripts. A project baseline profile and composing the next column ahead (it's already known: the focused row's) are the next steps.

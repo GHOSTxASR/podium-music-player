@@ -2,8 +2,6 @@ package app.podium.core.designsystem.component
 
 import android.view.ViewConfiguration
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -16,11 +14,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -52,11 +49,14 @@ import app.podium.core.designsystem.shell.ShellPalette
 import app.podium.core.designsystem.shell.grain
 import app.podium.core.designsystem.symbol.PodiumSymbol
 import app.podium.core.designsystem.symbol.Symbol
+import app.podium.core.designsystem.theme.PodiumMotion
 import app.podium.core.designsystem.theme.PodiumTheme
 import app.podium.core.interaction.PodiumInput
 import app.podium.core.interaction.WheelButton
 import app.podium.core.interaction.WheelGestureTracker
 import app.podium.core.interaction.rememberPodiumHaptics
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.launch
 import kotlin.math.cos
 import kotlin.math.roundToInt
 import kotlin.math.sin
@@ -85,27 +85,33 @@ fun PodWheel(
     val haptics = rememberPodiumHaptics()
     val longPressTimeout = remember { ViewConfiguration.getLongPressTimeout().toLong() }
     val tracker = remember { WheelGestureTracker() }
+    val severalFingers = LocalSeveralFingers.current
     val currentOnInput by rememberUpdatedState(onInput)
 
     var pressed by remember { mutableStateOf<WheelButton?>(null) }
     var finger by remember { mutableStateOf<Offset?>(null) }
+    val scope = rememberCoroutineScope()
 
     val centerFraction = 0.38f
     val centerSize = diameter * centerFraction
-    val centerScale by animateFloatAsState(
-        if (pressed == WheelButton.CENTER) 0.96f else 1f,
-        PodiumTheme.motion.press(),
-        label = "centerScale",
-    )
+    // TACTILE (D-65): each part goes down on the frame the finger lands and comes back up with a
+    // whisper of spring. Driven from the touch handler and read only while drawing.
+    val keys = remember { WheelButton.entries.associateWith { KeyTravel(if (it == WheelButton.CENTER) 0.955f else 0.9f) } }
+    val travelling = remember { arrayOfNulls<WheelButton>(1) }
+    fun pressVisually(button: WheelButton?) {
+        if (button == travelling[0]) return
+        travelling[0]?.let { keys.getValue(it).release(scope) }
+        button?.let { keys.getValue(it).press(scope) }
+        travelling[0] = button
+    }
 
-    // Mechanical finish: the knurled band turns one detent step per click, so the wheel looks
-    // like it moved (a well-damped spring: a click, not a wobble).
-    val spin = remember { Animatable(0f) }
-    var spinTarget by remember { mutableFloatStateOf(0f) }
-    LaunchedEffect(spinTarget) { spin.animateTo(spinTarget, spring(dampingRatio = 0.9f, stiffness = 900f)) }
+    // MECHANICAL (D-65): the knurled band turns with the finger, 1:1, while it turns the Wheel, and
+    // clicks into the nearest detent when the finger lifts. Nothing here recomposes the Wheel.
+    val band = remember { Animatable(0f) }
+    // Read by the touch handler, which outlives a change of finish.
+    val knurled by rememberUpdatedState(solid?.matte == true)
 
     fun emit(input: PodiumInput) {
-        if (input is PodiumInput.Rotate && solid?.matte == true) spinTarget += input.detents * DetentDegrees
         when (input) {
             is PodiumInput.Rotate -> haptics.detent()
             is PodiumInput.LongPress -> haptics.longPress()
@@ -134,9 +140,12 @@ fun PodWheel(
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
                     val zone = tracker.onDown(down.position.x, down.position.y, cx, cy, inner, outer) ?: return@awaitEachGesture
+                    pressVisually(zone)
                     pressed = zone
                     finger = down.position
                     haptics.press()
+                    val bandAtDown = band.value
+                    var turned = false
                     var waitLongPress = true
                     while (true) {
                         val event = if (waitLongPress) {
@@ -146,7 +155,8 @@ fun PodWheel(
                         }
                         if (event == null) {
                             waitLongPress = false
-                            tracker.onLongPressTimeout()?.let(::emit)
+                            // A second finger down means a pinch may be starting: no hold (D-65).
+                            if (!severalFingers()) tracker.onLongPressTimeout()?.let(::emit)
                             continue
                         }
                         val change = event.changes.firstOrNull { it.id == down.id } ?: break
@@ -163,12 +173,24 @@ fun PodWheel(
                                 waitLongPress = false
                                 emit(it)
                             }
+                        if (knurled && tracker.isRotating) {
+                            turned = true
+                            val angle = bandAtDown + tracker.travelledDegrees
+                            scope.launch(start = CoroutineStart.UNDISPATCHED) { band.snapTo(angle) }
+                        }
                         pressed = tracker.pressedButton
+                        pressVisually(tracker.pressedButton)
                         change.consume()
                     }
                     tracker.onCancel()
+                    pressVisually(null)
                     pressed = null
                     finger = null
+                    if (turned) {
+                        // Into the nearest detent: a small click into place, never a coast.
+                        val rest = (band.value / DetentDegrees).roundToInt() * DetentDegrees
+                        scope.launch(start = CoroutineStart.UNDISPATCHED) { band.animateTo(rest, PodiumMotion.detent()) }
+                    }
                 }
             },
         contentAlignment = Alignment.Center,
@@ -203,7 +225,7 @@ fun PodWheel(
                 // Knurling: fine radial ticks around the outer band; a longer one at each detent.
                 val ticks = (360f / (DetentDegrees / 2f)).toInt()
                 for (t in 0 until ticks) {
-                    val a = Math.toRadians((t * DetentDegrees / 2f + spin.value).toDouble())
+                    val a = Math.toRadians((t * DetentDegrees / 2f + band.value).toDouble())
                     val long = t % 2 == 0
                     val r0 = radius * (if (long) 0.885f else 0.915f)
                     val r1 = radius * 0.965f
@@ -263,7 +285,7 @@ fun PodWheel(
                     .offset { IntOffset((dx * density).roundToInt(), (dy * density).roundToInt()) }
                     .size(48.dp)
                     .graphicsLayer {
-                        val s = if (pressed == button) 0.9f else 1f
+                        val s = keys.getValue(button).value
                         scaleX = s
                         scaleY = s
                     }
@@ -290,8 +312,9 @@ fun PodWheel(
             Modifier
                 .size(centerSize)
                 .graphicsLayer {
-                    scaleX = centerScale
-                    scaleY = centerScale
+                    val s = keys.getValue(WheelButton.CENTER).value
+                    scaleX = s
+                    scaleY = s
                 }
                 .then(
                     if (solid == null) {

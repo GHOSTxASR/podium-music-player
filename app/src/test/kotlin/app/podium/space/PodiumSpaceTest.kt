@@ -171,6 +171,119 @@ class PodiumSpaceTest {
         assertEquals(0f, space.depth.value)
     }
 
+    /** Two fingers on the space, side by side about its centre, [half] apart from it. */
+    private inner class Fingers(var half: Float) {
+        var centre = Offset.Zero
+        val depths = mutableListOf<Float>()
+
+        fun down() = compose.onNodeWithTag("space").performTouchInput {
+            centre = center
+            down(0, centre - Offset(half, 0f))
+            down(1, centre + Offset(half, 0f))
+        }
+
+        /** Each finger moves [by] px outwards (negative: inwards), one event; the object's depth after it. */
+        fun step(by: Float) {
+            half += by
+            compose.onNodeWithTag("space").performTouchInput {
+                updatePointerTo(0, centre - Offset(half, 0f))
+                updatePointerTo(1, centre + Offset(half, 0f))
+                move()
+            }
+            depths += space.depth.value
+        }
+
+        fun lift(afterMillis: Long = 0) = compose.onNodeWithTag("space").performTouchInput {
+            if (afterMillis > 0) advanceEventTime(afterMillis)
+            up(0)
+            up(1)
+        }
+    }
+
+    @Test
+    fun `the object follows the pinch from where it is - no jump when it's recognised - and back again`() {
+        podium()
+        val fingers = Fingers(half = 270f)
+        fingers.down()
+        repeat(14) { fingers.step(-10f) }
+        val followed = fingers.depths.filter { it > 0f }
+        assertTrue(followed.isNotEmpty(), "the pinch was recognised: ${fingers.depths}")
+        assertTrue(followed.first() < 0.12f, "it starts from where the object is, not with a lurch: ${fingers.depths}")
+        assertTrue(fingers.depths.zipWithNext().all { (a, b) -> b >= a }, "closing pushes it back steadily: ${fingers.depths}")
+        val deepest = space.depth.value
+        repeat(6) { fingers.step(10f) }
+        assertTrue(space.depth.value < deepest, "opening the fingers brings it back: ${fingers.depths}")
+        assertEquals(SpacePhase.ENTERING, space.phase)
+        fingers.lift()
+        compose.mainClock.advanceTimeBy(1_500)
+        assertEquals(SpacePhase.NORMAL, space.phase, "let go heading back: it comes back")
+        assertEquals(0f, space.depth.value)
+    }
+
+    @Test
+    fun `a quick pinch that ends short still goes in - the release keeps the fingers' speed`() {
+        podium()
+        val fingers = Fingers(half = 270f)
+        fingers.down()
+        repeat(8) { fingers.step(-10f) }
+        assertTrue(space.depth.value in 0.01f..PodiumSpaceState.ENTER_THRESHOLD, "short of the threshold: ${space.depth.value}")
+        fingers.lift()
+        compose.mainClock.advanceTimeBy(1_500)
+        assertEquals(SpacePhase.PHYSICAL, space.phase)
+    }
+
+    @Test
+    fun `fingers that stop before letting go carry no speed`() {
+        podium()
+        val fingers = Fingers(half = 270f)
+        fingers.down()
+        repeat(8) { fingers.step(-10f) }
+        fingers.lift(afterMillis = 300)
+        compose.mainClock.advanceTimeBy(1_500)
+        assertEquals(SpacePhase.NORMAL, space.phase, "short of the threshold and still: it springs back")
+    }
+
+    @Test
+    fun `spreading two fingers brings the object back with them`() {
+        podium()
+        compose.runOnUiThread { space.enter() }
+        compose.mainClock.advanceTimeBy(1_500)
+        assertEquals(SpacePhase.PHYSICAL, space.phase)
+        val fingers = Fingers(half = 162f)
+        fingers.down()
+        repeat(14) { fingers.step(10f) }
+        val following = fingers.depths.filter { it < 1f }
+        assertTrue(following.size >= 6, "the spread was recognised and followed: ${fingers.depths}")
+        assertTrue(following.zipWithNext().all { (a, b) -> b <= a }, "opening brings it steadily closer: ${fingers.depths}")
+        assertEquals(SpacePhase.ENTERING, space.phase)
+        fingers.lift(afterMillis = 300)
+        compose.mainClock.advanceTimeBy(1_500)
+        assertEquals(SpacePhase.NORMAL, space.phase)
+    }
+
+    @Test
+    fun `two fingers held on the Wheel never make a hold - a pinch may be starting`() {
+        podium()
+        compose.onNodeWithTag("wheel").performTouchInput {
+            down(0, Offset(width * 0.5f, height * 0.88f)) // ⏯: held, it would switch the display off
+            down(1, Offset(width * 0.5f, height * 0.12f))
+        }
+        compose.mainClock.advanceTimeBy(1_200)
+        compose.onNodeWithTag("wheel").performTouchInput {
+            up(1)
+            up(0)
+        }
+        compose.mainClock.advanceTimeBy(300)
+        assertTrue(wheelInputs.none { it is PodiumInput.LongPress }, "no hold under two fingers: $wheelInputs")
+
+        // One finger held is still a hold.
+        compose.onNodeWithTag("wheel").performTouchInput { down(Offset(width * 0.5f, height * 0.88f)) }
+        compose.mainClock.advanceTimeBy(1_200)
+        compose.onNodeWithTag("wheel").performTouchInput { up() }
+        compose.mainClock.advanceTimeBy(300)
+        assertTrue(wheelInputs.any { it is PodiumInput.LongPress }, "one finger still holds: $wheelInputs")
+    }
+
     @Test
     fun `the help page in the space`() {
         podium(SpacePage.HELP)

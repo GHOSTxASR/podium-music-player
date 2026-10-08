@@ -10,7 +10,8 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.unit.IntOffset
-import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.EnterExitState
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.ui.zIndex
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -80,6 +81,7 @@ import app.podium.core.common.PodiumError
 import app.podium.core.designsystem.artwork.BackgroundExtension
 import app.podium.core.designsystem.artwork.FittedArtwork
 import app.podium.core.designsystem.artwork.rememberArtwork
+import app.podium.core.designsystem.component.LocalColumnTransition
 import app.podium.core.designsystem.component.LocalOverlayHost
 import app.podium.core.designsystem.component.LocalScreenInsets
 import app.podium.core.designsystem.component.MenuAction
@@ -87,12 +89,14 @@ import app.podium.core.designsystem.component.MenuSpec
 import app.podium.core.designsystem.component.MessageState
 import app.podium.core.designsystem.component.ProgressBar
 import app.podium.core.designsystem.component.formatDuration
+import app.podium.core.designsystem.component.pressFeedback
 import app.podium.core.designsystem.component.rememberProgressTick
 import app.podium.core.designsystem.glass.GlassHost
 import app.podium.core.designsystem.glass.GlassMaterial
 import app.podium.core.designsystem.glass.glass
 import app.podium.core.designsystem.symbol.PodiumSymbol
 import app.podium.core.designsystem.symbol.Symbol
+import app.podium.core.designsystem.theme.PodiumMotion
 import app.podium.core.designsystem.theme.PodiumTheme
 import app.podium.core.designsystem.theme.Spacing
 import app.podium.core.designsystem.type.PodiumText
@@ -459,7 +463,12 @@ private fun artTravel(rowWidth: Dp, startInset: Dp): ArtTravel {
 /** A little past the display's edge, so a cover is wholly gone before it's out of the frame. */
 private val ArtTravelOvershoot = 12.dp
 
-private const val ART_TRAVEL_MS = 460
+/** A skip moves the cover on the SPATIAL curve (D-65): it leaves on the press. */
+private const val ART_TRAVEL_MS = 360
+
+/** Entering Now Playing, the cover arrives leaning a little further and a little smaller, and settles (D-65). */
+private const val ART_ARRIVAL_EXTRA_TILT_DEG = 8f
+private const val ART_ARRIVAL_SCALE = 0.9f
 
 /** The cover's lean (D-58): a turn about its vertical axis, seen from not far off. */
 private const val ART_TILT_DEG = 26f
@@ -479,6 +488,16 @@ private fun ArtworkStage(p: NowPlayingParts, maxWidth: Dp, maxHeight: Dp, travel
         label = "breathe",
     )
     val key = ArtKey(p.item.artworkUri ?: p.item.uid.value, p.item.artworkUri, p.item.albumTitle ?: p.item.title, p.item.indexInQueue)
+    // DRAMATIC (D-65): entering Now Playing, the cover is the anchor — it settles into its place and
+    // its lean on its own spring as the screen arrives, so the move reads "I chose this and went in".
+    // Read only while drawing; nothing waits for it.
+    val arrival = LocalColumnTransition.current
+    val unsettled = if (arrival != null && !motion.reduced) {
+        arrival.transition.animateFloat(
+            transitionSpec = { if (targetState == EnterExitState.Visible) PodiumMotion.dramatic() else tween(160, easing = PodiumMotion.Standard) },
+            label = "artArrival",
+        ) { state -> if (state == EnterExitState.Visible) 0f else 1f }
+    } else null
     AnimatedContent(
         targetState = key,
         contentKey = { it.identity },
@@ -489,11 +508,11 @@ private fun ArtworkStage(p: NowPlayingParts, maxWidth: Dp, maxHeight: Dp, travel
             } else if (travel != null) {
                 // Next: the cover slides off the display to the left and the new one comes in from
                 // the right, settling at the left. Previous: the mirror.
-                val move = tween<IntOffset>(ART_TRAVEL_MS, easing = FastOutSlowInEasing)
+                val move = tween<IntOffset>(ART_TRAVEL_MS, easing = PodiumMotion.Spatial)
                 slideInHorizontally(move) { full -> if (dir > 0) travel.enterFromPx else -travel.exitToPx(full) } togetherWith
                     slideOutHorizontally(move) { full -> if (dir > 0) -travel.exitToPx(full) else travel.enterFromPx }
             } else {
-                (fadeIn(tween(300, delayMillis = 60)) +
+                (fadeIn(tween(200, easing = PodiumMotion.Standard)) +
                     scaleIn(spring(dampingRatio = 0.86f, stiffness = 320f), initialScale = 0.93f) +
                     slideInHorizontally(spring(dampingRatio = 0.9f, stiffness = 320f)) { dir * it / 9 }) togetherWith
                     (fadeOut(tween(180)) +
@@ -505,13 +524,15 @@ private fun ArtworkStage(p: NowPlayingParts, maxWidth: Dp, maxHeight: Dp, travel
             .graphicsLayer {
                 // Turned a little to the right, like a record leaning on a shelf: the near edge at
                 // the left, the far edge receding. Hinged on the left so the cover keeps its place.
-                rotationY = ART_TILT_DEG
+                val u = unsettled?.value ?: 0f
+                rotationY = ART_TILT_DEG + ART_ARRIVAL_EXTRA_TILT_DEG * u
                 cameraDistance = ART_CAMERA_DISTANCE * density
                 transformOrigin = TransformOrigin(0f, 0.5f)
             }
             .graphicsLayer {
-                scaleX = breathe
-                scaleY = breathe
+                val arriving = 1f - (1f - ART_ARRIVAL_SCALE) * (unsettled?.value ?: 0f)
+                scaleX = breathe * arriving
+                scaleY = breathe * arriving
             },
         contentAlignment = Alignment.Center,
         label = "artwork",
@@ -801,7 +822,7 @@ private fun ActionClusterContent(p: NowPlayingParts, slot: Dp) {
             // Industrial: a small lit indicator under the focused action, no pill (D-29).
             Box(
                 Modifier
-                    .offset(x = lensX)
+                    .offset { IntOffset(lensX.roundToPx(), 0) }
                     .size(slot, 40.dp)
                     .drawBehind {
                         val c = Offset(size.width / 2f, size.height - 4.dp.toPx())
@@ -812,7 +833,7 @@ private fun ActionClusterContent(p: NowPlayingParts, slot: Dp) {
         } else if (lensVisible) {
             Box(
                 Modifier
-                    .offset(x = lensX)
+                    .offset { IntOffset(lensX.roundToPx(), 0) }
                     .size(slot, 32.dp)
                     .drawBehind {
                         val r = CornerRadius(16.dp.toPx())
@@ -939,6 +960,7 @@ private fun Key(symbol: PodiumSymbol, label: String, iconSize: Dp, width: Dp, en
     Box(
         Modifier
             .size(width, 48.dp)
+            .pressFeedback(0.97f)
             .border(1.dp, colors.separator, shape)
             .background(if (pressed) colors.labelPrimary.copy(alpha = 0.08f) else Color.Transparent, shape)
             .clickable(interactionSource = interaction, indication = null) {
@@ -973,6 +995,7 @@ private fun ControlButton(
     Box(
         Modifier
             .size(width, height)
+            .pressFeedback(0.88f)
             .clickable(interactionSource = interaction, indication = null) {
                 haptics.press()
                 onClick()

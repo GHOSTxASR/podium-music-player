@@ -88,6 +88,7 @@ import app.podium.core.designsystem.component.LocalOverlayHost
 import app.podium.core.designsystem.component.LocalPaperDecor
 import app.podium.core.designsystem.component.LocalPaperPeek
 import app.podium.core.designsystem.component.LocalPaperKey
+import app.podium.core.designsystem.component.LocalColumnTransition
 import app.podium.core.designsystem.component.softArrival
 import app.podium.core.designsystem.component.softDeparture
 import app.podium.core.designsystem.component.LocalPaperLenses
@@ -455,7 +456,7 @@ fun PodiumApp(graph: AppGraph, onSourceAction: (CapabilityAction) -> Unit, onTur
             state = space,
             edgeColor = if (palette.isGlass) GlassEdge else palette.bodyBottom,
             spaceTint = androidx.compose.ui.graphics.lerp(if (palette.isGlass) GlassEdge else palette.bodyBottom, Color.Black, 0.94f),
-            stickers = { StickerLayer(graph.stickers) },
+            stickers = { StickerLayer(graph.stickers, editor = stickerEditor) },
             stickerEditor = { StickerEditor(graph.stickers, stickerEditor) },
             panel = {
                 BackHandler {
@@ -663,7 +664,7 @@ private fun ScreenOs(
                         onBack = { navigator.pop() },
                         // Forward: the column in front leaves for the left box, the new one comes from the right.
                         // Back: the column in front leaves for the right box, the one behind comes from the left.
-                        transitionSpec = { paperForward(paper, density, motion.reduced, leaving = leavingLens(), coming = comingLens()) },
+                        transitionSpec = { paperForward(paper, density, motion.reduced, leaving = leavingLens()) },
                         popTransitionSpec = { paperBack(paper, density, motion.reduced, leaving = leavingLens(), coming = comingLens()) },
                         predictivePopTransitionSpec = { paperBack(paper, density, motion.reduced, leaving = leavingLens(), coming = comingLens()) },
                         entryProvider = { key ->
@@ -684,13 +685,18 @@ private fun ScreenOs(
                                     with(scope) {
                                         Modifier
                                             .animateEnterExit(
-                                                enter = fadeIn(tween(GlimpseArrivalMillis, delayMillis = if (motion.reduced) 0 else GlimpseDelayMillis, easing = PodiumMotion.Smooth)),
+                                                enter = fadeIn(tween(GlimpseArrivalMillis, delayMillis = if (motion.reduced) 0 else GlimpseDelayMillis, easing = PodiumMotion.Standard)),
                                                 exit = fadeOut(tween(80)),
                                             )
                                             .softArrival(scope, delayMillis = GlimpseDelayMillis, durationMillis = GlimpseArrivalMillis + 80)
                                     }
                                 }
-                                CompositionLocalProvider(LocalPaperPeek provides peek, LocalPaperDecor provides decor, LocalPaperKey provides screen) {
+                                CompositionLocalProvider(
+                                    LocalPaperPeek provides peek,
+                                    LocalPaperDecor provides decor,
+                                    LocalPaperKey provides screen,
+                                    LocalColumnTransition provides scope,
+                                ) {
                                     // Leaving for a box, a column melts into the glimpse that takes its place (D-64).
                                     Box(Modifier.fillMaxSize().softDeparture(scope, delayMillis = DepartureDelayMillis, durationMillis = PaperTransitionMillis - DepartureDelayMillis)) {
                                         ScreenContent(screen, graph, navigator, onSourceAction)
@@ -783,6 +789,7 @@ private fun PreviousColumn(previous: Dest, current: Dest, graph: AppGraph, navig
                 LocalInputRouter provides remember { InputRouter() },
                 LocalOverlayHost provides remember { OverlayHost() },
                 LocalPaperPeek provides null,
+                LocalColumnTransition provides null,
             ) {
                 ScreenContent(previous, graph, navigator, onSourceAction = {})
             }
@@ -1064,35 +1071,37 @@ private fun SystemBarIcons(darkIcons: Boolean) {
     }
 }
 
-/** One move along the paper. */
-private const val PaperTransitionMillis = 560
+/** One move along the paper (SPATIAL, D-65). */
+private const val PaperTransitionMillis = PodiumMotion.SpatialMillis
 
-/** The glimpses arrive over the move's last part, overlapping the column leaving for their box. */
-private const val GlimpseDelayMillis = PaperTransitionMillis * 62 / 100
-private const val GlimpseArrivalMillis = 300
+/**
+ * The glimpses arrive as the column leaving reaches its box (92 % of the way, at 47 % of the time on
+ * [PodiumMotion.Spatial]), overlapping it, and sharpen as the move settles.
+ */
+private const val GlimpseDelayMillis = PaperTransitionMillis * 47 / 100
+private const val GlimpseArrivalMillis = 240
 
-/** The column leaving softens over the move's last part, as its glimpse arrives. */
-private const val DepartureDelayMillis = PaperTransitionMillis * 55 / 100
+/** The column leaving softens from 88 % of its way (40 % of the time), as its glimpse arrives. */
+private const val DepartureDelayMillis = PaperTransitionMillis * 40 / 100
 
 /**
  * Forward along the paper (D-29, after the user's sketch): the next column grows out of its
  * preview box at middle-right and rises along the curve into focus, while the current screen
  * sinks down and to the left into the previous-column box — the Wheel turning one step. Every part
- * of the move follows one curve, [PodiumMotion.Smooth] (D-60): it sets off gently, keeps going and
- * settles with a long, soft finish — never pausing part-way.
+ * of the move follows one curve, [PodiumMotion.Spatial] (D-65, after D-60): it leaves on the frame
+ * of the press, keeps going and settles with a long, soft finish — never pausing part-way.
  */
 private fun AnimatedContentTransitionScope<Scene<Dest>>.paperForward(
     g: PaperGeometry,
     density: Density,
     reduced: Boolean,
     leaving: Float?,
-    coming: Float?,
 ): ContentTransform {
     if (reduced) return fadeIn(tween(160)) togetherWith fadeOut(tween(120))
     val (right, left, lift) = paperPoints(g, density)
     return paperMove(
-        enterFrom = right + litToRightBox(g, density, coming),
-        enterScale = g.miniScale,
+        enterFrom = right,
+        enterScale = g.tileScale,
         exitTo = left + litToLeftBox(g, density, leaving),
         exitScale = g.glimpseScale,
         lift = lift,
@@ -1112,8 +1121,8 @@ private fun AnimatedContentTransitionScope<Scene<Dest>>.paperBack(
     return paperMove(
         enterFrom = left + litToLeftBox(g, density, coming),
         enterScale = g.glimpseScale,
-        exitTo = right + litToRightBox(g, density, leaving),
-        exitScale = g.miniScale,
+        exitTo = right,
+        exitScale = g.tileScale,
         lift = lift,
     )
 }
@@ -1127,35 +1136,25 @@ private fun litToLeftBox(g: PaperGeometry, density: Density, litY: Float?): IntO
     IntOffset(0, ((g.centreY.toPx() - lit) * g.glimpseScale).roundToInt())
 }
 
-/**
- * The same for the right box (the whole column at [PaperGeometry.miniScale], centred on the box):
- * its lit row on the box's middle. A column not seen before lights its first row, near the top.
- */
-private fun litToRightBox(g: PaperGeometry, density: Density, litY: Float?): IntOffset = with(density) {
-    val lit = litY ?: (g.padTop + FirstRowCentre).toPx()
-    IntOffset(0, ((g.height.toPx() / 2f - lit) * g.miniScale).roundToInt())
-}
-
-/** Where a fresh list's first row sits below the readable region's top. */
-private val FirstRowCentre = 26.dp
 
 private fun paperMove(enterFrom: IntOffset, enterScale: Float, exitTo: IntOffset, exitScale: Float, lift: Int): ContentTransform {
     val d = PaperTransitionMillis
-    val smooth = PodiumMotion.Smooth
+    val spatial = PodiumMotion.Spatial
     // The column coming in rises out of its box along an arc; the one leaving dips into the other.
+    // The leaving column fades only once it is in its box (95 % of the way), under its glimpse.
     val enter = slideIn(arc(enterFrom, IntOffset.Zero, IntOffset(enterFrom.x / 2, enterFrom.y - lift), d)) { enterFrom } +
-        scaleIn(tween(d, easing = smooth), initialScale = enterScale) +
-        fadeIn(tween(d / 2, easing = smooth), initialAlpha = 0.55f)
+        scaleIn(tween(d, easing = spatial), initialScale = enterScale) +
+        fadeIn(tween(d * 45 / 100, easing = spatial), initialAlpha = 0.55f)
     val exit = slideOut(arc(IntOffset.Zero, exitTo, IntOffset(exitTo.x / 2, exitTo.y + lift), d)) { exitTo } +
-        scaleOut(tween(d, easing = smooth), targetScale = exitScale) +
-        fadeOut(tween(d * 30 / 100, delayMillis = d * 70 / 100, easing = smooth))
+        scaleOut(tween(d, easing = spatial), targetScale = exitScale) +
+        fadeOut(tween(d * 43 / 100, delayMillis = d * 57 / 100, easing = PodiumMotion.Standard))
     return enter togetherWith exit
 }
 
 /**
- * A move from [from] to [to] along the arc through [through] (its midpoint), timed by one smooth
- * curve end to end: the path is a quadratic curve, sampled finely at eased times, so the speed
- * never dips where the old move joined two halves.
+ * A move from [from] to [to] along the arc through [through] (its midpoint), timed by one curve
+ * end to end ([PodiumMotion.Spatial]): the path is a quadratic curve, sampled finely at eased
+ * times, so the speed never dips part-way and the first frame already moves.
  */
 private fun arc(from: IntOffset, to: IntOffset, through: IntOffset, durationMillis: Int) = keyframes<IntOffset> {
     this.durationMillis = durationMillis
@@ -1164,7 +1163,7 @@ private fun arc(from: IntOffset, to: IntOffset, through: IntOffset, durationMill
     val cy = 2f * through.y - (from.y + to.y) / 2f
     for (i in 0..ArcSamples) {
         val time = i / ArcSamples.toFloat()
-        val t = PodiumMotion.Smooth.transform(time)
+        val t = PodiumMotion.Spatial.transform(time)
         val u = 1f - t
         val x = u * u * from.x + 2f * u * t * cx + t * t * to.x
         val y = u * u * from.y + 2f * u * t * cy + t * t * to.y
@@ -1175,13 +1174,13 @@ private fun arc(from: IntOffset, to: IntOffset, through: IntOffset, durationMill
 private const val ArcSamples = 30
 
 /**
- * Centre offsets of a screen sitting in the next box (whole, at [PaperGeometry.miniScale]) and in
- * the previous box (exactly as the glimpse shows it, at [PaperGeometry.glimpseScale] — D-63), and
- * how far the path arcs.
+ * Centre offsets of a screen sitting in the next box (whole, filling the tile's frame at
+ * [PaperGeometry.tileScale] — D-66) and in the previous box (exactly as the glimpse shows it, at
+ * [PaperGeometry.glimpseScale] — D-63), and how far the path arcs.
  */
 private fun paperPoints(g: PaperGeometry, density: Density): Triple<IntOffset, IntOffset, Int> = with(density) {
     val right = IntOffset(
-        (g.rightBoxX + g.width * g.miniScale / 2 - g.width / 2).roundToPx(),
+        (g.tileLeft + g.width * g.tileScale / 2 - g.width / 2).roundToPx(),
         (g.centreY - g.height / 2).roundToPx(),
     )
     val left = IntOffset(

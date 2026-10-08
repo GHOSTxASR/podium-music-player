@@ -1,7 +1,6 @@
 package app.podium.core.designsystem.shell
 
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -12,6 +11,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -30,6 +30,7 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
+import app.podium.core.designsystem.component.KeyTravel
 import app.podium.core.designsystem.glass.GlassMaterial
 import app.podium.core.designsystem.glass.glass
 import app.podium.core.designsystem.symbol.PodiumSymbol
@@ -48,7 +49,9 @@ fun PowerButton(on: Boolean, palette: ShellPalette, onToggle: () -> Unit, modifi
     val haptics = rememberPodiumHaptics()
     val currentOnToggle by rememberUpdatedState(onToggle)
     var pressed by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(if (pressed) 0.9f else 1f, PodiumTheme.motion.press(), label = "powerScale")
+    // TACTILE (D-65): down on the frame the finger lands, up with a whisper of spring.
+    val travel = remember { KeyTravel(0.9f) }
+    val scope = rememberCoroutineScope()
     val glyphBase = if (palette.isGlass) colors.labelSecondary else palette.legend
     val glyph by animateColorAsState(if (on) glyphBase else glyphBase.copy(alpha = 0.45f), label = "powerGlyph")
     val face = if (palette.isGlass) {
@@ -72,9 +75,11 @@ fun PowerButton(on: Boolean, palette: ShellPalette, onToggle: () -> Unit, modifi
             .pointerInput(Unit) {
                 detectTapGestures(
                     onPress = {
+                        travel.press(scope)
                         pressed = true
                         haptics.press()
                         tryAwaitRelease()
+                        travel.release(scope)
                         pressed = false
                     },
                     onTap = {
@@ -95,8 +100,9 @@ fun PowerButton(on: Boolean, palette: ShellPalette, onToggle: () -> Unit, modifi
             Modifier
                 .size(36.dp)
                 .graphicsLayer {
-                    scaleX = scale
-                    scaleY = scale
+                    val s = travel.value
+                    scaleX = s
+                    scaleY = s
                 }
                 .then(face),
             contentAlignment = Alignment.Center,

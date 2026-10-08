@@ -1,5 +1,6 @@
 package app.podium.core.designsystem.component
 
+import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -14,13 +15,16 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
 import app.podium.core.designsystem.glass.GlassMaterial
 import app.podium.core.designsystem.glass.glass
+import app.podium.core.designsystem.theme.PodiumMotion
 import app.podium.core.designsystem.theme.PodiumTheme
 import app.podium.core.interaction.FocusListState
 import app.podium.core.interaction.InputTargetEffect
@@ -49,6 +53,11 @@ fun GlassMenu(
 ) {
     val focus = remember(spec) { FocusListState() }
     val haptics = rememberPodiumHaptics()
+    // TACTILE (D-65): the menu arrives under the press that asked for it — a quick settle from a
+    // touch smaller, interactive from its first frame. It leaves at once: nothing lingers taking input.
+    val reduced = PodiumTheme.motion.reduced
+    val appear = remember(spec) { Animatable(if (reduced) 1f else 0f) }
+    LaunchedEffect(spec) { appear.animateTo(1f, PodiumMotion.pop()) }
     InputTargetEffect(WheelContext.OVERLAY) { input ->
         when (input) {
             is PodiumInput.Rotate -> {
@@ -72,6 +81,7 @@ fun GlassMenu(
     Box(
         modifier
             .fillMaxSize()
+            .graphicsLayer { alpha = appear.value.coerceIn(0f, 1f) }
             .background(Color.Black.copy(alpha = if (PodiumTheme.colors.isDark) 0.35f else 0.18f))
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onDismiss)
             .padding(panelPadding),
@@ -82,6 +92,11 @@ fun GlassMenu(
                 .padding(horizontal = 32.dp)
                 .widthIn(max = 360.dp)
                 .fillMaxWidth()
+                .graphicsLayer {
+                    val s = 0.96f + 0.04f * appear.value
+                    scaleX = s
+                    scaleY = s
+                }
                 .glass(GlassMaterial.Regular, RoundedCornerShape(if (PodiumTheme.colors.isIndustrial) 3.dp else 22.dp))
                 .padding(vertical = 8.dp),
         ) {

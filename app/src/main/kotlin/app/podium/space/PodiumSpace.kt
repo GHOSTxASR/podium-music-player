@@ -1,9 +1,17 @@
 package app.podium.space
 
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.graphics.drawscope.withTransform
+import androidx.compose.ui.input.pointer.util.VelocityTracker1D
+import androidx.compose.runtime.CompositionLocalProvider
+import app.podium.core.designsystem.component.LocalSeveralFingers
+import app.podium.core.designsystem.theme.PodiumMotion
+import app.podium.core.designsystem.theme.PodiumTheme
+import kotlinx.coroutines.CoroutineStart
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -23,6 +31,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameMillis
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
@@ -33,7 +42,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.input.pointer.PointerEventPass
@@ -77,40 +85,61 @@ class PodiumSpaceState(private val scope: CoroutineScope) {
     var focus by mutableStateOf(SpaceFocus.SETTINGS)
         private set
 
+    /** Reduced motion (kept current by [PodiumSpace]): the object settles with a short fade of motion. */
+    var reduced = false
+
+    /** Fingers on the device right now, as the pinch watcher last saw them. */
+    internal var fingers = 0
+
     val isOut: Boolean get() = phase != SpacePhase.NORMAL
 
-    /** The fingers are pinching: the object follows them. */
-    fun follow(progress: Float) {
-        if (phase == SpacePhase.NORMAL || phase == SpacePhase.RETURNING || phase == SpacePhase.ENTERING) {
-            phase = SpacePhase.ENTERING
-            scope.launch { depth.snapTo(progress.coerceIn(0f, 1f)) }
+    /**
+     * PERSONAL (D-65): the fingers are moving the object, and [value] is where they put it (0 flat …
+     * 1 in its space). Set on the frame the fingers move — no animation between the hand and the
+     * object. Catching it mid-settle takes it from where it is.
+     */
+    fun follow(value: Float) {
+        if (phase == SpacePhase.STICKER_EDITING) return
+        if (phase == SpacePhase.NORMAL) {
+            // Every visit opens with the settings page large (D-56).
+            focus = SpaceFocus.SETTINGS
+            scope.launch(start = CoroutineStart.UNDISPATCHED) { zoom.snapTo(0f) }
         }
+        phase = SpacePhase.ENTERING
+        scope.launch(start = CoroutineStart.UNDISPATCHED) { depth.snapTo(value.coerceIn(0f, 1f)) }
     }
 
-    /** The fingers lifted: in the space past a third of the way, back flat otherwise. */
-    fun release() {
+    /**
+     * The fingers let go while moving at [velocity] (depth per second): the object carries on to where
+     * it was heading — into the space, or back to being the flat Podium — keeping that speed.
+     * [startedOut]: the gesture began with the object in its space (a spread), so it stays out unless
+     * it was brought most of the way back.
+     */
+    fun release(velocity: Float = 0f, startedOut: Boolean = false) {
         if (phase != SpacePhase.ENTERING) return
-        if (depth.value > ENTER_THRESHOLD) enter() else leave()
+        val heading = depth.value + velocity * PROJECTION_SECONDS
+        val stayOut = heading > if (startedOut) RETURN_THRESHOLD else ENTER_THRESHOLD
+        if (stayOut) enter(velocity) else leave(velocity)
     }
 
-    fun enter() {
+    fun enter(velocity: Float = 0f) {
         if (phase == SpacePhase.NORMAL || phase == SpacePhase.RETURNING) {
             focus = SpaceFocus.SETTINGS
             scope.launch { zoom.snapTo(0f) }
         }
         phase = SpacePhase.ENTERING
         scope.launch {
-            depth.animateTo(1f, spring(dampingRatio = 0.82f, stiffness = 120f))
+            depth.animateTo(1f, if (reduced) tween(REDUCED_MILLIS) else PodiumMotion.settleIn(), initialVelocity = velocity)
             if (phase == SpacePhase.ENTERING) phase = SpacePhase.PHYSICAL
         }
     }
 
     /** Return to Podium: the object comes forward, the space recedes, the flat app is back. */
-    fun leave() {
+    fun leave(velocity: Float = 0f) {
         phase = SpacePhase.RETURNING
         scope.launch {
-            launch { edit.animateTo(0f, spring(dampingRatio = 1f, stiffness = 200f)) }
-            depth.animateTo(0f, spring(dampingRatio = 1f, stiffness = 140f))
+            launch { edit.animateTo(0f, if (reduced) tween(REDUCED_MILLIS) else PodiumMotion.settleBack()) }
+            depth.animateTo(0f, if (reduced) tween(REDUCED_MILLIS) else PodiumMotion.settleBack(), initialVelocity = velocity)
             if (phase == SpacePhase.RETURNING) phase = SpacePhase.NORMAL
         }
     }
@@ -124,23 +153,32 @@ class PodiumSpaceState(private val scope: CoroutineScope) {
     private fun focusOn(f: SpaceFocus) {
         if (phase != SpacePhase.PHYSICAL && phase != SpacePhase.ENTERING) return
         focus = f
-        scope.launch { zoom.animateTo(if (f == SpaceFocus.PODIUM) 1f else 0f, spring(dampingRatio = 0.86f, stiffness = 170f)) }
+        scope.launch { zoom.animateTo(if (f == SpaceFocus.PODIUM) 1f else 0f, if (reduced) tween(REDUCED_MILLIS) else PodiumMotion.rearrange()) }
     }
 
     fun startEditing() {
         if (phase != SpacePhase.PHYSICAL) return
         phase = SpacePhase.STICKER_EDITING
-        scope.launch { edit.animateTo(1f, spring(dampingRatio = 0.9f, stiffness = Spring.StiffnessLow)) }
+        scope.launch { edit.animateTo(1f, if (reduced) tween(REDUCED_MILLIS) else PodiumMotion.rearrange()) }
     }
 
     fun stopEditing() {
         if (phase != SpacePhase.STICKER_EDITING) return
         phase = SpacePhase.PHYSICAL
-        scope.launch { edit.animateTo(0f, spring(dampingRatio = 0.9f, stiffness = Spring.StiffnessLow)) }
+        scope.launch { edit.animateTo(0f, if (reduced) tween(REDUCED_MILLIS) else PodiumMotion.rearrange()) }
     }
 
     companion object {
+        /** A pinch from the flat Podium heading past this goes into the space. */
         const val ENTER_THRESHOLD = 0.3f
+
+        /** A spread from the space heading below this comes back to the flat Podium. */
+        const val RETURN_THRESHOLD = 0.7f
+
+        /** How far ahead the release looks along the fingers' motion. */
+        const val PROJECTION_SECONDS = 0.12f
+
+        private const val REDUCED_MILLIS = 160
     }
 }
 
@@ -171,6 +209,8 @@ fun PodiumSpace(
 ) {
     val density = LocalDensity.current
     val pinchThreshold = with(density) { PINCH_DISTANCE.toPx() }
+    val reduced = PodiumTheme.motion.reduced
+    SideEffect { state.reduced = reduced }
     BoxWithConstraints(
         modifier
             .fillMaxSize()
@@ -181,7 +221,7 @@ fun PodiumSpace(
         // Animation values are read only where they're drawn: the app inside never recomposes for them.
         val out by remember(state) { derivedStateOf { state.depth.value > 0.001f } }
 
-        if (out) Space({ state.depth.value }, spaceTint)
+        if (out) Space(state, spaceTint, still = reduced)
 
         // The object: one layer, so the face, its edge and its stickers move as one.
         Box(
@@ -258,7 +298,8 @@ fun PodiumSpace(
                         }
                     },
             ) {
-                podium()
+                val severalFingers = remember(state) { { state.fingers >= 2 } }
+                CompositionLocalProvider(LocalSeveralFingers provides severalFingers) { podium() }
                 stickers()
                 if (state.phase == SpacePhase.STICKER_EDITING) stickerEditor()
             }
@@ -297,7 +338,10 @@ internal data class Pose(val scale: Float, val offsetX: Float, val offsetY: Floa
          * Flat → in the space (front-first: a slight turn and tilt, never more than ~11°): small at
          * the left beside the settings page ([zoom] 0) or large ([zoom] 1) → editing.
          */
-        fun at(depth: Float, zoom: Float, edit: Float): Pose {
+        fun at(depthIn: Float, zoom: Float, edit: Float): Pose {
+            // A settle may carry a little past its end (it kept the hand's speed): further into the
+            // space is fine, but never larger than the flat Podium.
+            val depth = depthIn.coerceIn(0f, 1.08f)
             val besidePage = Pose(scale = 0.32f, offsetX = -0.3f, offsetY = -0.04f, rotationY = 11f, rotationX = 5f)
             val close = Pose(scale = 0.6f, offsetX = -0.11f, offsetY = -0.05f, rotationY = 10f, rotationX = 4f)
             val editing = Pose(scale = 0.74f, offsetX = 0f, offsetY = -0.08f, rotationY = 2f, rotationX = 1.5f)
@@ -317,18 +361,29 @@ internal data class Pose(val scale: Float, val offsetX: Float, val offsetY: Floa
 }
 
 /**
- * Two fingers pinching in on the flat Podium follow the object back into its space; release
- * settles. In the space, two fingers spreading bring it back. One finger is never touched: the
- * gesture is only claimed (consumed, in the Initial pass) once it's clearly a pinch.
+ * PERSONAL (D-65): two fingers pinching in on the flat Podium push the object back into its space,
+ * and two fingers spreading on it in its space bring it back — the object follows the fingers both
+ * ways, from wherever it is, and the release carries on with their speed. One finger is never
+ * touched: the gesture is only claimed (consumed, in the Initial pass) once it's clearly a pinch,
+ * and it is measured from that moment, so the object never jumps to catch up with fingers that had
+ * already moved.
  */
 private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.pinchGestures(state: PodiumSpaceState, threshold: Float) {
     awaitEachGesture {
         awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
         var start = 0f
         var claimed = false
+        var startedOut = false
+        var claimDistance = 0f
+        var claimDepth = 0f
+        var value = 0f
+        val velocity = VelocityTracker1D(isDataDifferential = false)
         while (true) {
             val event = awaitPointerEvent(PointerEventPass.Initial)
             val pressed = event.changes.filter { it.pressed }
+            state.fingers = pressed.size
+            // The lift is a sample too: fingers that stopped before letting go carry no speed.
+            if (claimed && pressed.size < 2) velocity.addDataPoint(event.changes.first().uptimeMillis, value)
             if (pressed.isEmpty()) break
             if (pressed.size < 2) {
                 if (claimed) break
@@ -338,79 +393,107 @@ private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.pinchGes
             if (state.phase == SpacePhase.STICKER_EDITING) continue // the editor's own two fingers
             val d = hypot(pressed[0].position.x - pressed[1].position.x, pressed[0].position.y - pressed[1].position.y)
             if (start == 0f) start = d
-            when (state.phase) {
-                SpacePhase.NORMAL, SpacePhase.ENTERING, SpacePhase.RETURNING -> {
-                    val closer = start - d
-                    if (!claimed && closer > threshold && d < start * 0.78f) claimed = true
-                    if (claimed) {
-                        state.follow((closer / (start * 0.6f)).coerceIn(0f, 1f))
-                        event.changes.forEach { it.consume() }
-                    }
+            if (!claimed) {
+                val out = state.phase == SpacePhase.PHYSICAL
+                val recognised = if (out) d - start > threshold && d > start * 1.3f else start - d > threshold && d < start * 0.78f
+                if (recognised) {
+                    claimed = true
+                    startedOut = out
+                    claimDistance = d
+                    claimDepth = state.depth.value
                 }
-                SpacePhase.PHYSICAL -> {
-                    if (!claimed && d - start > threshold && d > start * 1.3f) {
-                        claimed = true
-                        state.leave()
-                    }
-                    if (claimed) event.changes.forEach { it.consume() }
-                }
-                SpacePhase.STICKER_EDITING -> Unit
+            }
+            if (claimed) {
+                // Closing the fingers by half their distance takes the object all the way into its
+                // space; opening them by 60 % brings it all the way back — and either way, reversing
+                // the fingers reverses the object.
+                val span = claimDistance * if (startedOut) SPREAD_SPAN else PINCH_SPAN
+                value = (claimDepth + (claimDistance - d) / span).coerceIn(0f, 1f)
+                state.follow(value)
+                velocity.addDataPoint(event.changes.first().uptimeMillis, value)
+                event.changes.forEach { it.consume() }
             }
         }
-        if (claimed) state.release()
+        state.fingers = 0
+        if (claimed) state.release(velocity.calculateVelocity(), startedOut)
     }
 }
 
+/** Fingers closing by this fraction of their distance (when claimed) take the object all the way in. */
+private const val PINCH_SPAN = 0.5f
+
+/** Fingers opening by this fraction of their distance bring it all the way back. */
+private const val SPREAD_SPAN = 0.6f
+
 /**
  * The space: dark, nearly empty — a few faint stars drifting very slowly, and four glints that
- * brighten and fade over many seconds. Procedural, one Canvas, nothing decoded.
+ * brighten and fade over many seconds. They are there to give the space depth, not to be watched:
+ * as the object moves back the nearer specks gather in a touch more than the far ones, and as it
+ * comes close they slide a little the other way (parallax). Procedural, one layer, nothing decoded
+ * and nothing allocated per frame. [still]: reduced motion — no drift, no twinkle.
  */
 @Composable
-private fun Space(depth: () -> Float, tint: Color) {
+private fun Space(state: PodiumSpaceState, tint: Color, still: Boolean) {
     var now by remember { mutableLongStateOf(0L) }
-    LaunchedEffect(Unit) {
-        val start = withFrameMillis { it }
+    LaunchedEffect(still) {
+        if (still) return@LaunchedEffect
+        val start = withFrameMillis { it } - now
         while (isActive) withFrameMillis { now = it - start }
     }
     val stars = remember { Starfield.generate() }
-    Canvas(
+    Spacer(
         Modifier
             .fillMaxSize()
-            .graphicsLayer { alpha = depth() },
-    ) {
-        drawRect(tint)
-        val t = now / 1000f
-        val diagonal = hypot(size.width, size.height)
-        // The faintest vignette: the edges of the space a little darker.
-        drawRect(
-            Brush.radialGradient(
-                listOf(Color.Transparent, Color.Black.copy(alpha = 0.5f)),
-                center = Offset(size.width * 0.4f, size.height * 0.55f),
-                radius = diagonal * 0.65f,
-            ),
-        )
-        for (s in stars.dust) {
-            // Drift: a few dp a second, wrapping; a slow shimmer.
-            val y = ((s.y * size.height + t * s.speed * density) % size.height + size.height) % size.height
-            val x = s.x * size.width + sin(t * 0.07f + s.phase) * 6f * density
-            val twinkle = 0.75f + 0.25f * sin(t * s.twinkle + s.phase)
-            drawCircle(Color.White.copy(alpha = s.alpha * twinkle), radius = s.radius * density, center = Offset(x, y))
-        }
-        for (g in stars.glints) {
-            val pulse = ((sin(t * (2 * PI.toFloat() / g.period) + g.phase) + 1f) / 2f)
-            val a = 0.08f + 0.42f * pulse * pulse
-            val c = Offset(g.x * size.width, g.y * size.height)
-            val arm = g.size * density * (0.7f + 0.3f * pulse)
-            translate(c.x, c.y) {
-                val glint = Path().apply {
-                    moveTo(0f, -arm); quadraticTo(0f, 0f, arm, 0f); quadraticTo(0f, 0f, 0f, arm)
-                    quadraticTo(0f, 0f, -arm, 0f); quadraticTo(0f, 0f, 0f, -arm); close()
+            .graphicsLayer { alpha = state.depth.value.coerceIn(0f, 1f) }
+            .drawWithCache {
+                val diagonal = hypot(size.width, size.height)
+                // The faintest vignette: the edges of the space a little darker.
+                val vignette = Brush.radialGradient(
+                    listOf(Color.Transparent, Color.Black.copy(alpha = 0.5f)),
+                    center = Offset(size.width * 0.4f, size.height * 0.55f),
+                    radius = diagonal * 0.65f,
+                )
+                onDrawBehind {
+                    drawRect(tint)
+                    drawRect(vignette)
+                    val t = now / 1000f
+                    val depth = state.depth.value.coerceIn(0f, 1f)
+                    val zoom = state.zoom.value
+                    val middle = Offset(size.width / 2f, size.height / 2f)
+                    for (s in stars.dust) {
+                        // Drift: a few dp a second, wrapping; a slow shimmer.
+                        val y = ((s.y * size.height + t * s.speed * density) % size.height + size.height) % size.height
+                        val x = s.x * size.width + sin(t * 0.07f + s.phase) * 6f * density
+                        // Parallax, by how near the speck is (its size): gathering in as the object
+                        // recedes, sliding the other way as it comes close.
+                        val near = (s.radius - 0.4f) / 0.9f
+                        val gather = 1f - 0.05f * near * depth
+                        val p = middle + (Offset(x, y) - middle) * gather + Offset(-PARALLAX_DP * density * near * zoom, 0f)
+                        val twinkle = 0.75f + 0.25f * sin(t * s.twinkle + s.phase)
+                        drawCircle(Color.White.copy(alpha = s.alpha * twinkle), radius = s.radius * density, center = p)
+                    }
+                    for (g in stars.glints) {
+                        val pulse = ((sin(t * (2 * PI.toFloat() / g.period) + g.phase) + 1f) / 2f)
+                        val a = 0.08f + 0.42f * pulse * pulse
+                        val arm = g.size * density * (0.7f + 0.3f * pulse)
+                        withTransform({
+                            translate(g.x * size.width, g.y * size.height)
+                            scale(arm, arm, Offset.Zero)
+                        }) { drawPath(UnitGlint, Color.White.copy(alpha = a)) }
+                    }
                 }
-                drawPath(glint, Color.White.copy(alpha = a))
-            }
-        }
-    }
+            },
+    )
 }
+
+/** A glint's four-pointed shape at unit size, scaled where it's drawn. */
+private val UnitGlint = Path().apply {
+    moveTo(0f, -1f); quadraticTo(0f, 0f, 1f, 0f); quadraticTo(0f, 0f, 0f, 1f)
+    quadraticTo(0f, 0f, -1f, 0f); quadraticTo(0f, 0f, 0f, -1f); close()
+}
+
+/** How far the nearest specks slide as the object comes close. */
+private const val PARALLAX_DP = 10f
 
 /** The stars, fixed for a run: a few dozen points and four glints. */
 private class Starfield(val dust: List<Dust>, val glints: List<Glint>) {

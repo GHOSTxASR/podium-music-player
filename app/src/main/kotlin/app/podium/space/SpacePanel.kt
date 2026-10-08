@@ -50,6 +50,7 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import app.podium.core.designsystem.component.pressFeedback
 import app.podium.core.designsystem.symbol.PodiumSymbol
 import app.podium.core.designsystem.symbol.Symbol
 import app.podium.core.designsystem.theme.CarbonColors
@@ -92,11 +93,16 @@ fun BoxScope.SpacePanel(
                 .fillMaxHeight()
                 .graphicsLayer {
                     // In from the right as the Podium settles (the last half of the way); small in
-                    // its corner while the Podium is close; away while stickers are arranged.
+                    // its corner while the Podium is close; away while stickers are arranged. It
+                    // swings in from a slight turn under the same camera as the object and squares up
+                    // as it lands — a panel in the same space, not a sheet over it (D-65). Tied to
+                    // depth, so it follows the fingers like the object does.
                     val inSpace = ((state.depth.value - 0.5f) / 0.5f).coerceIn(0f, 1f)
                     val shown = inSpace * (1f - state.edit.value)
                     translationX = (1f - shown) * (size.width + 48.dp.toPx())
                     alpha = shown
+                    rotationY = -PageSwingDegrees * (1f - shown)
+                    cameraDistance = PageCameraDistance * density
                     val s = 1f - (1f - SmallPageScale) * state.zoom.value
                     scaleX = s
                     scaleY = s
@@ -254,6 +260,7 @@ private fun ToggleHalf(label: String, on: Boolean, onClick: () -> Unit) {
         Modifier
             .fillMaxHeight()
             .width(ToggleHalfWidth)
+            .pressFeedback(0.95f)
             .background(if (on) ink.labelPrimary.copy(alpha = 0.92f) else Color.Transparent, KeyShape)
             .clickable(remember { MutableInteractionSource() }, indication = null, onClick = onClick)
             .semantics {
@@ -327,6 +334,7 @@ internal fun PanelButton(label: String, onClick: () -> Unit, modifier: Modifier 
         modifier
             .fillMaxWidth()
             .heightIn(min = 44.dp)
+            .pressFeedback(0.97f)
             .background(if (emphasized) ink.labelPrimary.copy(alpha = 0.92f) else Color.Transparent, KeyShape)
             .border(1.dp, if (emphasized) Color.Transparent else ink.separator, KeyShape)
             .clickable(remember { MutableInteractionSource() }, indication = null, onClick = onClick)
@@ -343,6 +351,7 @@ internal fun SmallKey(label: String, onClick: () -> Unit) {
     val ink = CarbonColors
     Box(
         Modifier
+            .pressFeedback(0.94f)
             .border(1.dp, ink.separator, KeyShape)
             .clickable(remember { MutableInteractionSource() }, indication = null, onClick = onClick)
             .semantics { role = Role.Button }
@@ -400,3 +409,9 @@ private val ToggleHeight = 44.dp
 private val ToggleHalfWidth = 104.dp
 private const val PageWidthFraction = 0.6f
 private const val SmallPageScale = 0.4f
+
+/** How far the page is turned as it starts to come in (it squares up as it lands). */
+private const val PageSwingDegrees = 9f
+
+/** The object's own camera (PodiumSpace), so the page turns in the same perspective. */
+private const val PageCameraDistance = 18f

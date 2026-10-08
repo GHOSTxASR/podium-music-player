@@ -100,12 +100,7 @@ class StickerStore(
 
     /** A placement moved, turned or resized; [persistNow] false while a gesture is still going. */
     fun update(placement: StickerPlacement, persistNow: Boolean = true) {
-        val clamped = placement.copy(
-            x = placement.x.coerceIn(-0.1f, 1.1f),
-            y = placement.y.coerceIn(-0.1f, 1.1f),
-            scale = placement.scale.coerceIn(MIN_SCALE, MAX_SCALE),
-            rotation = ((placement.rotation % 360f) + 360f) % 360f,
-        )
+        val clamped = clamp(placement)
         _placements.value = _placements.value.map { if (it.id == clamped.id) clamped else it }
         if (persistNow) persist()
     }
@@ -234,6 +229,14 @@ class StickerStore(
     }
 
     companion object {
+        /** Where a placement may go: on (or just off) the object, a sensible size, a turn in 0–360°. */
+        fun clamp(placement: StickerPlacement): StickerPlacement = placement.copy(
+            x = placement.x.coerceIn(-0.1f, 1.1f),
+            y = placement.y.coerceIn(-0.1f, 1.1f),
+            scale = placement.scale.coerceIn(MIN_SCALE, MAX_SCALE),
+            rotation = ((placement.rotation % 360f) + 360f) % 360f,
+        )
+
         private const val TAG = "PodiumStickers"
         private const val INDEX = "stickers.json"
         private const val IMAGE_CACHE_BYTES = 24 * 1024 * 1024

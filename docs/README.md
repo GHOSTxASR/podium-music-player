@@ -25,7 +25,7 @@ Foundation written 2026-10-02 (Phases 0–2 and source research S0). Read in thi
 10. [vertical-slice-plan.md](vertical-slice-plan.md) — the first build (the benchmark)
 11. [implementation-plan.md](implementation-plan.md) — phases 0–12
 
-Subsystems: [audio-architecture.md](audio-architecture.md) · [playback-state-machine.md](playback-state-machine.md) · [queue-and-autoplay.md](queue-and-autoplay.md) · [data-model.md](data-model.md) · [offline-architecture.md](offline-architecture.md) · [download-system.md](download-system.md) · [animation-system.md](animation-system.md)
+Subsystems: [audio-architecture.md](audio-architecture.md) · [playback-state-machine.md](playback-state-machine.md) · [queue-and-autoplay.md](queue-and-autoplay.md) · [data-model.md](data-model.md) · [offline-architecture.md](offline-architecture.md) · [download-system.md](download-system.md) · [animation-system.md](animation-system.md) (the motion language; its audit: [research/2026-10-08-motion-audit.md](research/2026-10-08-motion-audit.md))
 
 Quality: [accessibility.md](accessibility.md) · [performance.md](performance.md) · [security.md](security.md) (incl. privacy) · [testing-strategy.md](testing-strategy.md) · [deployment.md](deployment.md)
 

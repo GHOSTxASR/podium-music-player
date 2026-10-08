@@ -78,7 +78,7 @@ Sheets and menus are **not** keys (they're overlays in the `InputRouter` stack) 
 ## 4. Transitions
 | Transition | Motion |
 |---|---|
-| Push / Pop | iPod strip: outgoing and incoming move together 100% width; spring `navigate`; titles cross-fade in the TitleBar. |
+| Push / Pop | Along the paper (D-29, D-65): the column in front arcs into the left box and the next one grows out of the right box (back: the mirror), one SPATIAL move of 420 ms that leaves on the press; the title travels with it. animation-system.md §3. |
 | Predictive back | Gesture progress drives the pop strip (0–100%), with a 0.95 scale on the outgoing (current) screen edge; release past 35% commits. |
 | Mini player → Now Playing | Container transform from the capsule: capsule expands to full screen, artwork morphs to the large artwork position; spring `sheet`. |
 | Now Playing → back (when entered from the capsule) | Reverse container transform into the capsule. |

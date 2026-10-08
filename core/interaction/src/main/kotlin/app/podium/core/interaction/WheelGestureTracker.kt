@@ -38,6 +38,12 @@ class WheelGestureTracker(private val tuning: WheelTuning = WheelTuning()) {
     /** True once the current touch has become a rotation. */
     val isRotating: Boolean get() = rotating
 
+    /**
+     * How far the finger has turned around the Wheel since it landed, in degrees (clockwise
+     * positive), unwrapped across 0°/360°. The Wheel's band follows it 1:1 while it turns (D-65).
+     */
+    val travelledDegrees: Float get() = travelled.toFloat()
+
     /** The button visually pressed right now (null while rotating or idle). */
     val pressedButton: WheelButton? get() = if (rotating) null else startZone
 

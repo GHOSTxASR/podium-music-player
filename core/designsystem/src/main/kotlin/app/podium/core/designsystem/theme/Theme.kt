@@ -1,6 +1,10 @@
 package app.podium.core.designsystem.theme
 
+import android.content.ContentResolver
+import android.database.ContentObserver
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.Spring
@@ -9,8 +13,12 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.IntOffset
@@ -24,16 +32,38 @@ import app.podium.core.designsystem.type.LyricsTypeface
 import app.podium.core.designsystem.type.PodiumType
 import app.podium.core.designsystem.type.TypographyPreset
 
-/** Motion tokens (animation-system.md §2). */
+/**
+ * Podium's motion language (animation-system.md §2, D-65). Seven kinds of motion, each meaning one
+ * thing, none borrowing another's curve:
+ *
+ * - TACTILE: a key under the finger. Down hard, no bounce; up with a whisper of spring.
+ * - MECHANICAL: the Wheel's own parts. The material follows the finger; only the detent settles.
+ * - FOCUS: the selector moving through a list. Glides a step; locks on during a spin.
+ * - SPATIAL: moving along the paper. Leaves on the frame of the press, settles long and soft.
+ * - CONTENT: the music changing in place. Short; old content gets out of the way.
+ * - DRAMATIC: entering a piece of music. A little slower, with a settle — still interruptible.
+ * - PERSONAL: the object, its space and stickers. The hand drives; release keeps its momentum.
+ *
+ * Interactive motion is springs (they retarget and keep their speed); choreographed moves are tweens
+ * on curves that start moving at once. Nothing waits for an animation, and nothing is delayed to
+ * look animated.
+ */
 @Immutable
 data class PodiumMotion(val reduced: Boolean) {
+    // FOCUS
     fun <T> focus() = spring<T>(stiffness = 1400f, dampingRatio = 0.86f)
     fun <T> focusFast() = spring<T>(stiffness = 2400f, dampingRatio = Spring.DampingRatioNoBouncy)
-    fun <T> press() = spring<T>(stiffness = 2000f, dampingRatio = 0.7f)
-    fun <T> navigate() = spring<T>(stiffness = 380f, dampingRatio = 0.92f)
-    fun <T> sheet() = spring<T>(stiffness = 300f, dampingRatio = 0.88f)
-    fun <T> boundary() = spring<T>(stiffness = 3000f, dampingRatio = 0.5f)
+
+    /** The mini player and Now Playing rising from it: a sheet, not a column. */
     fun navigateOffset() = spring(stiffness = 380f, dampingRatio = 0.92f, visibilityThreshold = IntOffset(1, 1))
+
+    // SPATIAL
+    /** Part of a move along the paper, on [Spatial]. */
+    fun <T> spatial(durationMillis: Int = SpatialMillis, delayMillis: Int = 0) = tween<T>(durationMillis, delayMillis, Spatial)
+
+    // CONTENT
+    fun <T> contentIn() = tween<T>(durationMillis = if (reduced) 120 else 160, easing = Standard)
+    fun <T> contentOut() = tween<T>(durationMillis = 90, easing = Standard)
 
     fun <T> fadeFast() = tween<T>(durationMillis = if (reduced) 0 else 120, easing = Standard)
     fun <T> fadeStandard() = tween<T>(durationMillis = if (reduced) 150 else 220, easing = Standard)
@@ -44,10 +74,42 @@ data class PodiumMotion(val reduced: Boolean) {
         val EmphasizedDecelerate = CubicBezierEasing(0.05f, 0.7f, 0.1f, 1f)
 
         /**
-         * Moves across the display (D-60): sets off gently, keeps going, and settles with a long,
-         * soft finish — the feel of iOS's and ColorOS's own transitions. One curve end to end.
+         * SPATIAL (D-65, after D-60): one curve end to end that leaves on the frame of the press —
+         * 14 % of the way after 17 ms, 71 % after 100 ms — and settles with a long, soft finish.
+         * D-60's curve set off from rest and sat still for the first five frames.
          */
-        val Smooth = CubicBezierEasing(0.3f, 0f, 0.1f, 1f)
+        val Spatial = CubicBezierEasing(0.2f, 0.7f, 0.2f, 1f)
+
+        /** One move along the paper. */
+        const val SpatialMillis = 420
+
+        // TACTILE
+        /** A key going down: ~50 ms, no bounce. */
+        fun <T> pressIn() = spring<T>(stiffness = 6000f, dampingRatio = 0.9f)
+
+        /** A key coming back up: a settle of a fraction of a percent, ~160 ms. */
+        fun <T> pressOut() = spring<T>(stiffness = 1500f, dampingRatio = 0.6f)
+
+        /** Something small arriving under the finger (a context menu): quick, barely any overshoot. */
+        fun <T> pop() = spring<T>(stiffness = 1200f, dampingRatio = 0.82f)
+
+        // MECHANICAL
+        /** The Wheel's band clicking into its nearest detent once the finger lifts. */
+        fun <T> detent() = spring<T>(stiffness = 1800f, dampingRatio = 0.75f)
+
+        // DRAMATIC
+        /** Entering a piece of music: the cover settling into its place. ~300 ms. */
+        fun <T> dramatic() = spring<T>(stiffness = 220f, dampingRatio = 0.85f)
+
+        // PERSONAL
+        /** The object settling into its space once the fingers let go (or without them). ~380 ms. */
+        fun <T> settleIn() = spring<T>(stiffness = 200f, dampingRatio = 0.86f)
+
+        /** The object coming back to being the flat Podium: decisive, no overshoot. ~380 ms. */
+        fun <T> settleBack() = spring<T>(stiffness = 300f, dampingRatio = 1f)
+
+        /** Rearranging the space (Podium | Settings, the editing pose). ~330 ms. */
+        fun <T> rearrange() = spring<T>(stiffness = 220f, dampingRatio = 0.88f)
     }
 }
 
@@ -112,11 +174,7 @@ fun PodiumTheme(
     displayImage: DisplayImage? = null,
     content: @Composable () -> Unit,
 ) {
-    val context = LocalContext.current
-    // "Remove animations" (animator duration scale 0) means reduced motion (animation-system.md §5).
-    val reducedMotion = remember(context) {
-        Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
-    }
+    val reducedMotion = rememberReducedMotion()
     val colors = remember(displayTheme, darkTheme, display, displayImage) { DisplayColors.colors(displayTheme, darkTheme, display, displayImage) }
     val surface = remember(displayTheme, display, displayImage) { DisplayColors.surface(displayTheme, display, displayImage) }
     val preset = TypographyPreset.of(display.font)
@@ -131,3 +189,26 @@ fun PodiumTheme(
         content = content,
     )
 }
+
+/**
+ * "Remove animations" (animator duration scale 0) means reduced motion (animation-system.md §5),
+ * followed live: switching it while Podium runs takes effect at once, not at the next launch.
+ */
+@Composable
+private fun rememberReducedMotion(): Boolean {
+    val resolver = LocalContext.current.contentResolver
+    var reduced by remember(resolver) { mutableStateOf(animationsRemoved(resolver)) }
+    DisposableEffect(resolver) {
+        val observer = object : ContentObserver(Handler(Looper.getMainLooper())) {
+            override fun onChange(selfChange: Boolean) {
+                reduced = animationsRemoved(resolver)
+            }
+        }
+        resolver.registerContentObserver(Settings.Global.getUriFor(Settings.Global.ANIMATOR_DURATION_SCALE), false, observer)
+        onDispose { resolver.unregisterContentObserver(observer) }
+    }
+    return reduced
+}
+
+private fun animationsRemoved(resolver: ContentResolver): Boolean =
+    Settings.Global.getFloat(resolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f

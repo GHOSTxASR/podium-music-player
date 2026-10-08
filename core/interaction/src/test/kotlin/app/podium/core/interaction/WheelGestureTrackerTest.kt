@@ -51,6 +51,18 @@ class WheelGestureTrackerTest {
     }
 
     @Test
+    fun `the travelled angle follows the finger across 12 o'clock, both ways`() {
+        val tracker = WheelGestureTracker()
+        tracker.down(340.0)
+        tracker.sweep(340.0, 395.0)
+        assertEquals(55f, tracker.travelledDegrees, 0.01f)
+        tracker.sweep(395.0, 365.0)
+        assertEquals(25f, tracker.travelledDegrees, 0.01f)
+        tracker.onUp()
+        assertEquals(0f, tracker.travelledDegrees, "a new touch starts from nothing")
+    }
+
+    @Test
     fun `a tap presses the zone it started on`() {
         val tracker = WheelGestureTracker()
         tracker.down(90.0)

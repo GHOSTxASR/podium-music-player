@@ -39,6 +39,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
@@ -282,7 +283,9 @@ fun WheelKeyboard(host: KeyboardHost, diameter: Dp, palette: ShellPalette, wheel
             }
             val current = shown
             if (open > 0.3f && current != null) {
-                KeyboardPanel(current, palette, appear = ((open - 0.3f) / 0.7f).coerceIn(0f, 1f), modifier = Modifier.fillMaxSize().padding(KeyboardInset))
+                // Read by each key while drawing: the keys rise without recomposing every frame (D-65).
+                val appear = remember(progress) { { ((progress.value.coerceIn(0f, 1f) - 0.3f) / 0.7f).coerceIn(0f, 1f) } }
+                KeyboardPanel(current, palette, appear = appear, modifier = Modifier.fillMaxSize().padding(KeyboardInset))
             }
         }
     }
@@ -305,7 +308,7 @@ private fun panelSurface(palette: ShellPalette, shape: RoundedCornerShape): Modi
  * brings them up from the middle outwards. Typing gives the Wheel's own click.
  */
 @Composable
-internal fun KeyboardPanel(session: KeyboardSession, palette: ShellPalette, appear: Float, modifier: Modifier = Modifier) {
+internal fun KeyboardPanel(session: KeyboardSession, palette: ShellPalette, appear: () -> Float, modifier: Modifier = Modifier) {
     val haptics = rememberPodiumHaptics()
     var state by remember(session.owner, session.layout) { mutableStateOf(KeyboardState(KeyboardLayouts.firstPage(session.layout))) }
     var lastShift by remember { mutableLongStateOf(Long.MIN_VALUE) }
@@ -329,7 +332,7 @@ internal fun KeyboardPanel(session: KeyboardSession, palette: ShellPalette, appe
                     val dx = ((c + 0.5f) / row.size - 0.5f) * 2f
                     val dy = ((r + 0.5f) / rows.size - 0.5f) * 2f
                     val distance = kotlin.math.sqrt(dx * dx + dy * dy) / 1.42f
-                    val shown = ((appear - 0.45f * distance) / 0.55f).coerceIn(0f, 1f)
+                    val shown = { ((appear() - 0.45f * distance) / 0.55f).coerceIn(0f, 1f) }
                     Box(Modifier.weight(spec.weight / total).fillMaxHeight()) {
                         if (spec !== Gap) KeyCap(spec.key, state, session.action, palette, shown, onPress = { press(spec.key) })
                     }
@@ -340,11 +343,14 @@ internal fun KeyboardPanel(session: KeyboardSession, palette: ShellPalette, appe
 }
 
 @Composable
-private fun KeyCap(key: Key, state: KeyboardState, action: KeyboardAction, palette: ShellPalette, shown: Float, onPress: () -> Unit) {
+private fun KeyCap(key: Key, state: KeyboardState, action: KeyboardAction, palette: ShellPalette, shown: () -> Float, onPress: () -> Unit) {
     val colors = PodiumTheme.colors
     val type = PodiumTheme.type
     val glass = palette.isGlass
     var pressed by remember { mutableStateOf(false) }
+    // TACTILE (D-65): down on the frame the finger lands, up with a whisper of spring.
+    val travel = remember { KeyTravel(0.94f) }
+    val scope = rememberCoroutineScope()
     val currentPress by rememberUpdatedState(onPress)
     val repeats = key == Key.Backspace
     val shape = RoundedCornerShape(if (palette.matte) 3.dp else 9.dp)
@@ -361,11 +367,12 @@ private fun KeyCap(key: Key, state: KeyboardState, action: KeyboardAction, palet
         Modifier
             .fillMaxSize()
             .graphicsLayer {
-                alpha = shown
-                val s = (0.6f + 0.4f * shown) * if (pressed) 0.94f else 1f
+                val up = shown()
+                alpha = up
+                val s = (0.6f + 0.4f * up) * travel.value
                 scaleX = s
                 scaleY = s
-                translationY = (1f - shown) * 10.dp.toPx()
+                translationY = (1f - up) * 10.dp.toPx()
             }
             .clip(shape)
             .background(face)
@@ -378,6 +385,7 @@ private fun KeyCap(key: Key, state: KeyboardState, action: KeyboardAction, palet
             .pointerInput(key) {
                 awaitEachGesture {
                     awaitFirstDown()
+                    travel.press(scope)
                     pressed = true
                     if (repeats) {
                         // Delete repeats while held, and stops when the finger lifts or slides off.
@@ -391,6 +399,7 @@ private fun KeyCap(key: Key, state: KeyboardState, action: KeyboardAction, palet
                         val up = waitForUpOrCancellation()
                         if (up != null) currentPress()
                     }
+                    travel.release(scope)
                     pressed = false
                 }
             },

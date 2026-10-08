@@ -46,6 +46,7 @@ import app.podium.core.designsystem.glass.GlassMaterial
 import app.podium.core.designsystem.glass.glass
 import app.podium.core.designsystem.symbol.PodiumSymbol
 import app.podium.core.designsystem.symbol.Symbol
+import app.podium.core.designsystem.theme.PodiumMotion
 import app.podium.core.designsystem.theme.PodiumTheme
 import app.podium.core.designsystem.theme.Spacing
 import app.podium.core.designsystem.type.PodiumText
@@ -80,8 +81,8 @@ fun TitleBar(title: String, canGoBack: Boolean, onBack: () -> Unit, modifier: Mo
         AnimatedVisibility(
             visible = canGoBack,
             modifier = Modifier.align(Alignment.CenterStart),
-            enter = fadeIn(motion.fadeFast()) + scaleIn(motion.press(), initialScale = 0.8f),
-            exit = fadeOut(motion.fadeFast()) + scaleOut(motion.press(), targetScale = 0.8f),
+            enter = fadeIn(motion.fadeFast()) + scaleIn(PodiumMotion.pressOut(), initialScale = 0.8f),
+            exit = fadeOut(motion.fadeFast()) + scaleOut(PodiumMotion.pressIn(), targetScale = 0.8f),
         ) {
             GlassIconButton(PodiumSymbol.ChevronLeft, "Back", onBack)
         }
@@ -146,6 +147,8 @@ fun MiniPlayer(
     Box(
         modifier
             .height(Spacing.miniPlayer)
+            // A large surface goes down only a little; its own keys go further (TACTILE, D-65).
+            .pressFeedback(0.985f)
             .glass(GlassMaterial.Floating, RoundedCornerShape(if (colors.isIndustrial) 3.dp else 28.dp))
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onOpen)
             .semantics { contentDescription = "Now playing: $title, $subtitle. Opens Now Playing" },
@@ -163,6 +166,7 @@ fun MiniPlayer(
             Box(
                 Modifier
                     .size(44.dp)
+                    .pressFeedback(0.86f)
                     .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onPlayPause)
                     .semantics {
                         role = Role.Button
@@ -176,6 +180,7 @@ fun MiniPlayer(
                 Box(
                     Modifier
                         .size(44.dp)
+                        .pressFeedback(0.86f)
                         .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onNext)
                         .semantics {
                             role = Role.Button

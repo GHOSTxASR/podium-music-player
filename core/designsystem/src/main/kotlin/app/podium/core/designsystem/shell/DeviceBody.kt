@@ -11,6 +11,8 @@ import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.graphicsLayer
 import app.podium.core.designsystem.theme.PodiumTheme
 
 /**
@@ -33,6 +35,11 @@ fun DeviceBody(
     val sheenAlpha = if (palette.matte) 0f else if (palette.isLight) 0.22f else 0.07f
     Box(
         modifier
+            // The body is the largest thing drawn and changes only when the finish does or the glitter
+            // catches a new tilt: kept in its own cached layer, a frame where the Wheel or the display
+            // moves recomposites it as one bitmap instead of re-running its gradients, grain and the
+            // glitter's full-window passes (D-65; measured on the Nothing Phone (3a)).
+            .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
             .drawWithCache {
                 val falloff = Brush.verticalGradient(listOf(top, bottom))
                 val sheen = Brush.linearGradient(
