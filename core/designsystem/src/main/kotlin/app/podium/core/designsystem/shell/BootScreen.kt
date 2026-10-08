@@ -1,19 +1,20 @@
 package app.podium.core.designsystem.shell
 
+import android.graphics.Bitmap
+import android.graphics.Paint
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.keyframes
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
@@ -26,22 +27,37 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.ImageShader
+import androidx.compose.ui.graphics.ShaderBrush
+import androidx.compose.ui.graphics.TileMode
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
+import androidx.compose.ui.unit.min
 import androidx.compose.ui.unit.sp
+import app.podium.core.designsystem.R
 import app.podium.core.designsystem.theme.PodiumMotion
 import app.podium.core.designsystem.theme.PodiumTheme
-import app.podium.core.designsystem.type.PodiumText
 import app.podium.core.interaction.InputTargetEffect
 import app.podium.core.interaction.PodiumInput
 import app.podium.core.interaction.WheelContext
@@ -49,9 +65,9 @@ import app.podium.core.interaction.rememberPodiumHaptics
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.text.NumberFormat
+import kotlin.math.roundToInt
 
-private val MarkRing = Color(0xFFE8EEF4)
-private val MarkCenter = Color(0xFF367FE0)
+private val Silver = Color(0xFFDADADF)
 private val Phosphor = Color(0xFFD9D8D2)
 private val PhosphorDim = Color(0xFF8E8D87)
 
@@ -66,10 +82,11 @@ private data class TypedLine(val label: String, val leader: String, val result: 
 /**
  * Power-on (D-26, D-32): old hardware, new software. First a self-test types itself out —
  * Podium's ROM, then each check landing with a tick you can feel (and hear, with clicks on) and
- * the memory counting up — then the screen clears to Podium's mark drawing itself as the startup
- * chord plays ([onChime]) and a progress bar fills, stalling now and then like a real disk.
+ * the memory counting up — then the screen clears to Podium's wordmark, silver with glitter set in
+ * it, arriving as the startup chord plays ([onChime]), and a progress bar fills under it, stalling
+ * now and then like a real disk.
  * [checks] carry real values (filled in by the caller); a late value is picked up as its line
- * types. Any Wheel press skips ahead. With reduced motion: the lines appear at once, then the mark.
+ * types. Any Wheel press skips ahead. With reduced motion: the lines appear at once, then the wordmark.
  */
 @Composable
 fun BootScreen(checks: List<BootCheck>, onChime: () -> Unit, onFinished: () -> Unit, modifier: Modifier = Modifier) {
@@ -84,8 +101,6 @@ fun BootScreen(checks: List<BootCheck>, onChime: () -> Unit, onFinished: () -> U
     var stage by remember { mutableStateOf(0) } // 0 self-test, 1 mark
     var skip by remember { mutableStateOf(false) }
     val postAlpha = remember { Animatable(1f) }
-    val sweep = remember { Animatable(0f) }
-    val dot = remember { Animatable(0f) }
     val word = remember { Animatable(0f) }
     val progress = remember { Animatable(0f) }
     val bar = remember { Animatable(0f) }
@@ -151,26 +166,18 @@ fun BootScreen(checks: List<BootCheck>, onChime: () -> Unit, onFinished: () -> U
             postAlpha.animateTo(0f, tween(180))
         }
 
-        // The mark, with the chord: the ring sweeps closed, the centre lands, the bar fills.
+        // The wordmark, with the chord: it settles into place as the chord blooms, then the bar fills.
         stage = 1
         chime()
         haptics.confirm()
         if (reduced) {
-            sweep.snapTo(1f); dot.snapTo(1f); word.snapTo(1f); bar.snapTo(1f); progress.snapTo(1f)
+            word.snapTo(1f); bar.snapTo(1f); progress.snapTo(1f)
             delay(700)
         } else {
-            launch { sweep.animateTo(1f, tween(700, easing = PodiumMotion.EmphasizedDecelerate)) }
+            launch { word.animateTo(1f, tween(620, easing = PodiumMotion.EmphasizedDecelerate)) }
             launch {
-                delay(420)
-                dot.animateTo(1f, spring(dampingRatio = 0.55f, stiffness = 500f))
-            }
-            launch {
-                delay(430)
+                delay(400)
                 haptics.press()
-            }
-            launch {
-                delay(640)
-                word.animateTo(1f, tween(420))
             }
             delay(900)
             bar.animateTo(1f, tween(200))
@@ -221,42 +228,116 @@ fun BootScreen(checks: List<BootCheck>, onChime: () -> Unit, onFinished: () -> U
                 }
             }
         } else {
-            Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
-                Canvas(Modifier.size(84.dp)) {
-                    val stroke = 9.dp.toPx()
-                    val r = size.minDimension / 2f - stroke / 2f
-                    drawArc(
-                        color = MarkRing,
-                        startAngle = -90f,
-                        sweepAngle = 360f * sweep.value,
-                        useCenter = false,
-                        topLeft = Offset(center.x - r, center.y - r),
-                        size = Size(r * 2, r * 2),
-                        style = Stroke(stroke, cap = StrokeCap.Round),
+            BootMark(word = { word.value }, bar = { bar.value }, progress = { progress.value }, Modifier.fillMaxSize())
+        }
+    }
+}
+
+/**
+ * The boot's second stage (D-71): the wordmark, as the website draws it, and the progress bar under
+ * it. [word] (0–1) brings the wordmark in, [bar] the bar, and [progress] fills it.
+ */
+@Composable
+internal fun BootMark(word: () -> Float, bar: () -> Float, progress: () -> Float, modifier: Modifier = Modifier) {
+    BoxWithConstraints(modifier, contentAlignment = Alignment.Center) {
+        val screen = maxWidth
+        // Three quarters of the width; on a wide, short screen, held to about a third of its height.
+        val markWidth = min(screen * 0.76f, maxHeight * 1.8f)
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            GlitterWordmark(width = markWidth, appear = word)
+            Spacer(Modifier.height(24.dp))
+            // The progress bar: a hairline capsule, filling.
+            Canvas(Modifier.width(min(screen * 0.58f, 220.dp)).height(7.dp).graphicsLayer { alpha = bar() }) {
+                val radius = CornerRadius(size.height / 2f)
+                drawRoundRect(PhosphorDim, cornerRadius = radius, style = Stroke(1.dp.toPx()))
+                val inset = 1.5.dp.toPx()
+                val w = (size.width - inset * 2) * progress()
+                if (w > 0f) {
+                    drawRoundRect(
+                        Silver,
+                        topLeft = Offset(inset, inset),
+                        size = Size(w, size.height - inset * 2),
+                        cornerRadius = CornerRadius((size.height - inset * 2) / 2f),
                     )
-                    drawCircle(MarkCenter, radius = size.minDimension * 0.15f * dot.value)
-                }
-                Spacer(Modifier.height(18.dp))
-                PodiumText("Podium", PodiumTheme.type.title, MarkRing, Modifier.graphicsLayer { alpha = word.value })
-                Spacer(Modifier.height(26.dp))
-                // The progress bar: a hairline capsule, filling.
-                Canvas(Modifier.width(132.dp).height(6.dp).graphicsLayer { alpha = bar.value }) {
-                    val radius = CornerRadius(size.height / 2f)
-                    drawRoundRect(PhosphorDim, cornerRadius = radius, style = Stroke(1.dp.toPx()))
-                    val inset = 1.5.dp.toPx()
-                    val w = (size.width - inset * 2) * progress.value
-                    if (w > 0f) {
-                        drawRoundRect(
-                            MarkRing,
-                            topLeft = Offset(inset, inset),
-                            size = Size(w, size.height - inset * 2),
-                            cornerRadius = CornerRadius((size.height - inset * 2) / 2f),
-                        )
-                    }
                 }
             }
         }
     }
+}
+
+private val WordmarkFamily = FontFamily(Font(R.font.archivo_wordmark))
+
+/** From the top of the line to the bottom: white where the light falls, then a soft silver. */
+private val SilverStops = arrayOf(0.18f to Color(0xFFEFEFF2), 0.52f to Color(0xFFD3D3D9), 0.84f to Color(0xFFA3A3AD))
+
+/**
+ * "PODIUM" in Archivo at weight 900 and width 125, [width] wide: the website's wordmark, in silver
+ * with fine flakes set into the letters, bright and dark. The flakes hold still (static glitter,
+ * unlike the body's, which follows the light). [appear] (0–1) fades it in as it settles to size.
+ */
+@Composable
+private fun GlitterWordmark(width: Dp, appear: () -> Float) {
+    val density = LocalDensity.current
+    val flakes = remember(density.density) { wordmarkFlakes(density.density) }
+    // The logotype never follows the font-size setting: it is sized to the screen, like a picture.
+    val fontSize = with(density) { (width / WordmarkEms).toSp() }
+    BasicText(
+        "PODIUM",
+        Modifier
+            .clearAndSetSemantics { }
+            .graphicsLayer {
+                val a = appear()
+                alpha = a
+                scaleX = 0.94f + 0.06f * a
+                scaleY = scaleX
+                compositingStrategy = CompositingStrategy.Offscreen
+            }
+            .drawWithCache {
+                val silver = Brush.verticalGradient(*SilverStops)
+                val glitter = ShaderBrush(ImageShader(flakes, TileMode.Repeated, TileMode.Repeated))
+                onDrawWithContent {
+                    drawContent()
+                    drawRect(silver, blendMode = BlendMode.SrcAtop)
+                    drawRect(glitter, blendMode = BlendMode.SrcAtop)
+                }
+            },
+        style = TextStyle(fontFamily = WordmarkFamily, fontSize = fontSize, letterSpacing = (-0.01).em, color = Color.White, textAlign = TextAlign.Center),
+        maxLines = 1,
+        softWrap = false,
+    )
+}
+
+/** "PODIUM" is this many ems wide at the wordmark's letter spacing. */
+private const val WordmarkEms = 5.31f
+
+/**
+ * One tile of the wordmark's flakes, from the body's seeded field (so it is the same every launch):
+ * bright flakes and darker specks on transparent, each about a dp across.
+ */
+private fun wordmarkFlakes(pxPerDp: Float): ImageBitmap {
+    val tile = (96 * pxPerDp).roundToInt().coerceIn(128, 512)
+    val flakes = GlitterField.flakes(tile, density = 0.85f, amount = 0.55f, flakePx = GlitterField.flakePx(0.4f, pxPerDp), seed = 71)
+    val bitmap = Bitmap.createBitmap(tile, tile, Bitmap.Config.ARGB_8888)
+    val canvas = android.graphics.Canvas(bitmap)
+    val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+    for (f in flakes) {
+        paint.color = if (f.lit) {
+            android.graphics.Color.argb((140 + 115 * f.brightness).roundToInt(), 255, 255, 255)
+        } else {
+            android.graphics.Color.argb((30 + 70 * f.brightness).roundToInt(), 24, 24, 30)
+        }
+        // Each flake at its place and wrapped across the edges, so the tiles join seamlessly.
+        for (dx in intArrayOf(0, -tile, tile)) for (dy in intArrayOf(0, -tile, tile)) {
+            val x = f.x + dx
+            val y = f.y + dy
+            if (x < -f.size || y < -f.size || x > tile + f.size || y > tile + f.size) continue
+            canvas.save()
+            canvas.rotate(f.angle, x, y)
+            canvas.drawRect(x - f.size / 2, y - f.size / 2, x + f.size / 2, y + f.size / 2, paint)
+            canvas.restore()
+        }
+    }
+    return bitmap.asImageBitmap()
 }
 
 /** Where the dot leaders end, so results line up in a column. */

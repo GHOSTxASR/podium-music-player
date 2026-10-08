@@ -524,3 +524,27 @@ Every significant decision, newest at the bottom. Major ones have an ADR in `adr
   it later, provided the root README link is updated in the same change.
 - **Supersedes:** D-69's GitHub Pages hosting bullet only. Its release-signing and GitHub Release
   decisions remain in force.
+
+### D-71 · The boot shows the wordmark, and the chord grows
+- **Context:** user direction (2026-10-08): on the boot screen, replace the drawn ring with its blue
+  centre with the website's bold PODIUM wordmark, white or slightly silver with static glitter all
+  over; make the progress bar a little broader; give the startup chord more bass and depth and a
+  slight electric guitar chord, so it feels grand.
+- **Decision:**
+  - The boot's second stage draws "PODIUM" in Archivo at weight 900 and width 125, the website's
+    wordmark, about three quarters of the screen wide and never scaled by the font-size setting. It
+    is silver (white at the top of the letters, a soft silver at their feet) with fine flakes set
+    into the letters, bright and dark, from the body glitter's seeded field. They hold still.
+  - It is a logotype, so it is the one place besides the Wheel's `MENU` drawn in capitals.
+  - The ring, its blue centre and the small "Podium" title under them are gone. The boot screen has
+    no blue now.
+  - The progress bar is 58% of the screen wide (at most 220 dp) and 7 dp tall, up from 132 by 6 dp.
+  - The chord is rebuilt by `tools/sounds/boot_chord.py`, still an original synthesized sound with
+    no samples. It keeps the strummed C major 9 and adds a soft low impact, a sub-octave C, gently
+    saturated low strings (so a phone speaker that can't play the sub still sounds full), and a
+    Cadd9 strum on lightly overdriven plucked strings just behind the chord. It is 5 s long and
+    about 5 dB louder on average than before, and peaks at -1 dBFS.
+  - The Archivo face is a static instance subset to printable ASCII (`third_party/FONTS.md`), about
+    29 KB.
+- **Tradeoff:** the chord is longer and louder than before. It still plays as a UI sound, so the
+  system-sounds volume, silent mode and Settings ▸ Startup sound all still govern it.

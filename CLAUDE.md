@@ -19,7 +19,7 @@ Read `docs/README.md` first. The docs are the source of truth; update them in th
 - **The device shell (D-26):** the whole UI lives inside `VirtualScreen` above the Wheel; finishes change the body and Wheel only, never the screen's colours.
 - **Carbon and Bone (D-29):** no glass, no gloss, no blue, no pills on the display; selection is lit (text, band, indicator), never highlighted; album art is the only colour. Lists use the paper (`FocusList` default) — don't hand-roll vertical lists.
 - **LOCAL and ONLINE stay separate (D-34).** Branch on `SourceDescriptor.environment` and capabilities, never provider. Online likes/playlists/history live in ONLINE's own tables; local favorites never change from online actions and vice versa; online songs never appear in the local library; autoplay never mixes environments or sources.
-- **Copy:** sentence case; no all-caps except the wheel's `MENU`; no middle-dot meta strings; errors explain and give a next step.
+- **Copy:** sentence case; no all-caps except the wheel's `MENU` and the boot wordmark (D-71); no middle-dot meta strings; errors explain and give a next step.
 
 ## Environment notes
 - Windows 11, 7.7 GB RAM: keep Gradle heap caps; prefer a physical device over an emulator.

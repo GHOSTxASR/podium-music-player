@@ -100,7 +100,7 @@ Total debug-asset budget ≤ 8 MB.
 1. Does it read as an iPod in five seconds? (one list, one focus, the wheel)
 2. Is the wheel the only bold thing? Count glass surfaces (≤ 4 persistent).
 3. Spacing on the 4dp grid; gutters 16/20; row heights per spec.
-4. Typography: styles from the scale only; tabular numerals; no all-caps except `MENU`; no dot-joined meta strings.
+4. Typography: styles from the scale only; tabular numerals; no all-caps except `MENU` and the boot wordmark (D-71); no dot-joined meta strings.
 5. Contrast: spot-check with the worst artwork fixture in light & dark & HC.
 6. Motion: lens follows the wheel without lag; nothing moves when idle; reduced motion works.
 7. Glass restraint: no glass on rows/artwork/text containers; glass has real backdrop.
