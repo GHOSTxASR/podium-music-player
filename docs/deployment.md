@@ -69,8 +69,14 @@ SemVer `versionName` (`0.x` until v1.0); `versionCode` = `major*1_000_000 + mino
 2. Publish a GitHub Release tagged `v<versionName>` with the APK attached as `podium.apk`, so
    `releases/latest/download/podium.apk` (the website's and README's download link) always serves
    the newest one. Never commit APKs (`.gitignore`).
-3. The website (`site/`) deploys to GitHub Pages from `.github/workflows/pages.yml` on every push
-   to `main` that touches `site/`.
+3. The website is served by Vercel from `site/`. In Vercel, import
+   `GHOSTxASR/podium-music-player`, leave the Root Directory at the repository root, and deploy
+   `main`. The repository's `vercel.json` selects the no-build **Other** framework and sets
+   `site/` as the output directory. Vercel then deploys `main` to production and creates previews
+   for pull requests. The website's Download and View on GitHub links remain GitHub URLs; do not
+   host APKs in the Vercel deployment. Once the Vercel site is verified, unpublish the legacy
+   GitHub Pages deployment in **Settings → Pages**; deleting its workflow alone leaves the last
+   Pages deployment online.
 
 ## 8. Release checklist (Phase 12)
 License audit complete (`docs/licenses.md`) · About screen attributions generated · Privacy notice published · README with screenshots · Known limitations documented · Baseline profiles regenerated · All phase-exit device checklists passed on API 29, 33, 36, 37 · Version bumped, changelog written · Signed artifacts' SHA-256 published.

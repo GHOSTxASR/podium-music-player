@@ -509,3 +509,18 @@ Every significant decision, newest at the bottom. Major ones have an ADR in `adr
   - R8 keeps NewPipeExtractor and Rhino whole (they're reflective), LiteRT's JNI classes, and every Room database with its generated `_Impl` (Room finds it by name; without the rule the release build crashed at start in WorkManager's `WorkDatabase`). Checked on the Nothing Phone (3a): the release build starts, runs the tour, Home and Online, and loads online artwork, with no crash.
   - The website (`site/`) deploys to GitHub Pages through `.github/workflows/pages.yml`; promotional video renders (`artifacts/ad/`, one with a commercial track) are ignored.
 - **Tradeoff:** rewriting history changes every commit id, so other clones must re-clone or reset to the new `origin`.
+
+### D-70 · Vercel hosts the website; GitHub serves the source and APKs
+- **Context:** user direction (2026-10-08): the public website should move from GitHub Pages to
+  Vercel, while the app download and source view remain on GitHub.
+- **Decision:** `vercel.json` serves the static `site/` directory with no build step. Vercel's
+  GitHub integration deploys `main` to production and pull requests as previews; the GitHub Pages
+  workflow is removed. After the Vercel production deployment is verified, the existing GitHub
+  Pages deployment is unpublished. The landing page's Download button stays on the stable GitHub
+  Release asset URL (`releases/latest/download/podium.apk`), and View on GitHub stays on the
+  repository. APKs are never put in Vercel deployment output.
+- **Tradeoff:** the final public website URL is owned by the Vercel project (or its custom domain),
+  so the README's existing GitHub Pages URL must be replaced after the first Vercel production
+  deployment establishes that URL.
+- **Supersedes:** D-69's GitHub Pages hosting bullet only. Its release-signing and GitHub Release
+  decisions remain in force.

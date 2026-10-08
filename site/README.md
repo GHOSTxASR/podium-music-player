@@ -19,7 +19,23 @@ npx --yes http-server site -p 5178 -c-1
 
 ## Deploy
 
-GitHub Pages serves a branch from its root or `/docs` only, so publishing `site/` needs a Pages
-workflow (Actions: upload `site/` as the Pages artifact) or a copy to a `gh-pages` branch. The
-Download button points at `releases/latest` of the GitHub repository: publish a signed release
-APK there.
+The production website is hosted on Vercel and deploys from the GitHub repository. The root
+[`vercel.json`](../vercel.json) declares this dependency-free site as the deployment output, so
+Vercel serves `site/` without an install or build step.
+
+To connect it for the first time:
+
+1. In Vercel, import `GHOSTxASR/podium-music-player` from GitHub.
+2. Leave **Root Directory** at the repository root. Vercel reads `vercel.json`, selects the
+   **Other** framework and serves `site/` as the output directory.
+3. Deploy `main` to production. Pushes to `main` then redeploy the site; pull requests receive
+   preview deployments.
+4. Add a custom domain in Vercel if wanted, then replace the former GitHub Pages URL in the root
+   README with the production Vercel URL.
+5. After verifying the Vercel production deployment, unpublish the old GitHub Pages deployment in
+   the repository's **Settings → Pages** menu. Removing the workflow prevents future Pages builds,
+   but it does not remove the already-published GitHub Pages site.
+
+The download and source links intentionally stay on GitHub: the Download button uses
+`releases/latest/download/podium.apk` and View on GitHub opens the repository. Publish each signed
+`podium.apk` as a GitHub Release asset.
