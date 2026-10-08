@@ -24,9 +24,14 @@ Common commands:
 ## 3. Build variants
 | Variant | Purpose | Notes |
 |---|---|---|
-| `debug` | Development | `sources:fixture` included; debug overlay; user CAs trusted; applicationIdSuffix `.debug` (installs beside release) |
+| `debug` | Development and the phone's daily build | `sources:fixture` included; debug overlay; user CAs trusted; applicationIdSuffix `.debug` (installs beside release). **Not debuggable** by default (D-67) so ART compiles it and every open is as smooth as a warm one; `-Ppodium.debuggable=true` for a debugger |
 | `release` | Distribution | R8 full mode, resource shrinking, no fixture source, no debug overlay, logs redacted, baseline profiles |
 | `benchmark` | Macrobenchmark target | release-like, debuggable=false, signed with debug key |
+
+After installing on the phone, compile it at once rather than waiting for the phone's idle-time compilation (a debuggable build can't be compiled at all):
+```bash
+adb shell cmd package compile -m speed-profile -f app.podium.debug
+```
 
 No product flavors in v1. (If the user later chooses F-Droid + Play, a `foss`/`play` split would only differ in nothing, since Podium has no proprietary SDKs — a deliberate advantage.)
 

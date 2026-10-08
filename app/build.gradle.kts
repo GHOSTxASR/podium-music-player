@@ -14,6 +14,11 @@ android {
     buildFeatures {
         buildConfig = true
     }
+    lint {
+        // MainActivity and WebSignInActivity are ComponentActivity, whose result APIs are correct;
+        // the check is about FragmentActivity before fragment 1.3, which arrives only transitively.
+        disable += "InvalidFragmentVersionForActivityResult"
+    }
     // The cutout model is memory-mapped straight from the APK.
     androidResources {
         noCompress += "tflite"
@@ -21,6 +26,14 @@ android {
     buildTypes {
         debug {
             applicationIdSuffix = ".debug"
+            // This is the build that lives on the phone (D-65). A debuggable app is never compiled
+            // ahead of time and loses its JIT-compiled code whenever its process ends, so every
+            // fresh open started cold and stuttered until it warmed up. Not debuggable, ART compiles
+            // it (the libraries' baseline profiles through profileinstaller, then the phone's own
+            // profile) and the first transition is as smooth as the hundredth. Debug commands, the
+            // test tones and the package (app.podium.debug, the listener's data) are unchanged.
+            // For a debugger: ./gradlew installDebug -Ppodium.debuggable=true
+            isDebuggable = providers.gradleProperty("podium.debuggable").orNull == "true"
         }
         release {
             isMinifyEnabled = true
