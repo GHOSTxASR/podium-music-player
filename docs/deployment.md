@@ -30,8 +30,9 @@ Common commands:
 
 After installing on the phone, compile it at once rather than waiting for the phone's idle-time compilation (a debuggable build can't be compiled at all):
 ```bash
-adb shell cmd package compile -m speed-profile -f app.podium.debug
+adb shell cmd package compile -m speed -f app.podium.debug
 ```
+Right after an install there's no profile yet, so `-m speed-profile` only verifies the code (`dumpsys package dexopt` shows `status=verify`). `-m speed` compiles all of it (`status=speed`). After the app has run for a while, `-m speed-profile` compiles what was actually used, at a smaller size.
 
 No product flavors in v1. (If the user later chooses F-Droid + Play, a `foss`/`play` split would only differ in nothing, since Podium has no proprietary SDKs — a deliberate advantage.)
 
