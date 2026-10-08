@@ -30,8 +30,8 @@ To connect it for the first time:
    **Other** framework and serves `site/` as the output directory.
 3. Deploy `main` to production. Pushes to `main` then redeploy the site; pull requests receive
    preview deployments.
-4. Add a custom domain in Vercel if wanted, then replace the former GitHub Pages URL in the root
-   README with the production Vercel URL.
+4. The production site is [podium-music-player.vercel.app](https://podium-music-player.vercel.app/).
+   Add a custom domain in Vercel if wanted, then replace that URL in the root README.
 5. After verifying the Vercel production deployment, unpublish the old GitHub Pages deployment in
    the repository's **Settings → Pages** menu. Removing the workflow prevents future Pages builds,
    but it does not remove the already-published GitHub Pages site.

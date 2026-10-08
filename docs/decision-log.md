@@ -515,12 +515,12 @@ Every significant decision, newest at the bottom. Major ones have an ADR in `adr
   Vercel, while the app download and source view remain on GitHub.
 - **Decision:** `vercel.json` serves the static `site/` directory with no build step. Vercel's
   GitHub integration deploys `main` to production and pull requests as previews; the GitHub Pages
-  workflow is removed. After the Vercel production deployment is verified, the existing GitHub
-  Pages deployment is unpublished. The landing page's Download button stays on the stable GitHub
-  Release asset URL (`releases/latest/download/podium.apk`), and View on GitHub stays on the
-  repository. APKs are never put in Vercel deployment output.
-- **Tradeoff:** the final public website URL is owned by the Vercel project (or its custom domain),
-  so the README's existing GitHub Pages URL must be replaced after the first Vercel production
-  deployment establishes that URL.
+  workflow is removed. The Vercel production deployment is
+  `https://podium-music-player.vercel.app/`; the existing GitHub Pages deployment is unpublished
+  once it has been verified. The landing page's Download button stays on the stable GitHub Release
+  asset URL (`releases/latest/download/podium.apk`), and View on GitHub stays on the repository.
+  APKs are never put in Vercel deployment output.
+- **Tradeoff:** the Vercel subdomain is convenient but project-owned. A custom domain can replace
+  it later, provided the root README link is updated in the same change.
 - **Supersedes:** D-69's GitHub Pages hosting bullet only. Its release-signing and GitHub Release
   decisions remain in force.

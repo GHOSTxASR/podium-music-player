@@ -1,5 +1,5 @@
 <p align="center">
-  <a href="https://ghostxasr.github.io/podium-music-player/"><img src="docs/media/banner.jpg" alt="Podium: the wordmark above a Podium playing Cover Flow, album covers flowing through it" width="100%" /></a>
+  <a href="https://podium-music-player.vercel.app/"><img src="docs/media/banner.jpg" alt="Podium: the wordmark above a Podium playing Cover Flow, album covers flowing through it" width="100%" /></a>
 </p>
 
 <h1 align="center">Podium</h1>
@@ -13,7 +13,7 @@
   <img alt="Android 10 or later" src="https://img.shields.io/badge/Android-10%2B-d9c7ae?style=for-the-badge&labelColor=0e0e10" />
 </p>
 
-<p align="center"><a href="https://ghostxasr.github.io/podium-music-player/">Website</a>&nbsp;&nbsp;|&nbsp;&nbsp;<a href="https://github.com/GHOSTxASR/podium-music-player/releases/latest">Releases</a>&nbsp;&nbsp;|&nbsp;&nbsp;<a href="docs/README.md">Documentation</a></p>
+<p align="center"><a href="https://podium-music-player.vercel.app/">Website</a>&nbsp;&nbsp;|&nbsp;&nbsp;<a href="https://github.com/GHOSTxASR/podium-music-player/releases/latest">Releases</a>&nbsp;&nbsp;|&nbsp;&nbsp;<a href="docs/README.md">Documentation</a></p>
 
 ---
 
