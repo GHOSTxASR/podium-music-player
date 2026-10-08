@@ -1,7 +1,18 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.podium.android.application)
     alias(libs.plugins.podium.android.compose)
 }
+
+// Release signing (D-69): the key and its passwords live outside git, in keystore.properties
+// (ignored) next to this project, or in PODIUM_KEYSTORE_* environment variables. Without either,
+// the release APK is built unsigned.
+val signing = Properties().apply {
+    rootProject.file("keystore.properties").takeIf { it.isFile }?.inputStream()?.use { load(it) }
+}
+fun secret(key: String, env: String): String? = signing.getProperty(key) ?: System.getenv(env)
+val releaseStore = secret("storeFile", "PODIUM_KEYSTORE_FILE")
 
 android {
     namespace = "app.podium"
@@ -23,6 +34,16 @@ android {
     androidResources {
         noCompress += "tflite"
     }
+    signingConfigs {
+        if (releaseStore != null) {
+            create("release") {
+                storeFile = file(releaseStore)
+                storePassword = secret("storePassword", "PODIUM_KEYSTORE_PASSWORD")
+                keyAlias = secret("keyAlias", "PODIUM_KEY_ALIAS")
+                keyPassword = secret("keyPassword", "PODIUM_KEY_PASSWORD")
+            }
+        }
+    }
     buildTypes {
         debug {
             applicationIdSuffix = ".debug"
@@ -39,6 +60,7 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            signingConfig = signingConfigs.findByName("release")
         }
     }
 }

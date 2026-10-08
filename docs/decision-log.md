@@ -499,3 +499,13 @@ Every significant decision, newest at the bottom. Major ones have an ADR in `adr
   - Nothing opens when nothing is loaded. On Now Playing itself, the two presses just toggle.
 - **Options:** (a) hold every ⏯ for the double-press window before acting, as headphone remotes do: rejected, because a response that waits is wrong for Podium (D-65); (b) let the double press keep the first toggle: rejected, because opening Now Playing shouldn't change the music; (c) **toggle at once and let the second toggle undo the first** (chosen).
 - **Tradeoff:** from playing, a double press leaves a gap as long as the two presses are apart, under 300 ms. From paused, the same length of music sounds before it pauses again.
+
+### D-69 · Open source, signed releases, no APKs in git
+- **Context:** user direction (2026-10-08): publish Podium on GitHub after a security review, with the newest APK as the latest release and the website on GitHub Pages; remove the old APKs and the personal email from history.
+- **Decision:**
+  - Podium is licensed **GPL-3.0** (`LICENSE`, the canonical text). It has to be: `sources:youtubemusic` links NewPipeExtractor (GPL-3.0), so any APK handed out carries GPL obligations, and an unlicensed repository would contradict them.
+  - What people download is the **release** build (`app.podium`, minified, debug commands stubbed, no test tones), signed with a release key kept outside git (deployment.md §5). The debug build, whose debug commands any app on the phone can send, is never published.
+  - APKs are **never committed**: they're GitHub Release assets named `podium.apk` (deployment.md §7a). History was rewritten to drop the six committed debug APKs and to replace the personal commit email with the GitHub no-reply address; a bundle of the old history was kept outside the repository first.
+  - R8 keeps NewPipeExtractor and Rhino whole (they're reflective) and LiteRT's JNI classes (`app/proguard-rules.pro`).
+  - The website (`site/`) deploys to GitHub Pages through `.github/workflows/pages.yml`; promotional video renders (`artifacts/ad/`, one with a commercial track) are ignored.
+- **Tradeoff:** rewriting history changes every commit id, so other clones must re-clone or reset to the new `origin`.

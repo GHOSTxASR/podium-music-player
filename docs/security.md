@@ -24,7 +24,7 @@
 | WebView | — | **Not used** anywhere |
 
 ## 3. Network configuration
-- **As implemented (D-37):** there's no `network_security_config.xml`. The manifest sets `usesCleartextTraffic="true"` **only because** a security config can't name address ranges. The app-level `NetworkPolicy` enforces the D-09 rule instead, and it's unit-tested (`NetworkPolicyTest`) with hostnames and IPs: RFC 1918, 169.254/16, fc00::/7, fe80::, loopback, `.local`, `.lan`, `.home.arpa`, public IPs and look-alikes (`nas.local.example.com`, `192.168.1.20@evil.example.com`). It checks:
+- **As implemented (D-37, updated D-69):** there's no `network_security_config.xml`, and the manifest now sets `usesCleartextTraffic="false"`. The text below describes the earlier LAN-source design, when cleartext was allowed only because a security config can't name address ranges. The app-level `NetworkPolicy` enforces the D-09 rule instead, and it's unit-tested (`NetworkPolicyTest`) with hostnames and IPs: RFC 1918, 169.254/16, fc00::/7, fe80::, loopback, `.local`, `.lan`, `.home.arpa`, public IPs and look-alikes (`nas.local.example.com`, `192.168.1.20@evil.example.com`). It checks:
   - the address typed at setup (`check`);
   - every request the server client makes and every redirect hop it would follow (never https → http, at most 3);
   - every stream URL the player opens, from any source (`permits`).

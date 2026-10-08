@@ -7,8 +7,7 @@ captures/
 .externalNativeBuild/
 .cxx/
 *.apk
-# The one intentional build artifact: the verified debug APK (docs/implementation/YOUTUBE_MUSIC_FINAL_REPORT.md §27).
-!artifacts/apk/podium-debug.apk
+# APKs are published as GitHub Releases, never committed (D-69).
 *.aab
 *.ap_
 *.dex
@@ -30,6 +29,9 @@ secrets.properties
 .vscode/
 .DS_Store
 Thumbs.db
+
+# Promotional video renders (one uses a commercial track; never commit)
+artifacts/ad/
 
 # Tooling scratch
 .kotlin/
