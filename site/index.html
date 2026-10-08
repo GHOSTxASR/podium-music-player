@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Podium</title>
+    <meta name="description" content="Podium is a music player for Android built around one wheel. Cover Flow, synced lyrics, seventeen typefaces, any colour and glitter that follows the light." />
+    <meta name="theme-color" content="#050505" />
+    <meta property="og:title" content="Podium" />
+    <meta property="og:description" content="The wheel is back. A music player for Android built around one wheel." />
+    <meta property="og:image" content="assets/img/device-silver.jpg" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='28' fill='%23d9c7ae'/%3E%3Ccircle cx='32' cy='32' r='11' fill='%23050505'/%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="atmos" aria-hidden="true">
+      <img class="smoke smoke-a" src="assets/fx/smoke1.jpg" alt="" />
+      <img class="smoke smoke-b" src="assets/fx/smoke2.jpg" alt="" />
+      <div class="grain"></div>
+    </div>
+
+    <header class="nav">
+      <a class="nav-mark" href="#top" aria-label="Podium, back to top">PODIUM</a>
+      <nav class="nav-links" aria-label="Sections">
+        <a href="#tour">Design</a>
+        <a href="#features">Features</a>
+        <a href="#customise">Customise</a>
+        <a href="#specs">Specs</a>
+      </nav>
+      <a class="btn btn-small" href="#download">Download</a>
+    </header>
+
+    <main id="top">
+      <!-- Hero: the wordmark, the Podium, and the covers flowing through it -->
+      <section class="hero" aria-label="Podium">
+        <p class="hero-eyebrow reveal">Introducing</p>
+        <h1 class="hero-mark"><span class="glitter" data-text="PODIUM">PODIUM</span></h1>
+        <div class="flow" id="flow" aria-hidden="true"></div>
+        <div class="hero-device" id="heroDevice">
+          <img src="assets/img/device-coverflow.jpg" alt="Podium showing Cover Flow" width="1080" height="2272" />
+          <div class="inner-flow" id="innerFlow" aria-hidden="true">
+            <div class="inner-stage" id="innerStage"></div>
+            <div class="inner-title" id="innerTitle"></div>
+            <div class="inner-artist" id="innerArtist"></div>
+          </div>
+        </div>
+        <a class="scroll-cue" href="#statement"><span>Scroll</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg></a>
+      </section>
+
+      <!-- The idea -->
+      <section class="statement" id="statement">
+        <p class="statement-line muted reveal">Every music app looks the same.</p>
+        <p class="statement-line reveal">So we brought back <span class="gold">the wheel.</span></p>
+        <p class="statement-sub reveal">Podium is a music player for Android that lives inside one beautifully engineered device. One wheel to move, one button to choose, and everything about it yours to change.</p>
+      </section>
+
+      <!-- The continuous Podium: zoom in, point at the parts, zoom out -->
+      <section class="tour" id="tour" aria-label="A closer look">
+        <div class="tour-sticky">
+          <div class="tour-head" id="tourHead">
+            <p class="eyebrow">A closer look</p>
+            <h2 class="headline">Designed around<br />one wheel.</h2>
+          </div>
+          <div class="tour-device" id="tourDevice">
+            <img src="assets/img/device-silver.jpg" alt="Podium in Silver, on its home menu" width="1080" height="2272" />
+          </div>
+          <svg class="tour-lines" id="tourLines" aria-hidden="true"></svg>
+          <div class="tour-labels" id="tourLabels"></div>
+        </div>
+      </section>
+
+      <!-- Finishes -->
+      <section class="finishes" id="customise">
+        <div class="split">
+          <div class="split-text reveal">
+            <p class="eyebrow">Finishes</p>
+            <h2 class="headline">Make it yours.</h2>
+            <p class="body">Silver, Steel gray, Burgundy, Glacier blue, or any colour you dial in with the wheel. Carbon and Bone turn the whole Podium matte.</p>
+            <div class="chips" id="finishChips" role="group" aria-label="Choose a finish"></div>
+          </div>
+          <div class="split-media">
+            <div class="device-stack" id="finishStack"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Features -->
+      <section class="features" id="features">
+        <article class="feature">
+          <div class="feature-text reveal">
+            <p class="eyebrow">Navigation</p>
+            <h2 class="headline">One wheel.</h2>
+            <p class="body">Turn to move. Press to choose. Every song, album and setting is a turn away, and every turn clicks under your thumb.</p>
+          </div>
+          <div class="feature-media"><div class="device"><video data-src="assets/video/nav.mp4" muted loop playsinline preload="none" aria-label="Turning the wheel through Podium's menus"></video></div></div>
+        </article>
+
+        <article class="feature flip">
+          <div class="feature-text reveal">
+            <p class="eyebrow">Cover Flow</p>
+            <h2 class="headline">Your albums,<br />in perspective.</h2>
+            <p class="body">Spin through every cover, the centre one facing you and its neighbours standing to either side like a record rack.</p>
+          </div>
+          <div class="feature-media"><div class="screen"><video data-src="assets/video/coverflow.mp4" muted loop playsinline preload="none" aria-label="Cover Flow turning through albums"></video></div></div>
+        </article>
+
+        <article class="feature">
+          <div class="feature-text reveal">
+            <p class="eyebrow">Lyrics</p>
+            <h2 class="headline">Lyrics, set<br />like poetry.</h2>
+            <p class="body">Time-synced and revealed word by word, full screen, in the typeface you choose. Seven faces exist only for lyrics, from Calligraphy to Fraktur.</p>
+          </div>
+          <div class="feature-media pair">
+            <div class="screen"><video data-src="assets/video/lyrics-elegant.mp4" muted loop playsinline preload="none" aria-label="Lyrics in Elegant on Carbon"></video></div>
+            <div class="screen"><video data-src="assets/video/lyrics-calligraphy.mp4" muted loop playsinline preload="none" aria-label="Lyrics in Calligraphy on Bone"></video></div>
+          </div>
+        </article>
+
+        <article class="feature flip">
+          <div class="feature-text reveal">
+            <p class="number">17</p>
+            <h2 class="headline">typefaces.</h2>
+            <p class="body">From Classic to Gothic, the whole display follows the one you pick. Turn the wheel in the picker and watch every screen restyle as you go.</p>
+            <div class="type-demo" id="typeDemo" aria-hidden="true"><span class="type-word">Podium</span><span class="type-name"></span></div>
+          </div>
+          <div class="feature-media"><div class="device"><video data-src="assets/video/typefaces.mp4" muted loop playsinline preload="none" aria-label="The font picker restyling the display"></video></div></div>
+        </article>
+
+        <article class="feature">
+          <div class="feature-text reveal">
+            <p class="number">16.7M</p>
+            <h2 class="headline">colours.</h2>
+            <p class="body">Turn the wheel through hue, saturation and brightness, and the body changes live in your hand. Ink on the display always picks the colour you can read.</p>
+          </div>
+          <div class="feature-media"><div class="device"><video data-src="assets/video/colours.mp4" muted loop playsinline preload="none" aria-label="Dialling a custom colour with the wheel"></video></div></div>
+        </article>
+
+        <article class="feature wide">
+          <div class="glitter-panel" id="glitterPanel">
+            <img src="assets/img/glitter.jpg" alt="Close-up of a glitter finish around the wheel" loading="lazy" />
+            <div class="glitter-flakes" aria-hidden="true"></div>
+            <div class="glitter-light" aria-hidden="true"></div>
+            <div class="glitter-copy reveal">
+              <p class="eyebrow">Glitter</p>
+              <h2 class="headline">Glitter that<br />follows the light.</h2>
+              <p class="body">Fine flakes set into the body catch a soft light as you tilt your phone. Move your cursor across it.</p>
+            </div>
+          </div>
+        </article>
+
+        <article class="feature flip">
+          <div class="feature-text reveal">
+            <p class="eyebrow">Stickers</p>
+            <h2 class="headline">Cut from<br />your photos.</h2>
+            <p class="body">Pick a picture, tap what to keep, give it a border, then stick it anywhere on your Podium, even over the screen. The cut-out happens on your phone.</p>
+          </div>
+          <div class="feature-media trio">
+            <div class="device"><img src="assets/img/sticker-cut.jpg" alt="Cutting a sticker from a picture" loading="lazy" /></div>
+            <div class="device"><img src="assets/img/sticker-border.jpg" alt="Choosing a white border" loading="lazy" /></div>
+            <div class="device"><img src="assets/img/sticker-on.jpg" alt="Stickers on a Silver Podium" loading="lazy" /></div>
+          </div>
+        </article>
+
+        <article class="feature">
+          <div class="feature-text reveal">
+            <p class="eyebrow">Step outside</p>
+            <h2 class="headline">Hold it like<br />an object.</h2>
+            <p class="body">Pinch your Podium and it lifts out of the screen into a quiet, starry space, stickers and all. Your sticker gallery waits beside it.</p>
+          </div>
+          <div class="feature-media"><img class="floating" src="assets/img/space.png" alt="Podium as a 3D object in space" loading="lazy" /></div>
+        </article>
+
+        <article class="feature flip">
+          <div class="feature-text reveal">
+            <p class="number">4</p>
+            <h2 class="headline">display themes.</h2>
+            <p class="body">Glass, Carbon, Bone and Custom. Put your own picture behind it all, and the text stays readable on top.</p>
+          </div>
+          <div class="feature-media pair">
+            <div class="device"><img src="assets/img/theme-carbon.jpg" alt="Now Playing on Carbon" loading="lazy" /></div>
+            <div class="device"><img src="assets/img/theme-bone.jpg" alt="Now Playing on Bone" loading="lazy" /></div>
+          </div>
+        </article>
+      </section>
+
+      <!-- Spec sheet -->
+      <section class="specs" id="specs">
+        <p class="mini-mark reveal">PODIUM</p>
+        <h2 class="headline center reveal">Everything, in one wheel.</h2>
+        <div class="spec-grid">
+          <div class="spec reveal"><h3>Offline first</h3><p>Your own library, sorted by album and artist.</p></div>
+          <div class="spec reveal"><h3>Online built in</h3><p>Search and stream a full catalogue. No ads.</p></div>
+          <div class="spec reveal"><h3>Cover Flow</h3><p>Every album, in perspective.</p></div>
+          <div class="spec reveal"><h3>Synced lyrics</h3><p>Word by word, in seven extra faces.</p></div>
+          <div class="spec reveal"><h3>17 typefaces</h3><p>The whole display, restyled.</p></div>
+          <div class="spec reveal"><h3>Haptic wheel</h3><p>Every turn, felt.</p></div>
+          <div class="spec reveal"><h3>Background play</h3><p>The music keeps going when you leave.</p></div>
+          <div class="spec reveal"><h3>On-device stickers</h3><p>Your photos never leave your phone.</p></div>
+          <div class="spec reveal"><h3>Glitter finish</h3><p>Flakes that follow the tilt of your phone.</p></div>
+          <div class="spec reveal"><h3>Status lights</h3><p>Battery by charge, disk with every folder.</p></div>
+          <div class="spec reveal"><h3>A real boot</h3><p>A self-test and a startup chord, every time.</p></div>
+          <div class="spec reveal"><h3>No analytics</h3><p>No trackers, no crash reporters, no ads.</p></div>
+        </div>
+      </section>
+
+      <!-- Download -->
+      <section class="download" id="download">
+        <h2 class="download-mark"><span class="glitter" data-text="PODIUM">PODIUM</span></h2>
+        <p class="download-line reveal">Hold your music again.</p>
+        <div class="download-actions reveal">
+          <a class="btn" href="https://github.com/GHOSTxASR/podium-music-player/releases/latest/download/podium.apk">Download for Android</a>
+          <a class="btn btn-ghost" href="https://github.com/GHOSTxASR/podium-music-player">View on GitHub</a>
+        </div>
+        <p class="download-note reveal">Free and open source. Needs Android 10 or later. Open the downloaded APK to install, or see <a href="https://github.com/GHOSTxASR/podium-music-player/releases">all releases</a>.</p>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <p>Podium is free software under the <a href="https://github.com/GHOSTxASR/podium-music-player/blob/main/LICENSE">GNU GPL v3</a>. It is an independent project, not affiliated with any music service or hardware maker.</p>
+      <p>Album covers on this page are original artwork made for it. Typefaces are used under the <a href="assets/fonts/licenses/">SIL Open Font License</a>.</p>
+    </footer>
+
+    <script src="app.js"></script>
+  </body>
+</html>
