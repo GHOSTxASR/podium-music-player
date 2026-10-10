@@ -548,3 +548,21 @@ Every significant decision, newest at the bottom. Major ones have an ADR in `adr
     29 KB.
 - **Tradeoff:** the chord is longer and louder than before. It still plays as a UI sound, so the
   system-sounds volume, silent mode and Settings ▸ Startup sound all still govern it.
+
+### D-72 · Persistent YouTube Music session and cold-start startup fix
+- **Context:** Following the initial YouTube Music sign-in integration, signed-in users experienced
+  a startup crash upon app launch or force-stop recreation (`NullPointerException` on `likesFetchedAt`),
+  along with potential startup ANRs from blocking WebView initialization.
+- **Decision:**
+  - In `OnlineMusicRepository`, declare mutable cache fields (`shelvesCache`, `likesFetchedAt`,
+    `likeWrites`) before constructor logic, and place the `init` block containing reactive account
+    collection at the bottom of the class body.
+  - Offload repository library refreshes to `Dispatchers.IO` so network and disk queries never stall
+    `Dispatchers.Main.immediate`.
+  - In `AppGraph`, replace synchronous blocking `by lazy` resolution of `WebSettings.getDefaultUserAgent`
+    with `@Volatile var webUserAgent` carrying a standard fallback user-agent string, warmed
+    asynchronously on `Dispatchers.IO` to eliminate main looper deadlocks with Chromium initialization.
+  - Persist valid YouTube Music session credentials securely using Android Keystore cipher storage,
+    restoring active sessions seamlessly across process termination without re-prompting the user.
+- **Tradeoff:** Cached library shelves and likes metadata reset cleanly across explicit account
+  transitions while remaining reliably available during cold startup.
