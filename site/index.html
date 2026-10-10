@@ -8,26 +8,32 @@
     <meta name="theme-color" content="#050505" />
     <meta property="og:title" content="Podium" />
     <meta property="og:description" content="The wheel is back. A music player for Android built around one wheel." />
-    <meta property="og:image" content="assets/img/device-silver.jpg" />
+    <meta property="og:image" content="https://podium-music-player.vercel.app/assets/img/device-silver.jpg" />
+    <meta property="og:url" content="https://podium-music-player.vercel.app/" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="preload" href="assets/fonts/inter.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="assets/fonts/archivo.woff2" as="font" type="font/woff2" crossorigin />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='28' fill='%23d9c7ae'/%3E%3Ccircle cx='32' cy='32' r='11' fill='%23050505'/%3E%3C/svg%3E" />
     <link rel="stylesheet" href="styles.css" />
+    <script>document.documentElement.classList.add("js");</script>
   </head>
   <body>
     <div class="atmos" aria-hidden="true">
-      <img class="smoke smoke-a" src="assets/fx/smoke1.jpg" alt="" />
-      <img class="smoke smoke-b" src="assets/fx/smoke2.jpg" alt="" />
+      <img class="smoke smoke-a" src="assets/fx/smoke1.webp" alt="" decoding="async" />
+      <img class="smoke smoke-b" src="assets/fx/smoke2.webp" alt="" decoding="async" />
       <div class="grain"></div>
     </div>
 
     <header class="nav">
       <a class="nav-mark" href="#top" aria-label="Podium, back to top">PODIUM</a>
-      <nav class="nav-links" aria-label="Sections">
+      <nav class="nav-links" id="navLinks" aria-label="Sections">
         <a href="#tour">Design</a>
         <a href="#features">Features</a>
         <a href="#customise">Customise</a>
         <a href="#specs">Specs</a>
       </nav>
       <a class="btn btn-small" href="#download">Download</a>
+      <button class="nav-toggle" id="navToggle" type="button" aria-expanded="false" aria-controls="navLinks" aria-label="Menu"><span aria-hidden="true"></span></button>
     </header>
 
     <main id="top">
@@ -37,7 +43,7 @@
         <h1 class="hero-mark"><span class="glitter" data-text="PODIUM">PODIUM</span></h1>
         <div class="flow" id="flow" aria-hidden="true"></div>
         <div class="hero-device" id="heroDevice">
-          <img src="assets/img/device-coverflow.jpg" alt="Podium showing Cover Flow" width="1080" height="2272" />
+          <img src="assets/img/device-coverflow.webp" srcset="assets/img/device-coverflow-720.webp 720w, assets/img/device-coverflow.webp 1080w" sizes="(max-width: 599px) 66vw, (orientation: portrait) 40vw, 24vw" alt="Podium showing Cover Flow" width="1080" height="2272" fetchpriority="high" />
           <div class="inner-flow" id="innerFlow" aria-hidden="true">
             <div class="inner-stage" id="innerStage"></div>
             <div class="inner-title" id="innerTitle"></div>
@@ -56,14 +62,15 @@
 
       <!-- The continuous Podium: zoom in, point at the parts, zoom out -->
       <section class="tour" id="tour" aria-label="A closer look">
-        <div class="tour-sticky">
-          <div class="tour-head" id="tourHead">
+        <div class="tour-sticky" id="tourStage">
+          <div class="tour-head">
             <p class="eyebrow">A closer look</p>
             <h2 class="headline">Designed around<br />one wheel.</h2>
           </div>
           <div class="tour-device" id="tourDevice">
-            <img src="assets/img/device-silver.jpg" alt="Podium in Silver, on its home menu" width="1080" height="2272" />
+            <img src="assets/img/device-silver.webp" alt="Podium in Silver, on its home menu" width="1080" height="2272" decoding="async" />
           </div>
+          <div class="tour-band" aria-hidden="true"></div>
           <svg class="tour-lines" id="tourLines" aria-hidden="true"></svg>
           <div class="tour-labels" id="tourLabels"></div>
         </div>
@@ -92,7 +99,7 @@
             <h2 class="headline">One wheel.</h2>
             <p class="body">Turn to move. Press to choose. Every song, album and setting is a turn away, and every turn clicks under your thumb.</p>
           </div>
-          <div class="feature-media"><div class="device"><video data-src="assets/video/nav.mp4" muted loop playsinline preload="none" aria-label="Turning the wheel through Podium's menus"></video></div></div>
+          <div class="feature-media"><div class="device"><video data-src="assets/video/nav.mp4" poster="assets/video/nav-poster.webp" muted loop playsinline preload="none" aria-label="Turning the wheel through Podium's menus"></video></div></div>
         </article>
 
         <article class="feature flip">
@@ -101,7 +108,7 @@
             <h2 class="headline">Your albums,<br />in perspective.</h2>
             <p class="body">Spin through every cover, the centre one facing you and its neighbours standing to either side like a record rack.</p>
           </div>
-          <div class="feature-media"><div class="screen"><video data-src="assets/video/coverflow.mp4" muted loop playsinline preload="none" aria-label="Cover Flow turning through albums"></video></div></div>
+          <div class="feature-media"><div class="screen"><video data-src="assets/video/coverflow.mp4" poster="assets/video/coverflow-poster.webp" muted loop playsinline preload="none" aria-label="Cover Flow turning through albums"></video></div></div>
         </article>
 
         <article class="feature">
@@ -111,8 +118,8 @@
             <p class="body">Time-synced and revealed word by word, full screen, in the typeface you choose. Seven faces exist only for lyrics, from Calligraphy to Fraktur.</p>
           </div>
           <div class="feature-media pair">
-            <div class="screen"><video data-src="assets/video/lyrics-elegant.mp4" muted loop playsinline preload="none" aria-label="Lyrics in Elegant on Carbon"></video></div>
-            <div class="screen"><video data-src="assets/video/lyrics-calligraphy.mp4" muted loop playsinline preload="none" aria-label="Lyrics in Calligraphy on Bone"></video></div>
+            <div class="screen"><video data-src="assets/video/lyrics-elegant.mp4" poster="assets/video/lyrics-elegant-poster.webp" muted loop playsinline preload="none" aria-label="Lyrics in Elegant on Carbon"></video></div>
+            <div class="screen"><video data-src="assets/video/lyrics-calligraphy.mp4" poster="assets/video/lyrics-calligraphy-poster.webp" muted loop playsinline preload="none" aria-label="Lyrics in Calligraphy on Bone"></video></div>
           </div>
         </article>
 
@@ -123,7 +130,7 @@
             <p class="body">From Classic to Gothic, the whole display follows the one you pick. Turn the wheel in the picker and watch every screen restyle as you go.</p>
             <div class="type-demo" id="typeDemo" aria-hidden="true"><span class="type-word">Podium</span><span class="type-name"></span></div>
           </div>
-          <div class="feature-media"><div class="device"><video data-src="assets/video/typefaces.mp4" muted loop playsinline preload="none" aria-label="The font picker restyling the display"></video></div></div>
+          <div class="feature-media"><div class="device"><video data-src="assets/video/typefaces.mp4" poster="assets/video/typefaces-poster.webp" muted loop playsinline preload="none" aria-label="The font picker restyling the display"></video></div></div>
         </article>
 
         <article class="feature">
@@ -132,18 +139,20 @@
             <h2 class="headline">colours.</h2>
             <p class="body">Turn the wheel through hue, saturation and brightness, and the body changes live in your hand. Ink on the display always picks the colour you can read.</p>
           </div>
-          <div class="feature-media"><div class="device"><video data-src="assets/video/colours.mp4" muted loop playsinline preload="none" aria-label="Dialling a custom colour with the wheel"></video></div></div>
+          <div class="feature-media"><div class="device"><video data-src="assets/video/colours.mp4" poster="assets/video/colours-poster.webp" muted loop playsinline preload="none" aria-label="Dialling a custom colour with the wheel"></video></div></div>
         </article>
 
         <article class="feature wide">
           <div class="glitter-panel" id="glitterPanel">
-            <img src="assets/img/glitter.jpg" alt="Close-up of a glitter finish around the wheel" loading="lazy" />
-            <div class="glitter-flakes" aria-hidden="true"></div>
-            <div class="glitter-light" aria-hidden="true"></div>
+            <div class="glitter-photo" id="glitterPhoto">
+              <img src="assets/img/glitter.webp" alt="Close-up of a glitter finish around the wheel" width="1080" height="772" loading="lazy" decoding="async" />
+              <div class="glitter-flakes" aria-hidden="true"></div>
+              <div class="glitter-light" aria-hidden="true"></div>
+            </div>
             <div class="glitter-copy reveal">
               <p class="eyebrow">Glitter</p>
               <h2 class="headline">Glitter that<br />follows the light.</h2>
-              <p class="body">Fine flakes set into the body catch a soft light as you tilt your phone. Move your cursor across it.</p>
+              <p class="body">Fine flakes set into the body catch a soft light as you tilt your phone. <span class="on-mouse">Move your cursor across it.</span><span class="on-touch">Drag a finger across it.</span></p>
             </div>
           </div>
         </article>
@@ -155,9 +164,9 @@
             <p class="body">Pick a picture, tap what to keep, give it a border, then stick it anywhere on your Podium, even over the screen. The cut-out happens on your phone.</p>
           </div>
           <div class="feature-media trio">
-            <div class="device"><img src="assets/img/sticker-cut.jpg" alt="Cutting a sticker from a picture" loading="lazy" /></div>
-            <div class="device"><img src="assets/img/sticker-border.jpg" alt="Choosing a white border" loading="lazy" /></div>
-            <div class="device"><img src="assets/img/sticker-on.jpg" alt="Stickers on a Silver Podium" loading="lazy" /></div>
+            <div class="device"><img src="assets/img/sticker-cut.webp" alt="Cutting a sticker from a picture" width="720" height="1514" loading="lazy" decoding="async" /></div>
+            <div class="device"><img src="assets/img/sticker-border.webp" alt="Choosing a white border" width="720" height="1514" loading="lazy" decoding="async" /></div>
+            <div class="device"><img src="assets/img/sticker-on.webp" alt="Stickers on a Silver Podium" width="720" height="1514" loading="lazy" decoding="async" /></div>
           </div>
         </article>
 
@@ -167,7 +176,7 @@
             <h2 class="headline">Hold it like<br />an object.</h2>
             <p class="body">Pinch your Podium and it lifts out of the screen into a quiet, starry space, stickers and all. Your sticker gallery waits beside it.</p>
           </div>
-          <div class="feature-media"><img class="floating" src="assets/img/space.png" alt="Podium as a 3D object in space" loading="lazy" /></div>
+          <div class="feature-media"><img class="floating" src="assets/img/space.webp" alt="Podium as a 3D object in space" width="640" height="1556" loading="lazy" decoding="async" /></div>
         </article>
 
         <article class="feature flip">
@@ -177,8 +186,8 @@
             <p class="body">Glass, Carbon, Bone and Custom. Put your own picture behind it all, and the text stays readable on top.</p>
           </div>
           <div class="feature-media pair">
-            <div class="device"><img src="assets/img/theme-carbon.jpg" alt="Now Playing on Carbon" loading="lazy" /></div>
-            <div class="device"><img src="assets/img/theme-bone.jpg" alt="Now Playing on Bone" loading="lazy" /></div>
+            <div class="device"><img src="assets/img/theme-carbon.webp" alt="Now Playing on Carbon" width="720" height="1514" loading="lazy" decoding="async" /></div>
+            <div class="device"><img src="assets/img/theme-bone.webp" alt="Now Playing on Bone" width="720" height="1514" loading="lazy" decoding="async" /></div>
           </div>
         </article>
       </section>
