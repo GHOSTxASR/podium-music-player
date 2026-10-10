@@ -37,6 +37,7 @@ import app.podium.sources.api.SourceHealthMonitor
 import app.podium.sources.api.SourceRegistry
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
@@ -111,15 +112,13 @@ class OnlineMusicRepository(
         AuthState.Expired -> OnlineAccount(AccountState.EXPIRED)
     }
 
-    init {
-        // A new account signed in: its likes are fetched. Nothing of another account is ever shown.
-        scope.launch {
-            accountKey.collect { key ->
-                shelvesCache = null
-                if (key != OnlineLibraryStore.DEVICE) refreshLibrary()
-            }
-        }
-    }
+    /** Shelves change slowly: kept a while, per account. */
+    @Volatile private var shelvesCache: Triple<Long, String, List<Shelf>>? = null
+
+    @Volatile private var likesFetchedAt = 0L to ""
+
+    /** Counts likes written from here, so an answer fetched before a write never undoes it. */
+    private val likeWrites = java.util.concurrent.atomic.AtomicLong()
 
     /**
      * Sign out: everything kept for the account goes first, then the service forgets the session.
@@ -186,8 +185,6 @@ class OnlineMusicRepository(
     override fun canRelate(artist: ArtistId): Boolean =
         source()?.let { it.descriptor.id == artist.sourceId && it.recommendations != null } == true
 
-    /** Shelves change slowly: kept a while, per account. */
-    @Volatile private var shelvesCache: Triple<Long, String, List<Shelf>>? = null
 
     override suspend fun shelves(): Outcome<List<Shelf>> {
         val key = accountKey.value
@@ -236,10 +233,6 @@ class OnlineMusicRepository(
     override suspend fun accountHistory(offset: Int, limit: Int): Outcome<List<HistoryEntry>> =
         ask { it.accountLibrary?.history(offset, limit) }.remembering { list -> list.map { e -> e.track } }
 
-    @Volatile private var likesFetchedAt = 0L to ""
-
-    /** Counts likes written from here, so an answer fetched before a write never undoes it. */
-    private val likeWrites = java.util.concurrent.atomic.AtomicLong()
 
     override fun refreshLibrary() {
         val key = accountKey.value
@@ -248,7 +241,7 @@ class OnlineMusicRepository(
         if (forKey == key && now() - at < LIKES_REFRESH_MS) return
         likesFetchedAt = now() to key
         val writesBefore = likeWrites.get()
-        scope.launch {
+        scope.launch(Dispatchers.IO) {
             val liked = ask { it.accountLibrary?.likedSongs(0, MAX_LIKES) }
             // Only if the same account is still signed in, and nothing was liked meanwhile.
             if (liked is Outcome.Success && accountKey.value == key && likeWrites.get() == writesBefore) {
@@ -332,6 +325,16 @@ class OnlineMusicRepository(
     override fun clearHistory() {
         val key = accountKey.value
         scope.launch { store.clearHistory(key) }
+    }
+
+    init {
+        // A new account signed in: its likes are fetched. Nothing of another account is ever shown.
+        scope.launch {
+            accountKey.collect { key ->
+                shelvesCache = null
+                if (key != OnlineLibraryStore.DEVICE) refreshLibrary()
+            }
+        }
     }
 
     private companion object {

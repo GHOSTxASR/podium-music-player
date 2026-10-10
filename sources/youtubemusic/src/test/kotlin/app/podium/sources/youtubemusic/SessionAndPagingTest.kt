@@ -22,6 +22,8 @@ class SessionAndPagingTest {
         assertNull(WebSession.parse("SID=abc; HSID=def"))
         assertNull(WebSession.parse(""))
         assertNotNull(WebSession.parse("__Secure-3PAPISID=x"))
+        assertNotNull(WebSession.parse("__Secure-1PAPISID=x"))
+        assertEquals(setOf("SAPISID", "__Secure-3PAPISID", "__Secure-1PAPISID"), SessionCookies.AUTH_COOKIE_NAMES)
     }
 
     @Test

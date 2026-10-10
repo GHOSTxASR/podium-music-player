@@ -98,10 +98,9 @@ class AppGraph(val context: Context) {
         region = { java.util.Locale.getDefault().country.takeIf { it.length == 2 } ?: "US" },
     )
 
-    private val webUserAgent: String by lazy {
-        runCatching { android.webkit.WebSettings.getDefaultUserAgent(context) }.getOrNull()
-            ?: "Mozilla/5.0 (Linux; Android ${android.os.Build.VERSION.RELEASE}) AppleWebKit/537.36 (KHTML, like Gecko) Mobile Safari/537.36"
-    }
+    @Volatile
+    private var webUserAgent: String =
+        "Mozilla/5.0 (Linux; Android ${android.os.Build.VERSION.RELEASE}) AppleWebKit/537.36 (KHTML, like Gecko) Mobile Safari/537.36"
 
     init {
         BuildConfigFlags.checkMirror = BuildConfig.DEBUG
@@ -110,7 +109,11 @@ class AppGraph(val context: Context) {
         buildVariantSources(context).forEach { registry.register(it) }
         sourceSettings.apply()
         RetiredSources.cleanUp(context, credentials)
-        appScope.launch(Dispatchers.IO) { webUserAgent }
+        appScope.launch(Dispatchers.IO) {
+            runCatching { android.webkit.WebSettings.getDefaultUserAgent(context) }.getOrNull()?.let {
+                webUserAgent = it
+            }
+        }
     }
 
     val environments = Environments(registry)

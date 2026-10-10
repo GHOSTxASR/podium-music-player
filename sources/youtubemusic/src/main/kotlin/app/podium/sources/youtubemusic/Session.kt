@@ -7,6 +7,11 @@ import java.security.MessageDigest
  * (YOUTUBE_MUSIC_ARCHITECTURE.md §6). It's only ever held in memory here; at rest it lives sealed in
  * the app's Keystore-backed credential store. It never appears in logs, exceptions or `toString`.
  */
+internal object SessionCookies {
+    /** The session cookies accepted for authorization. At least one must be present for a usable session. */
+    val AUTH_COOKIE_NAMES: Set<String> = setOf("SAPISID", "__Secure-3PAPISID", "__Secure-1PAPISID")
+}
+
 internal class WebSession private constructor(private val cookies: Map<String, String>) {
 
     /** The `Cookie` header for requests to the music origin. */

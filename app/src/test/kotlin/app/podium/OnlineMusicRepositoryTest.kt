@@ -209,4 +209,31 @@ class OnlineMusicRepositoryTest {
         assertIs<PodiumError.PolicyDisabled>((repository.search("x", 0, 10).first() as Outcome.Failure).error)
         Unit
     }
+
+    @Test
+    fun `cold start with already signed-in source does not throw NullPointerException during construction`() {
+        val authRegistry = SourceRegistry(SourceHealthMonitor(ManualClock()))
+        val signedInSource = Service().apply {
+            auth0.value = AuthState.SignedIn("ExistingUser", "acct-existing")
+            accountLikes += listOf(song("saved-song"))
+        }
+        authRegistry.register(signedInSource)
+
+        // Using Dispatchers.Main.immediate (same as AppGraph.appScope in production)
+        val immediateScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+        try {
+            val repo = OnlineMusicRepository(
+                registry = authRegistry,
+                health = SourceHealthMonitor(ManualClock()),
+                store = store,
+                catalog = TrackCatalog(authRegistry),
+                scope = immediateScope,
+            )
+            assertEquals("acct-existing", repo.accountKey.value)
+            assertEquals(AccountState.SIGNED_IN, repo.status.value?.account?.state)
+            assertEquals("ExistingUser", repo.status.value?.account?.name)
+        } finally {
+            immediateScope.cancel()
+        }
+    }
 }

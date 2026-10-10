@@ -190,7 +190,7 @@ class YouTubeMusicSource internal constructor(
             title = "Sign in to YouTube Music",
             startUrl = "https://accounts.google.com/ServiceLogin?service=youtube&passive=true&continue=https%3A%2F%2Fmusic.youtube.com%2F",
             cookieOrigin = YouTubeMusicClient.ORIGIN,
-            doneWhenCookies = setOf("SAPISID", "__Secure-3PAPISID"),
+            doneWhenCookies = SessionCookies.AUTH_COOKIE_NAMES,
             doneUrlPrefix = YouTubeMusicClient.ORIGIN,
             allowedHostSuffixes = listOf("google.com", "youtube.com", "gstatic.com", "googleusercontent.com", "ggpht.com", "ytimg.com", "googleapis.com"),
         )
