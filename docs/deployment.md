@@ -68,7 +68,8 @@ SemVer `versionName` (`0.x` until v1.0); `versionCode` = `major*1_000_000 + mino
    `aapt dump badging` shows `app.podium` and no `application-debuggable`.
 2. Publish a GitHub Release tagged `v<versionName>` with the APK attached as `podium.apk`, so
    `releases/latest/download/podium.apk` (the website's and README's download link) always serves
-   the newest one. Never commit APKs (`.gitignore`).
+   the newest one. Its notes are `docs/releases/v<versionName>.md` (committed with the version
+   bump), plus the APK's size and SHA-256. Never commit APKs (`.gitignore`).
 3. The website is served by Vercel from `site/`. In Vercel, import
    `GHOSTxASR/podium-music-player`, leave the Root Directory at the repository root, and deploy
    `main`. The repository's `vercel.json` selects the no-build **Other** framework and sets
