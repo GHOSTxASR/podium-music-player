@@ -44,11 +44,12 @@ internal object YouTubeMusicParser {
         if (videoId != null) {
             val kind = kindOf(r.findFirst("musicVideoType").str, label, hint)
             val durationText = fixed.firstOrNull { DURATION.matches(it.trim()) } ?: detail.firstOrNull { DURATION.matches(it.runText().trim()) }?.runText()
+            val (artists, album) = songPages(r, detail, label)
             return YtmSong(
                 videoId = videoId,
                 title = title,
-                artists = artistsIn(detail, label),
-                album = detail.firstNotNullOfOrNull { run -> pageRef(run, ALBUM_PAGE) },
+                artists = artists,
+                album = album,
                 durationMs = durationText?.let(::parseDuration),
                 thumbnails = thumbs,
                 explicit = explicit,
@@ -73,11 +74,12 @@ internal object YouTubeMusicParser {
         val label = detail.firstOrNull()?.runText()?.trim()?.takeIf { it in TYPE_LABELS }
         val explicit = isExplicit(r)
         endpoint.at("watchEndpoint", "videoId").str?.let { videoId ->
+            val (artists, album) = songPages(r, detail, label)
             return YtmSong(
                 videoId = videoId,
                 title = title,
-                artists = artistsIn(detail, label),
-                album = detail.firstNotNullOfOrNull { pageRef(it, ALBUM_PAGE) },
+                artists = artists,
+                album = album,
                 thumbnails = thumbs,
                 explicit = explicit,
                 kind = kindOf(endpoint.findFirst("musicVideoType").str, label, Hint.NONE),
@@ -94,11 +96,12 @@ internal object YouTubeMusicParser {
         val videoId = r["videoId"].str ?: r.at("navigationEndpoint", "watchEndpoint", "videoId").str ?: return null
         val title = r.at("title").text()?.trim() ?: return null
         val byline = r.at("longBylineText").runs().ifEmpty { r.at("shortBylineText").runs() }
+        val (artists, album) = songPages(r, byline, null)
         return YtmSong(
             videoId = videoId,
             title = title,
-            artists = artistsIn(byline, null),
-            album = byline.firstNotNullOfOrNull { pageRef(it, ALBUM_PAGE) },
+            artists = artists,
+            album = album,
             durationMs = r.at("lengthText").text()?.let(::parseDuration),
             thumbnails = thumbnails(r.at("thumbnail", "thumbnails")),
             explicit = isExplicit(r),
@@ -205,11 +208,12 @@ internal object YouTubeMusicParser {
         val thumbs = thumbnails(r.at("thumbnail", "musicThumbnailRenderer", "thumbnail", "thumbnails"))
         val endpoint = titleRun.at("navigationEndpoint") ?: r.at("onTap")
         endpoint.at("watchEndpoint", "videoId").str?.let { videoId ->
+            val (artists, album) = songPages(r, detail, label)
             return YtmSong(
                 videoId = videoId,
                 title = title,
-                artists = artistsIn(detail, label),
-                album = detail.firstNotNullOfOrNull { pageRef(it, ALBUM_PAGE) },
+                artists = artists,
+                album = album,
                 durationMs = detail.firstOrNull { DURATION.matches(it.runText().trim()) }?.runText()?.let(::parseDuration),
                 thumbnails = thumbs,
                 explicit = isExplicit(r),
@@ -368,6 +372,15 @@ internal object YouTubeMusicParser {
         return YtmPage(songs, panel?.let(::continuationOf))
     }
 
+    /**
+     * One song's own row in a watch-next answer: the list's entry, or the other version of an entry
+     * (a song's music video and its audio are paired in one row, either one leading).
+     */
+    fun watchSong(json: JsonObject, videoId: String): YtmSong? =
+        json.findAll("playlistPanelVideoRenderer").firstNotNullOfOrNull { r ->
+            (r as? JsonObject)?.let(::panelItem)?.takeIf { it.videoId == videoId }
+        }
+
     fun nextContinuation(json: JsonObject): YtmPage<YtmSong> {
         val (entries, continuation) = continuationEntries(json)
         return YtmPage(entries.mapNotNull { item(it) as? YtmSong }, continuation)
@@ -451,7 +464,7 @@ internal object YouTubeMusicParser {
         val linked = runs.mapNotNull { pageRef(it, ARTIST_PAGE) ?: pageRef(it, USER_CHANNEL_PAGE) }
         if (linked.isNotEmpty()) return linked
         return plainParts(runs, label).firstOrNull()
-            ?.takeUnless { DURATION.matches(it) || YEAR.matches(it) || it.endsWith(" views") || it.endsWith(" plays") }
+            ?.takeUnless(::isNotAName)
             ?.let { listOf(YtmRef(it)) }
             .orEmpty()
     }
@@ -473,11 +486,51 @@ internal object YouTubeMusicParser {
 
     private fun pageRef(run: JsonObject, pageType: String): YtmRef? {
         val browse = run.at("navigationEndpoint", "browseEndpoint") ?: return null
-        val type = browse.at("browseEndpointContextSupportedConfigs", "browseEndpointContextMusicConfig", "pageType").str
-        if (type != pageType) return null
+        if (pageTypeOf(browse) != pageType) return null
         val name = run.runText().trim().takeIf { it.isNotEmpty() } ?: return null
         return YtmRef(name, browse.at("browseId").str)
     }
+
+    /** The kind of page a link opens: as the link says, or, when it doesn't, as its id shows. */
+    private fun pageTypeOf(browse: JsonElement): String? {
+        browse.at("browseEndpointContextSupportedConfigs", "browseEndpointContextMusicConfig", "pageType").str?.let { return it }
+        val id = browse.at("browseId").str ?: return null
+        return when {
+            id.startsWith("MPRE") -> ALBUM_PAGE
+            id.startsWith("UC") || id.startsWith("MPLAUC") -> ARTIST_PAGE
+            else -> null
+        }
+    }
+
+    /**
+     * A song's artists and album (D-80): linked in its detail line, else from the row's own menu
+     * (Go to album, Go to artist), which links them when the line only names them. The menu's
+     * artist is taken only for a line naming one artist, so a page is never put on the wrong name.
+     */
+    private fun songPages(r: JsonObject, runs: List<JsonObject>, label: String?): Pair<List<YtmRef>, YtmRef?> {
+        val artists = artistsIn(runs, label)
+        val album = runs.firstNotNullOfOrNull { pageRef(it, ALBUM_PAGE) }
+        if (album != null && artists.all { it.id != null }) return artists to album
+        val menu = r.at("menu", "menuRenderer", "items").arr.mapNotNull { item ->
+            val browse = item.at("menuNavigationItemRenderer", "navigationEndpoint", "browseEndpoint") ?: return@mapNotNull null
+            val id = browse.at("browseId").str ?: return@mapNotNull null
+            pageTypeOf(browse)?.let { it to id }
+        }
+        val menuAlbum = menu.firstOrNull { it.first == ALBUM_PAGE }?.second
+        val albumName = plainParts(runs, label).getOrNull(1)?.takeUnless(::isNotAName)
+        val menuArtists = menu.filter { it.first == ARTIST_PAGE }.map { it.second }.distinct()
+        val single = artists.singleOrNull()?.takeIf { it.id == null && !namesSeveral(it.name) }
+        return Pair(
+            if (single != null && menuArtists.size == 1) listOf(single.copy(id = menuArtists[0])) else artists,
+            album ?: if (menuAlbum != null && albumName != null) YtmRef(albumName, menuAlbum) else null,
+        )
+    }
+
+    private fun isNotAName(text: String) =
+        DURATION.matches(text) || YEAR.matches(text) || text.endsWith(" views") || text.endsWith(" plays")
+
+    /** "A & B", "A, B", "A x B", "A feat. B": a line naming more than one artist. */
+    private fun namesSeveral(text: String) = SEVERAL.containsMatchIn(text)
 
     private fun isExplicit(r: JsonObject): Boolean =
         (r.at("badges").arr + r.at("subtitleBadges").arr + r.at("subtitleBadge").arr).any {
@@ -533,6 +586,7 @@ internal object YouTubeMusicParser {
     private val SEPARATOR_RUN = JsonObject(mapOf("text" to jsonString(SEPARATOR)))
     private val DURATION = Regex("\\d{1,2}(:\\d{2}){1,2}")
     private val YEAR = Regex("(19|20)\\d{2}")
+    private val SEVERAL = Regex("( & |, | x | and | feat\\.? | ft\\.? | with )", RegexOption.IGNORE_CASE)
     private val COUNT = Regex("([\\d,]+)\\s+(songs?|tracks?|episodes?)")
     private const val GREYED_OUT = "MUSIC_ITEM_RENDERER_DISPLAY_POLICY_GREY_OUT"
     const val ALBUM_PAGE = "MUSIC_PAGE_TYPE_ALBUM"

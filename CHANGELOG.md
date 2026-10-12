@@ -17,9 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - A song played from search is followed by songs like it, not by the rest of the search results (D-74).
-- Album searches show full albums before EPs and singles; searching an album's exact title shows albums first (D-74).
+- Album searches show full albums before EPs and singles (D-74).
+- Search results always list songs first, then albums, whatever was searched (D-80).
 
 ### Fixed
+- **Go to album and Go to <artist> missing for online songs (D-80):** a song's lookup for its album and artist pages now finishes even if the screen that started it closes, is tried again after a failure, and keeps what it found when a list stores the song again without them. Links that don't say which page they open, and a row's own Go to album and Go to artist, are read too. As a last resort, the album and each artist are found by their exact names on the same service. Opening the menu before the pages have arrived asks again, so the next time it lists them.
 - **Sign-in that kept loading (D-73):** a failed account check no longer reloads the page and checks again by itself in a loop; it says why, with Try again and Start over.
 - **Stuck on "Signing in":** closing the sign-in screen, or Android recreating it, during the account check no longer leaves the account signing in for good; Settings and Online can start a new sign-in at once.
 - **Turning the phone during sign-in** no longer reloads the page or loses a check under way.

@@ -204,8 +204,11 @@ fun NowPlayingScreen(
     }
 
     // The song in full, for Go to album and Go to artist; kept only while it's the one playing.
-    val looked by produceState<Track?>(null, item?.trackId) {
-        value = item?.trackId?.let { id -> runCatching { trackOf(id) }.getOrNull() }
+    // Opening the menu without them asks again (the first lookup may still be out, or have failed).
+    var lookAgain by remember { mutableIntStateOf(0) }
+    val looked by produceState<Track?>(null, item?.trackId, lookAgain) {
+        val id = item?.trackId ?: return@produceState
+        runCatching { trackOf(id) }.getOrNull()?.let { value = it }
     }
     val playingTrack = looked?.takeIf { it.id == item?.trackId }
 
@@ -224,6 +227,8 @@ fun NowPlayingScreen(
     val controls = snapshot.controls
     val showMore: () -> Unit = {
         if (item != null) {
+            val goTo = goToActions(playingTrack, onOpenAlbum, onOpenArtist)
+            if (goTo.isEmpty()) lookAgain++
             overlay.show(
                 MenuSpec(
                     item.title,
@@ -231,7 +236,7 @@ fun NowPlayingScreen(
                         add(MenuAction("Lyrics", onSelect = onLyrics))
                         add(MenuAction("Up Next", onSelect = onUpNext))
                         add(MenuAction(if (isFavorite) "Remove from favorites" else "Add to favorites") { favorites.toggle(item.trackId) })
-                        goToActions(playingTrack, onOpenAlbum, onOpenArtist).forEach(::add)
+                        goTo.forEach(::add)
                         if (sleepTimer != null) add(MenuAction("Sleep timer") { overlay.show(sleepTimerMenu(sleepTimer)) })
                         if (remoteOwner != null) {
                             add(MenuAction("Open ${remoteOwner.displayName}") { controller.openRemoteApp() })
