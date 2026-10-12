@@ -667,3 +667,21 @@ Every significant decision, newest at the bottom. Major ones have an ADR in `adr
 - **Verified:** on Media3's test players with generated tones (the crossfade happens, the queue
   moves with it, the second player stops, gapless album tracks are left alone). **Not** heard on a
   phone: the levelling's accuracy on real hardware is unmeasured.
+
+### D-78 · Every new song slides its cover in
+- **Context:** user direction (2026-10-12), with a sketch: the playing cover leaves the frame as
+  the next comes in from the right, whenever a new song starts; Previous runs the other way.
+- **Decision:**
+  - The slide is keyed by the queue entry, not the artwork, so songs sharing a cover (an album)
+    slide too. This replaces "no transition when the next song shares the cover"
+    (NOW_PLAYING_VISUAL_REFERENCES).
+  - Direction: back (in from the left) only when the new song is the one just before the last in
+    the same queue (`songChangeIsBack`). Otherwise it's a new song, in from the right: the song
+    ending, Next, a song chosen from a list or a search, or repeat wrapping round. Before this, a
+    new queue started from a search could slide in from the left.
+  - Each cover leans on its own, and the slide moves it flat across the display. Before, the lean
+    turned the whole stage, so a cover moving right receded into the distance: the incoming one
+    appeared small mid-screen, and on Previous the outgoing one parked mid-screen, then vanished.
+  - The covers of the songs either side are loaded ahead at the size Now Playing shows them, so an
+    online cover slides in already showing instead of popping in after.
+- **Verified:** filmed frame by frame on Robolectric (`NowPlayingSlideTest`): Next, Previous, same cover.

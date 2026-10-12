@@ -70,3 +70,21 @@ class NowPlayingMenuTest {
         assertEquals("Turn off", on.actions.first().label)
     }
 }
+
+/** Which way the cover moves when the song changes (D-78). */
+class SongChangeDirectionTest {
+    private val q = listOf("a", "b", "c", "d").map { app.podium.core.model.QueueUid(it) }
+
+    @Test
+    fun `previous, one back in the same queue, comes in from the left`() {
+        kotlin.test.assertTrue(songChangeIsBack(q[2], newIndex = 1, queueOrder = q))
+    }
+
+    @Test
+    fun `anything else comes in from the right`() {
+        kotlin.test.assertFalse(songChangeIsBack(q[1], newIndex = 2, queueOrder = q), "next")
+        kotlin.test.assertFalse(songChangeIsBack(q[3], newIndex = 0, queueOrder = q), "repeat wraps round to the start")
+        kotlin.test.assertFalse(songChangeIsBack(app.podium.core.model.QueueUid("old"), newIndex = 0, queueOrder = q), "a new queue, from a search or a list")
+        kotlin.test.assertFalse(songChangeIsBack(q[1], newIndex = 0, queueOrder = emptyList()), "a queue another app doesn't show")
+    }
+}
