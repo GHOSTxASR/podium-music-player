@@ -81,6 +81,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.podium.core.common.PodiumError
 import app.podium.core.designsystem.artwork.BackgroundExtension
 import app.podium.core.designsystem.artwork.FittedArtwork
+import app.podium.core.designsystem.artwork.LocalArtworkLoader
+import app.podium.core.designsystem.artwork.artworkBucketPx
 import app.podium.core.designsystem.artwork.rememberArtwork
 import app.podium.core.designsystem.component.LocalColumnTransition
 import app.podium.core.designsystem.component.LocalOverlayHost
@@ -110,6 +112,7 @@ import app.podium.core.interaction.rememberPodiumHaptics
 import app.podium.core.model.ArtistCredit
 import app.podium.core.model.MediaKind
 import app.podium.core.model.QualityLabel
+import app.podium.core.model.QueueUid
 import app.podium.core.model.Track
 import app.podium.core.model.TrackId
 import app.podium.player.api.FavoritesRepository
@@ -352,6 +355,11 @@ fun NowPlayingScreen(
         environment = environmentOf(item.trackId),
         queueHidden = queue.hidden,
         sleepNote = sleepNote,
+        queueOrder = queue.entries.map { it.uid },
+        neighbourArtwork = listOfNotNull(
+            queue.entries.getOrNull(queue.currentIndex + 1)?.artworkUri,
+            queue.entries.getOrNull(queue.currentIndex - 1)?.artworkUri,
+        ).distinct(),
     )
     // The cluster's glass refracts the artwork's environment, so the environment is the captured layer.
     GlassHost(
@@ -389,6 +397,10 @@ private class NowPlayingParts(
     val queueHidden: Boolean = false,
     /** When the sleep timer stops the music, while it's set (D-75). */
     val sleepNote: String? = null,
+    /** The queue's entries in order, to tell Previous from a new song (D-78). */
+    val queueOrder: List<QueueUid> = emptyList(),
+    /** The covers of the songs either side of this one, loaded ahead so they slide in showing (D-78). */
+    val neighbourArtwork: List<String> = emptyList(),
 )
 
 @Composable
@@ -473,7 +485,16 @@ private fun LandscapeLayout(p: NowPlayingParts) {
     }
 }
 
-private data class ArtKey(val identity: String, val uri: String?, val fallback: String, val index: Int)
+/** The cover on show: one per song in the queue, so every new song slides, even with the same cover (D-78). */
+private data class ArtKey(val uid: QueueUid, val uri: String?, val fallback: String, val index: Int)
+
+/**
+ * Which way a new song's cover moves (D-78): back (in from the left) only for Previous, when the
+ * new song is the one just before [oldUid] in the same queue. Anything else is a new song: a skip,
+ * the song ending, a song chosen from a list or a search. Those come in from the right.
+ */
+internal fun songChangeIsBack(oldUid: QueueUid, newIndex: Int, queueOrder: List<QueueUid>): Boolean =
+    newIndex >= 0 && queueOrder.getOrNull(newIndex + 1) == oldUid
 
 /**
  * How far a cover travels when the song changes, in pixels: in from beyond the display's right
@@ -513,8 +534,10 @@ private const val ART_CAMERA_DISTANCE = 6f
 
 /**
  * The artwork, as large as the box allows in its own proportions. It "breathes" with playback
- * (slightly smaller while paused), and a new cover arrives from the direction you skipped in —
- * a short crossfade with a little scale and travel, not a page flip. Songs sharing a cover keep it.
+ * (slightly smaller while paused). Every new song moves the cover on (D-78): the one playing slides
+ * off the display to the left as the next one comes in from the right, leaning as it always does;
+ * Previous runs the other way. The covers either side are loaded ahead, so the one coming in is
+ * already showing.
  */
 @Composable
 private fun ArtworkStage(p: NowPlayingParts, maxWidth: Dp, maxHeight: Dp, travel: ArtTravel? = null) {
@@ -524,7 +547,14 @@ private fun ArtworkStage(p: NowPlayingParts, maxWidth: Dp, maxHeight: Dp, travel
         spring(dampingRatio = 0.8f, stiffness = 240f),
         label = "breathe",
     )
-    val key = ArtKey(p.item.artworkUri ?: p.item.uid.value, p.item.artworkUri, p.item.albumTitle ?: p.item.title, p.item.indexInQueue)
+    val key = ArtKey(p.item.uid, p.item.artworkUri, p.item.albumTitle ?: p.item.title, p.item.indexInQueue)
+    // The neighbours' covers, at the size this stage shows them (the loader keeps them in memory).
+    val loader = LocalArtworkLoader.current
+    val bucket = artworkBucketPx(with(LocalDensity.current) { maxOf(maxWidth, maxHeight).roundToPx() })
+    LaunchedEffect(p.neighbourArtwork, bucket) {
+        p.neighbourArtwork.forEach { uri -> runCatching { loader.load(uri, bucket) } }
+    }
+    val queueOrder = p.queueOrder
     // DRAMATIC (D-65): entering Now Playing, the cover is the anchor — it settles into its place and
     // its lean on its own spring as the screen arrives, so the move reads "I chose this and went in".
     // Read only while drawing; nothing waits for it.
@@ -537,9 +567,9 @@ private fun ArtworkStage(p: NowPlayingParts, maxWidth: Dp, maxHeight: Dp, travel
     } else null
     AnimatedContent(
         targetState = key,
-        contentKey = { it.identity },
+        contentKey = { it.uid },
         transitionSpec = {
-            val dir = if (targetState.index >= initialState.index) 1 else -1
+            val dir = if (songChangeIsBack(initialState.uid, targetState.index, queueOrder)) -1 else 1
             if (motion.reduced) {
                 fadeIn(tween(160)) togetherWith fadeOut(tween(160))
             } else if (travel != null) {
@@ -557,20 +587,11 @@ private fun ArtworkStage(p: NowPlayingParts, maxWidth: Dp, maxHeight: Dp, travel
                         slideOutHorizontally(tween(240)) { -dir * it / 9 })
             }.using(SizeTransform(clip = false))
         },
-        modifier = Modifier
-            .graphicsLayer {
-                // Turned a little to the right, like a record leaning on a shelf: the near edge at
-                // the left, the far edge receding. Hinged on the left so the cover keeps its place.
-                val u = unsettled?.value ?: 0f
-                rotationY = ART_TILT_DEG + ART_ARRIVAL_EXTRA_TILT_DEG * u
-                cameraDistance = ART_CAMERA_DISTANCE * density
-                transformOrigin = TransformOrigin(0f, 0.5f)
-            }
-            .graphicsLayer {
-                val arriving = 1f - (1f - ART_ARRIVAL_SCALE) * (unsettled?.value ?: 0f)
-                scaleX = breathe * arriving
-                scaleY = breathe * arriving
-            },
+        modifier = Modifier.graphicsLayer {
+            val arriving = 1f - (1f - ART_ARRIVAL_SCALE) * (unsettled?.value ?: 0f)
+            scaleX = breathe * arriving
+            scaleY = breathe * arriving
+        },
         contentAlignment = Alignment.Center,
         label = "artwork",
     ) { art ->
@@ -579,7 +600,18 @@ private fun ArtworkStage(p: NowPlayingParts, maxWidth: Dp, maxHeight: Dp, travel
             fallbackText = art.fallback,
             maxWidth = maxWidth,
             maxHeight = maxHeight,
-            modifier = Modifier.semantics { contentDescription = "Artwork" },
+            modifier = Modifier
+                // Each cover leans on its own: turned a little to the right, like a record leaning on
+                // a shelf, the near edge at the left, hinged there so it keeps its place. The slide
+                // moves the leaning cover flat across the display (D-78); were the lean around the
+                // whole stage, a cover moving right would recede into the distance, not leave.
+                .graphicsLayer {
+                    val u = unsettled?.value ?: 0f
+                    rotationY = ART_TILT_DEG + ART_ARRIVAL_EXTRA_TILT_DEG * u
+                    cameraDistance = ART_CAMERA_DISTANCE * density
+                    transformOrigin = TransformOrigin(0f, 0.5f)
+                }
+                .semantics { contentDescription = "Artwork" },
         )
     }
 }

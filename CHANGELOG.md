@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Crossfade:** songs overlap by 2 to 12 seconds, except an album's tracks that run into each other. In Settings (D-77).
 - **Go to album and Go to artist** in Now Playing's menu, and Go to album in online song menus (D-74).
 - Now Playing says when the sound comes from a video: "Audio from the music video" (D-74).
+- **Cover slide on every song change (D-78):** the playing cover slides off to the left as the next one comes in from the right, even when they share a cover; Previous runs the other way. Covers either side are loaded ahead, so online covers arrive already showing.
 
 ### Changed
 - A song played from search is followed by songs like it, not by the rest of the search results (D-74).
