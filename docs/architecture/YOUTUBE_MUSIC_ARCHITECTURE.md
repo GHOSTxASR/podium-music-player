@@ -61,7 +61,7 @@ Retired online sources (`sources:audius`, `sources:subsonic`, and the multi-sour
   - Playlists: `PlaylistId("ytmusic|<playlistId>")`
   Nothing outside `sources:youtubemusic` parses provider keys.
 - **Track Media Kind:**
-  `Track.kind: MediaKind` (`SONG`, `MUSIC_VIDEO`, `VIDEO`, `EPISODE`) backed by schema v5 `track.media_kind`. Videos are separated from songs in search results.
+  `Track.kind: MediaKind` (`SONG`, `MUSIC_VIDEO`, `VIDEO`, `EPISODE`) backed by schema v5 `track.media_kind`. Videos are separated from songs in search results, and Now Playing says when the sound is a video's ("Audio from the music video", "Audio from a video", D-74).
 - **Playback Route:**
   YouTube Music tracks resolve to `PlaybackRoute.DIRECT` with a `PlaybackTarget.DirectStream(PlayableMedia)`.
 

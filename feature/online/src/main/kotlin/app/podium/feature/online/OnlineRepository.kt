@@ -118,6 +118,12 @@ interface OnlineActions {
     fun playNext(track: Track)
     fun addToQueue(track: Track)
     fun startRadio(track: Track)
+
+    /**
+     * Play [track] on its own, then songs like it (D-74): what a song found by searching plays.
+     * Whatever else the search found never follows it; autoplay continues from the song itself.
+     */
+    fun playAlone(track: Track) = play(listOf(track), 0, track.title)
     fun startArtistRadio(artist: ArtistSummary)
     fun startGenreRadio(genre: String)
 

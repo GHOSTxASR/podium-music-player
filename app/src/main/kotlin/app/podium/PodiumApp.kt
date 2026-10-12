@@ -146,6 +146,7 @@ import app.podium.feature.library.MusicScreen
 import app.podium.feature.library.SongsScreen
 import app.podium.feature.nowplaying.LyricsScreen
 import app.podium.feature.nowplaying.NowPlayingScreen
+import app.podium.feature.nowplaying.sleepTimerMenu
 import app.podium.feature.nowplaying.UpNextScreen
 import app.podium.feature.online.OnlineActions
 import app.podium.feature.online.OnlinePlace
@@ -191,6 +192,7 @@ import app.podium.player.api.PlaybackSnapshot
 import app.podium.player.api.RecommendationRequest
 import app.podium.sources.api.ArtistSummary
 import app.podium.sources.api.CapabilityAction
+import app.podium.sources.api.MusicEnvironment
 import app.podium.sources.api.RemoteContext
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -245,6 +247,10 @@ sealed interface Dest {
     /** A level of the music-folder tree in Settings ("" is the top). */
     data class MusicFolders(val path: String) : Dest
 
+    /** Settings ▸ Equaliser (D-76), and one of its bands. */
+    data object Equalizer : Dest
+    data class EqualizerBand(val band: Int) : Dest
+
     /** A place in the ONLINE section (D-34). */
     data class Online(val place: OnlinePlace) : Dest
 }
@@ -252,7 +258,7 @@ sealed interface Dest {
 private val fixedDests = listOf(
     Dest.Home, Dest.Music, Dest.CoverFlow, Dest.Albums, Dest.Artists, Dest.Songs, Dest.Favorites, Dest.NowPlaying,
     Dest.UpNext, Dest.Lyrics, Dest.Settings, Dest.Appearance, Dest.DeviceBody, Dest.VirtualDisplay, Dest.Theme, Dest.Font,
-    Dest.LyricsFont, Dest.Background, Dest.Finish, Dest.CustomColor, Dest.DisplayColor, Dest.OnlineSources,
+    Dest.LyricsFont, Dest.Background, Dest.Finish, Dest.CustomColor, Dest.DisplayColor, Dest.OnlineSources, Dest.Equalizer,
 ).associateBy { it.toString() }
 
 private fun Dest.encode(): String = when (this) {
@@ -261,6 +267,7 @@ private fun Dest.encode(): String = when (this) {
     is Dest.MusicFolders -> "MusicFolders:$path"
     is Dest.Online -> "Online:" + OnlinePlace.encode(place)
     is Dest.Level -> "Level:${level.name}"
+    is Dest.EqualizerBand -> "EqualizerBand:$band"
     else -> toString()
 }
 
@@ -270,6 +277,8 @@ private fun decodeDest(text: String): Dest? = when {
     text.startsWith("MusicFolders:") -> Dest.MusicFolders(text.removePrefix("MusicFolders:"))
     text.startsWith("Online:") -> OnlinePlace.decode(text.removePrefix("Online:"))?.let(Dest::Online)
     text.startsWith("Level:") -> AppearanceLevel.entries.firstOrNull { it.name == text.removePrefix("Level:") }?.let(Dest::Level)
+    text.startsWith("EqualizerBand:") -> text.removePrefix("EqualizerBand:").toIntOrNull()
+        ?.takeIf { it in app.podium.player.api.EqualizerSettings.BANDS_HZ.indices }?.let(Dest::EqualizerBand)
     else -> fixedDests[text]
 }
 
@@ -305,6 +314,8 @@ private fun titleOf(dest: Dest, graph: AppGraph): String = when (dest) {
     Dest.CustomColor -> "Custom color"
     Dest.DisplayColor -> "Background color"
     is Dest.Level -> dest.level.label
+    Dest.Equalizer -> "Equaliser"
+    is Dest.EqualizerBand -> app.podium.feature.settings.bandLabel(dest.band)
     Dest.OnlineSources -> graph.onlineService.state.collectAsStateWithLifecycle().value?.name ?: "Online music"
     is Dest.Album -> {
         val album by remember(dest) { graph.library.album(dest.id) }.collectAsStateWithLifecycle(initialValue = null)
@@ -780,6 +791,8 @@ private fun PreviousColumn(previous: Dest, current: Dest, graph: AppGraph, navig
         Dest.CustomColor -> if (previous == Dest.Finish) "CUSTOM" else "CustomColor"
         Dest.DisplayColor -> "BackgroundColor"
         is Dest.Level -> current.level.name
+        Dest.Equalizer -> "Equalizer"
+        is Dest.EqualizerBand -> "Band(index=${current.band})"
         else -> titleOf(current, graph)
     }
     val backLabel = "Back to ${titleOf(previous, graph)}"
@@ -819,6 +832,7 @@ private fun ScreenContent(
     onSourceAction: (CapabilityAction) -> Unit,
 ) {
     val podiumSpace = app.podium.space.LocalPodiumSpace.current
+    val overlay = LocalOverlayHost.current
     val controller = graph.playbackController
     val settings = graph.deviceSettings
     val onlineStatus by graph.online.status.collectAsStateWithLifecycle()
@@ -880,6 +894,26 @@ private fun ScreenContent(
             onUpNext = { navigator.push(Dest.UpNext) },
             environmentOf = { id -> if (graph.environments.isOnline(id)) "Online" else null },
             onLyrics = { navigator.push(Dest.Lyrics) },
+            trackOf = { id -> (graph.catalog.get(id) as? Outcome.Success)?.value },
+            sleepTimer = graph.sleepTimer,
+            // Each page in the song's own environment (D-34): the library's, or online's.
+            onOpenAlbum = { track ->
+                val album = track.album
+                val id = album?.id
+                if (id != null) when (graph.registry.get(id.sourceId)?.descriptor?.environment) {
+                    MusicEnvironment.LOCAL -> navigator.push(Dest.Album(id))
+                    MusicEnvironment.ONLINE -> navigator.push(Dest.Online(OnlinePlace.Collection(PlaylistId(id.value), album.title, isAlbum = true)))
+                    null -> Unit
+                }
+            },
+            onOpenArtist = { artist ->
+                val id = artist.id
+                if (id != null) when (graph.registry.get(id.sourceId)?.descriptor?.environment) {
+                    MusicEnvironment.LOCAL -> navigator.push(Dest.Artist(id))
+                    MusicEnvironment.ONLINE -> navigator.push(Dest.Online(OnlinePlace.Artist(id, artist.name)))
+                    null -> Unit
+                }
+            },
         )
         Dest.Lyrics -> LyricsScreen(controller, graph.lyricsGateway)
         is Dest.Online -> OnlineScreen(
@@ -898,7 +932,12 @@ private fun ScreenContent(
             onAppearance = { navigator.push(Dest.Appearance) },
             onMusicFolders = { navigator.push(Dest.MusicFolders("")) },
             onOnlineService = { navigator.push(Dest.OnlineSources) },
+            onEqualizer = { navigator.push(Dest.Equalizer) },
+            sleepTimer = graph.sleepTimer,
+            onSleepTimer = { overlay.show(sleepTimerMenu(graph.sleepTimer)) },
         )
+        Dest.Equalizer -> app.podium.feature.settings.EqualizerScreen(settings, onBand = { navigator.push(Dest.EqualizerBand(it)) })
+        is Dest.EqualizerBand -> app.podium.feature.settings.EqualizerBandScreen(settings, screen.band, onDone = { navigator.pop() })
         Dest.OnlineSources -> OnlineServiceScreen(graph.onlineService)
         is Dest.MusicFolders -> MusicFoldersScreen(graph.musicFolders, screen.path, onOpen = { navigator.push(Dest.MusicFolders(it)) })
         Dest.Appearance -> AppearanceScreen(
@@ -1271,6 +1310,19 @@ private fun rememberOnlineActions(graph: AppGraph, navigator: Navigator): Online
             override fun addToQueue(track: Track) {
                 graph.catalog.remember(listOf(track))
                 controller.addToQueue(listOf(track.id))
+            }
+
+            override fun playAlone(track: Track) {
+                graph.catalog.remember(listOf(track))
+                if (graph.playsRemotely(track)) {
+                    // The app that plays it carries on from this song itself (§8.5).
+                    controller.playCollection(listOf(track.id), 0, "${track.title} radio", RemoteContext.Radio(track))
+                } else {
+                    // Only this song is queued: autoplay asks its source for songs like it straight
+                    // away (the queue is short), so Up Next fills with them while it plays (D-74).
+                    controller.playContext(listOf(track.id), 0, track.title)
+                }
+                navigator.showNowPlaying()
             }
 
             override fun startRadio(track: Track) {

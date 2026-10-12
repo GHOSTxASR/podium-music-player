@@ -37,6 +37,9 @@ object PodiumExtras {
     const val TRACK_ID = "podium.trackId"
     const val ORIGIN = "podium.origin"
 
+    /** The item's [app.podium.core.model.MediaKind] name (a song, or audio from a video). */
+    const val MEDIA_KIND = "podium.kind"
+
     // Session extras describing the current item's resolution (who is serving it, and how).
     const val CURRENT_UID = "podium.current.uid"
     const val SERVED_BY = "podium.current.servedBy"

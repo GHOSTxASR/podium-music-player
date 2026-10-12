@@ -116,13 +116,13 @@ Short, natural-case, one line: `FLAC 24-bit/96 kHz`, `ALAC 16-bit/44.1 kHz`, `AA
 | Feature | Approach | Notes |
 |---|---|---|
 | ReplayGain | `AudioProcessor` applying track/album gain from tags/Subsonic `replayGain`; pre-amp; clip prevention | Disabled when bit-perfect |
-| Crossfade | Second ExoPlayer instance with volume ramps, or Media3 composition when available | P2; disabled for gapless albums automatically (same-album consecutive tracks) |
-| Equalizer | Launch system `ACTION_DISPLAY_AUDIO_EFFECT_CONTROL_PANEL` with session id | No custom EQ in v1 |
+| Crossfade | **Built (D-77).** Settings ▸ Crossfade: off, 2, 4, 6, 8 or 12 s. The engine's one player keeps the queue and the session; a silent second player (`Crossfader`) carries only the outgoing song's last seconds: levelled with the first (by playing a little slower or faster while silent), swapped in unheard, faded out on an equal-power curve while the next song fades in from its start | Never for an album's next track (gapless), repeat-one, songs under 3× the overlap, or when the sleep timer ends with the song; any pause, skip or seek ends it at once |
+| Equalizer | **Built (D-76).** Settings ▸ Equaliser: ten peaking filters an octave apart (31 Hz to 16 kHz, ±12 dB), presets or custom, as an `AudioProcessor` (`EqualizerProcessor`) in the player's own audio path, the same on every phone | Off or flat it passes audio through sample for sample; a boost lowers everything first by the curve's peak, so it never clips; changes are heard at once |
 | Skip silence | `SilenceSkippingAudioProcessor` | P2 |
 | Speed | Not exposed (music app) | |
 
 ## 9. Sleep timer
-Options: 15 / 30 / 45 / 60 / 90 min, end of track, end of album. Fades volume over the last 10 s (player volume, not system), then pauses with `Paused(SLEEP_TIMER)`. Reachable via long-press ⏯ (D-06) and Now Playing ▸ More.
+**Built (D-75).** Options: 15 / 30 / 45 / 60 / 90 min, end of song, end of album. A countdown fades the player's own volume (never the phone's) over its last 10 s, then pauses; the volume stays down until the music plays again, so the pause lands in silence. The end of a song or album is the player's own pause at the end of that item. Reachable via Now Playing ▸ More ▸ Sleep timer and Settings ▸ Sleep timer; Now Playing says when the music stops while it's set. (Long-press ⏯ switches the device off since D-26, so it no longer opens the timer.) Music another app plays is paused when the countdown ends, without a fade.
 
 ## 10. Testing hooks
 - `player:api` reducer + `QueueManager` are pure → JVM tests.

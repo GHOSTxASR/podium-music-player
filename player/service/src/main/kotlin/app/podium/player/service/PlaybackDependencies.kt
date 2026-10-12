@@ -4,9 +4,11 @@ import android.app.PendingIntent
 import android.content.Context
 import app.podium.core.common.Clock
 import app.podium.core.model.TrackId
+import app.podium.player.api.AudioEffects
 import app.podium.player.api.AutoplaySettings
 import app.podium.player.api.QueueStore
 import app.podium.player.api.RecommendationEngine
+import app.podium.player.api.SleepTimer
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import app.podium.player.api.TrackCatalog
@@ -34,6 +36,12 @@ interface PlaybackDependencies {
     /** Settings ▸ Autoplay (D-34). */
     val autoplay: StateFlow<AutoplaySettings> get() = DefaultAutoplay
 
+    /** Settings ▸ Equaliser and Crossfade (D-76, D-77). */
+    val effects: StateFlow<AudioEffects> get() = DefaultEffects
+
+    /** The sleep timer the listener sets (D-75); null: none. */
+    val sleepTimer: SleepTimer? get() = null
+
     /** Suggestions for autoplay; null turns autoplay off. */
     val recommendations: RecommendationEngine? get() = null
 
@@ -52,3 +60,4 @@ interface PlaybackDependencies {
 }
 
 private val DefaultAutoplay: StateFlow<AutoplaySettings> = MutableStateFlow(AutoplaySettings(enabled = false))
+private val DefaultEffects: StateFlow<AudioEffects> = MutableStateFlow(AudioEffects())

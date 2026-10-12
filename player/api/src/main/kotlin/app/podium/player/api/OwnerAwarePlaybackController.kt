@@ -1,6 +1,7 @@
 package app.podium.player.api
 
 import app.podium.core.common.getOrNull
+import app.podium.core.model.MediaKind
 import app.podium.core.model.PlaybackRoute
 import app.podium.core.model.QueueUid
 import app.podium.core.model.SourceId
@@ -158,6 +159,7 @@ class OwnerAwarePlaybackController(
                 servedByDisplayName = source?.descriptor?.displayName,
                 resolutionPath = ResolutionPath.OWN_SOURCE,
                 servedBy = source?.descriptor?.id,
+                kind = track?.kind ?: MediaKind.SONG,
             )
         }
         val starting = h?.starting == true && access == RemoteAccess.READY

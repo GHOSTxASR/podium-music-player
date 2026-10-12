@@ -153,7 +153,7 @@ private const val PREFETCH = 6
 
 /**
  * The long-press menu for an online song (D-34): only what the song's source and ONLINE support —
- * Play next, Add to Up Next, Like, Add to playlist, Start radio, the artist, Share.
+ * Play next, Add to Up Next, Like, Add to playlist, Start radio, the album, the artist, Share.
  */
 fun showTrackMenu(
     overlay: OverlayHost,
@@ -177,6 +177,8 @@ fun showTrackMenu(
                 add(MenuAction(if (liked) "Remove from liked songs" else "Like") { repository.setLiked(track, !liked) })
                 add(MenuAction("Add to playlist") { showAddToPlaylist(overlay, listOf(track), repository, navigate) })
                 if (canRecommend && playable) add(MenuAction("Start radio") { actions.startRadio(track) })
+                val album = track.album
+                if (album?.id != null) add(MenuAction("Go to album") { navigate(OnlinePlace.Collection(app.podium.core.model.PlaylistId(album.id!!.value), album.title, isAlbum = true)) })
                 if (artist?.id != null) add(MenuAction("Go to ${artist.name}") { navigate(OnlinePlace.Artist(artist.id!!, artist.name)) })
                 if (track.source.providerUri != null) add(MenuAction("Share") { actions.share(track) })
             },

@@ -1,6 +1,7 @@
 package app.podium.player.api
 
 import app.podium.core.common.PodiumError
+import app.podium.core.model.MediaKind
 import app.podium.core.model.QualityReport
 import app.podium.core.model.QueueUid
 import app.podium.core.model.SourceId
@@ -94,6 +95,8 @@ data class NowPlayingItem(
     val servedByDisplayName: String?,
     val resolutionPath: ResolutionPath?,
     val servedBy: SourceId? = null,
+    /** A song, or the audio of a video (Now Playing says which, D-74). */
+    val kind: MediaKind = MediaKind.SONG,
 )
 
 data class PlaybackSnapshot(

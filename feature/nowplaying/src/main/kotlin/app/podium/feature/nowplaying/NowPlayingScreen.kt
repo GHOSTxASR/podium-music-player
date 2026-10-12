@@ -52,6 +52,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -106,7 +107,10 @@ import app.podium.core.interaction.WheelAcceleration
 import app.podium.core.interaction.WheelButton
 import app.podium.core.interaction.WheelContext
 import app.podium.core.interaction.rememberPodiumHaptics
+import app.podium.core.model.ArtistCredit
+import app.podium.core.model.MediaKind
 import app.podium.core.model.QualityLabel
+import app.podium.core.model.Track
 import app.podium.core.model.TrackId
 import app.podium.player.api.FavoritesRepository
 import app.podium.player.api.NowPlayingItem
@@ -120,10 +124,14 @@ import app.podium.player.api.PlaybackStatus
 import androidx.compose.ui.platform.LocalDensity
 import app.podium.core.designsystem.component.Pinwheel
 import app.podium.player.api.Recovery
+import app.podium.player.api.SleepTimer
+import app.podium.player.api.SleepTimerState
+import app.podium.player.api.SleepTimerText
 import app.podium.player.api.RepeatMode
 import app.podium.player.api.VolumeController
 import kotlin.math.ceil
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
 
 /**
  * What the Wheel does on Now Playing. Center cycles through the modes as on the original
@@ -148,6 +156,14 @@ fun NowPlayingScreen(
     environmentOf: (TrackId) -> String? = { null },
     /** Now Playing ▸ Lyrics (LYRICS_ARCHITECTURE.md §7). */
     onLyrics: () -> Unit = {},
+    /** The playing song in full, for its album and artists (D-74); null when it can't be found. */
+    trackOf: suspend (TrackId) -> Track? = { null },
+    /** Opens the song's album, in the song's own environment (D-34). */
+    onOpenAlbum: (Track) -> Unit = {},
+    /** Opens one of the song's artists, in the song's own environment. */
+    onOpenArtist: (ArtistCredit) -> Unit = {},
+    /** The sleep timer (D-75); null hides it. */
+    sleepTimer: SleepTimer? = null,
 ) {
     val snapshot by controller.snapshot.collectAsStateWithLifecycle()
     val queue by controller.queue.collectAsStateWithLifecycle()
@@ -184,6 +200,22 @@ fun NowPlayingScreen(
         }
     }
 
+    // The song in full, for Go to album and Go to artist; kept only while it's the one playing.
+    val looked by produceState<Track?>(null, item?.trackId) {
+        value = item?.trackId?.let { id -> runCatching { trackOf(id) }.getOrNull() }
+    }
+    val playingTrack = looked?.takeIf { it.id == item?.trackId }
+
+    // While the sleep timer is set, a line says when the music stops (counting down each second).
+    val sleepState by (sleepTimer?.state ?: remember { MutableStateFlow<SleepTimerState>(SleepTimerState.Off) }).collectAsStateWithLifecycle()
+    val sleepNote by produceState<String?>(null, sleepState) {
+        while (true) {
+            value = SleepTimerText.note(sleepState, sleepTimer?.remainingMs())
+            if (sleepState !is SleepTimerState.Counting) break
+            delay(1_000)
+        }
+    }
+
     val isFavorite = item != null && item.trackId in favoriteIds
     val remoteOwner = snapshot.owner as? PlaybackOwner.Remote
     val controls = snapshot.controls
@@ -196,6 +228,8 @@ fun NowPlayingScreen(
                         add(MenuAction("Lyrics", onSelect = onLyrics))
                         add(MenuAction("Up Next", onSelect = onUpNext))
                         add(MenuAction(if (isFavorite) "Remove from favorites" else "Add to favorites") { favorites.toggle(item.trackId) })
+                        goToActions(playingTrack, overlay, onOpenAlbum, onOpenArtist).forEach(::add)
+                        if (sleepTimer != null) add(MenuAction("Sleep timer") { overlay.show(sleepTimerMenu(sleepTimer)) })
                         if (remoteOwner != null) {
                             add(MenuAction("Open ${remoteOwner.displayName}") { controller.openRemoteApp() })
                             if (snapshot.canResumeLocal) add(MenuAction("Back to my music") { controller.resumeLocal() })
@@ -317,6 +351,7 @@ fun NowPlayingScreen(
         perform = perform,
         environment = environmentOf(item.trackId),
         queueHidden = queue.hidden,
+        sleepNote = sleepNote,
     )
     // The cluster's glass refracts the artwork's environment, so the environment is the captured layer.
     GlassHost(
@@ -352,6 +387,8 @@ private class NowPlayingParts(
     val environment: String? = null,
     /** The playing owner doesn't show its queue: no "1 of 1" pretending to know. */
     val queueHidden: Boolean = false,
+    /** When the sleep timer stops the music, while it's set (D-75). */
+    val sleepNote: String? = null,
 )
 
 @Composable
@@ -574,6 +611,9 @@ private fun TrackText(item: NowPlayingItem, alignment: Alignment.Horizontal, tex
             shown.albumTitle?.takeIf { it.isNotBlank() }?.let {
                 PodiumText(it, type.footnote, colors.labelTertiary, textAlign = textAlign)
             }
+            videoNote(shown.kind)?.let {
+                PodiumText(it, type.footnote, colors.labelTertiary, textAlign = textAlign)
+            }
         }
     }
 }
@@ -662,6 +702,7 @@ private fun StatusColumn(p: NowPlayingParts, modifier: Modifier = Modifier) {
         if (!p.queueHidden) PodiumText("${p.item.indexInQueue + 1} of ${p.item.queueSize}", type.caption, colors.labelSecondary)
         QualityLabel.forNowPlaying(p.snapshot.quality)?.let { PodiumText(it, type.caption, colors.labelTertiary, maxLines = 2) }
         p.environment?.let { PodiumText(it, type.caption, colors.labelTertiary) }
+        p.sleepNote?.let { PodiumText(it, type.caption, colors.labelSecondary) }
         if (note != null) {
             PodiumText(
                 note,
@@ -1018,6 +1059,59 @@ private fun RepeatMode.next() = when (this) {
 }
 
 /** What another app's playback means right now, and what to do about it (§8.4). */
+/**
+ * The sleep timer's choices (D-75, audio-architecture.md §9): a countdown, or the end of the song or
+ * album. Set, the title says what's set and Turn off comes first.
+ */
+fun sleepTimerMenu(timer: SleepTimer): MenuSpec {
+    val state = timer.state.value
+    val title = if (state == SleepTimerState.Off) "Sleep timer" else {
+        "Sleep timer, " + SleepTimerText.summary(state, timer.remainingMs()).replaceFirstChar { it.lowercase() }
+    }
+    return MenuSpec(
+        title,
+        buildList {
+            if (state != SleepTimerState.Off) add(MenuAction("Turn off") { timer.cancel() })
+            SleepTimer.CHOICES.forEach { minutes -> add(MenuAction(SleepTimerText.choice(minutes)) { timer.start(minutes) }) }
+            add(MenuAction("End of song") { timer.stopAtEndOfSong() })
+            add(MenuAction("End of album") { timer.stopAtEndOfAlbum() })
+        },
+    )
+}
+
+/** What Now Playing says when the sound comes from a video rather than a song's audio release (D-74). */
+internal fun videoNote(kind: MediaKind): String? = when (kind) {
+    MediaKind.MUSIC_VIDEO -> "Audio from the music video"
+    MediaKind.VIDEO -> "Audio from a video"
+    MediaKind.SONG, MediaKind.EPISODE -> null
+}
+
+/**
+ * Go to album and Go to artist for the playing song (D-74): only the pages it has. Several artists
+ * open a short list to choose from.
+ */
+internal fun goToActions(
+    track: Track?,
+    overlay: app.podium.core.designsystem.component.OverlayHost,
+    onOpenAlbum: (Track) -> Unit,
+    onOpenArtist: (ArtistCredit) -> Unit,
+): List<MenuAction> {
+    if (track == null) return emptyList()
+    val artists = track.artists.filter { it.id != null }.distinctBy { it.id }
+    return buildList {
+        if (track.album?.id != null) add(MenuAction("Go to album") { onOpenAlbum(track) })
+        when (artists.size) {
+            0 -> Unit
+            1 -> add(MenuAction("Go to artist") { onOpenArtist(artists.single()) })
+            else -> add(
+                MenuAction("Go to artist") {
+                    overlay.show(MenuSpec("Go to artist", artists.map { a -> MenuAction(a.name) { onOpenArtist(a) } }))
+                },
+            )
+        }
+    }
+}
+
 internal fun remoteNote(remote: RemoteStatus, owner: String): String = when {
     remote.starting -> "Starting in $owner"
     remote.problem == RemoteProblem.NEEDS_ACCESS -> "Opened in $owner. Allow media controls in Settings to control it here."

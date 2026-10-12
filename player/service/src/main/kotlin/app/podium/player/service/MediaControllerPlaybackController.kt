@@ -8,6 +8,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
+import app.podium.core.model.MediaKind
 import app.podium.core.model.AudioQuality
 import app.podium.core.model.Codec
 import app.podium.core.model.QualityReport
@@ -243,6 +244,7 @@ class MediaControllerPlaybackController(
             servedByDisplayName = extras?.getString(PodiumExtras.SERVED_BY),
             resolutionPath = extras?.getString(PodiumExtras.RESOLUTION_PATH)?.let { runCatching { ResolutionPath.valueOf(it) }.getOrNull() },
             servedBy = extras?.getString(PodiumExtras.SERVED_BY_ID)?.takeIf { it.isNotBlank() }?.let(::SourceId),
+            kind = md.extras?.getString(PodiumExtras.MEDIA_KIND)?.let { runCatching { MediaKind.valueOf(it) }.getOrNull() } ?: MediaKind.SONG,
         )
     }
 

@@ -133,15 +133,27 @@ fun OnlineSearchScreen(repository: OnlineRepository, actions: OnlineActions, nav
                         val account = repository.status.value?.account
                         add(SearchRow.Message(if (account != null && !account.signedIn) "Nothing found. Signing in opens the full catalogue." else "Nothing found. Try other words."))
                     }
-                    if (songs.isNotEmpty()) {
-                        add(SearchRow.Section("Songs"))
-                        val shown = if (songsExpanded) songs else songs.take(SONGS_PREVIEW)
-                        shown.forEach { add(SearchRow.Song(it)) }
-                        if (songs.size > shown.size || !moreExhausted) add(SearchRow.MoreSongs)
+                    val addSongs = {
+                        if (songs.isNotEmpty()) {
+                            add(SearchRow.Section("Songs"))
+                            val shown = if (songsExpanded) songs else songs.take(SONGS_PREVIEW)
+                            shown.forEach { add(SearchRow.Song(it)) }
+                            if (songs.size > shown.size || !moreExhausted) add(SearchRow.MoreSongs)
+                        }
                     }
-                    if (v.albums.isNotEmpty()) {
-                        add(SearchRow.Section("Albums"))
-                        v.albums.forEach { add(SearchRow.Album(it)) }
+                    val addAlbums = {
+                        if (v.albums.isNotEmpty()) {
+                            add(SearchRow.Section("Albums"))
+                            v.albums.forEach { add(SearchRow.Album(it)) }
+                        }
+                    }
+                    // Searching an album's own title shows the album first (D-74).
+                    if (albumsLead(query, v.albums.map { it.title })) {
+                        addAlbums()
+                        addSongs()
+                    } else {
+                        addSongs()
+                        addAlbums()
                     }
                     if (v.artists.isNotEmpty()) {
                         add(SearchRow.Section("Artists"))
@@ -176,10 +188,11 @@ fun OnlineSearchScreen(repository: OnlineRepository, actions: OnlineActions, nav
     val activate: (Int) -> Unit = { i ->
         when (val row = rows.getOrNull(i)) {
             SearchRow.Field -> fieldFocus.requestFocus()
-            is SearchRow.Song -> playable.indexOfFirst { it.id == row.track.id }.takeIf { it >= 0 }?.let { actions.play(playable, it, "Search") }
+            // The song, then songs like it; never the rest of the results (D-74).
+            is SearchRow.Song -> playable.firstOrNull { it.id == row.track.id }?.let(actions::playAlone)
             // First the songs already found, then further pages.
             SearchRow.MoreSongs -> if (!songsExpanded) songsExpanded = true else loadMoreSongs()
-            is SearchRow.Video -> ready?.videos?.let { videos -> actions.play(videos, videos.indexOfFirst { it.id == row.track.id }.coerceAtLeast(0), "Search") }
+            is SearchRow.Video -> if (row.track.availability !is Availability.Unavailable) actions.playAlone(row.track)
             is SearchRow.Artist -> navigate(OnlinePlace.Artist(row.artist.id, row.artist.name))
             is SearchRow.Album -> navigate(OnlinePlace.Collection(PlaylistId(row.album.id.value), row.album.title, isAlbum = true))
             is SearchRow.Playlist -> navigate(OnlinePlace.Collection(row.playlist.id, row.playlist.title, row.playlist.isAlbum))
@@ -287,6 +300,13 @@ internal fun SearchField(
             modifier = Modifier.fillMaxWidth(),
         )
     }
+}
+
+/** Whether the search is for an album: the top album is titled exactly as searched (D-74). */
+internal fun albumsLead(query: String, albumTitles: List<String>): Boolean {
+    fun key(s: String) = s.lowercase().filter { it.isLetterOrDigit() }
+    val wanted = key(query)
+    return wanted.isNotEmpty() && albumTitles.firstOrNull()?.let(::key) == wanted
 }
 
 private const val MIN_QUERY = 2
