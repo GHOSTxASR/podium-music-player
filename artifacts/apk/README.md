@@ -13,7 +13,7 @@ No APK is committed (D-69). Builds land here locally and stay ignored.
 
 ## On the `ccr-fcca9ac9-6juw47` branch only
 
-`podium-debug-63780e8.apk` is a debug build of commit `63780e8` (sign-in fixes, sleep timer,
-equaliser, crossfade, the cover slide), committed at the owner's request so it can be downloaded
-from GitHub and tried on the phone. It installs beside the release as `app.podium.debug`. Drop the
-commit that added it before merging, so `main` stays free of APKs (D-69).
+`podium-debug-8876ce3.apk` is a debug build of commit `8876ce3` (sign-in fixes, sleep timer,
+equaliser, crossfade, the cover slide, Go to album and artists), committed at the owner's request so it can be downloaded
+from GitHub and tried on the phone. It installs beside the release as `app.podium.debug`. Drop the commits
+that added APKs before merging, so `main` stays free of them (D-69).
