@@ -3,6 +3,7 @@ package app.podium
 import app.podium.WebSignInChecks.Step
 import app.podium.sources.api.SetupProblem
 import app.podium.sources.api.SignInResult
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
@@ -180,6 +181,37 @@ class WebSignInChecksTest {
         checks.onNavigated(onServiceSite = true)
         advanceTimeBy(10_000)
         assertTrue(sent.isEmpty())
+    }
+
+    @Test
+    fun `a slow check says it can take a while, and keeps waiting`() = runTest {
+        session = "SAPISID=x"
+        val reply = CompletableDeferred<SignInResult>()
+        val checks = WebSignInChecks(backgroundScope, { session }, { s -> sent += s; reply.await() })
+        checks.onNavigated(onServiceSite = true)
+        advanceTimeBy(14_000)
+        assertEquals(Step.CHECKING, checks.state.value.step)
+        assertFalse(checks.state.value.slow)
+        advanceTimeBy(2_000)
+        assertTrue(checks.state.value.slow, "a slow connection is told it can take a while")
+        advanceTimeBy(60_000)
+        assertEquals(Step.CHECKING, checks.state.value.step, "and the check isn't cut short")
+        reply.complete(SignInResult.SignedIn)
+        runCurrent()
+        assertEquals(Step.DONE, checks.state.value.step)
+        assertEquals(1, sent.size)
+    }
+
+    @Test
+    fun `a quick check never shows the slow connection note`() = runTest {
+        session = "SAPISID=x"
+        answer = { SignInResult.Refused(SetupProblem.UNREACHABLE) }
+        val checks = checks()
+        checks.onNavigated(onServiceSite = true)
+        runCurrent()
+        advanceTimeBy(30_000)
+        assertEquals(Step.FAILED, checks.state.value.step)
+        assertFalse(checks.state.value.slow)
     }
 
     @Test

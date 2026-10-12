@@ -20,6 +20,8 @@ import kotlinx.coroutines.launch
  * - A session found is checked once. While it's checked nothing else starts.
  * - A check that fails stops the automatic checks: the reason shows with Try again and Start
  *   over, and only the listener starts the next one. (A failed check never loops into another.)
+ * - A check still running after [slowAfterMs] says that a slow connection can take a while. It
+ *   isn't cut short: each request gives up by itself if the connection stalls.
  *
  * Main thread only.
  */
@@ -31,6 +33,7 @@ internal class WebSignInChecks(
     private val signIn: suspend (String) -> SignInResult?,
     private val pollEveryMs: Long = 800,
     private val pollForMs: Long = 60_000,
+    private val slowAfterMs: Long = 15_000,
 ) {
     enum class Step { ON_PAGE, CHECKING, FAILED, DONE }
 
@@ -44,6 +47,8 @@ internal class WebSignInChecks(
         val failure: String? = null,
         /** Whether checking the same session again could help. */
         val canRetry: Boolean = false,
+        /** The check is taking a while (step [Step.CHECKING]). */
+        val slow: Boolean = false,
     )
 
     private val _state = MutableStateFlow(State())
@@ -114,12 +119,18 @@ internal class WebSignInChecks(
         stopPolling()
         _state.value = State(step = Step.CHECKING)
         scope.launch {
+            val reassure = launch {
+                delay(slowAfterMs)
+                if (_state.value.step == Step.CHECKING) _state.value = _state.value.copy(slow = true)
+            }
             val result = try {
                 signIn(session)
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {
                 SignInResult.Refused(SetupProblem.UNKNOWN)
+            } finally {
+                reassure.cancel()
             }
             _state.value = when (result) {
                 SignInResult.SignedIn, null -> State(step = Step.DONE)
@@ -163,6 +174,7 @@ internal class WebSignInChecks(
         const val UNREACHABLE = "Couldn't reach the service. Check your connection, then try again."
         const val NOT_ACCEPTED = "The service didn't accept this sign-in. Tap Start over to sign in again."
         const val NOT_FINISHED_CHECK = "Couldn't finish signing in. Try again, or start over."
+        const val SLOW = "This can take a while on a slow connection. Keep waiting, or tap Cancel to stop."
 
         fun failureText(problem: SetupProblem): String = when (problem) {
             SetupProblem.UNREACHABLE -> UNREACHABLE

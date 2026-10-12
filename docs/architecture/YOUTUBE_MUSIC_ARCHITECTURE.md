@@ -81,7 +81,7 @@ Retired online sources (`sources:audius`, `sources:subsonic`, and the multi-sour
 
 - **Session Acquisition:** Google's account sign-in page in a secure WebView (`WebSignInActivity`). Podium captures the resulting session cookies once the page has signed in to YouTube (D-73):
   - The session is looked for only once the page is on youtube.com, at each navigation and every 0.8 s for a minute; navigating there again starts a new minute. "Check sign-in" checks by hand.
-  - A session found is checked once against the account menu (`WebSignInChecks`). A check that fails shows why, with Try again and Start over, and is never repeated automatically.
+  - A session found is checked once against the account menu (`WebSignInChecks`). A check that fails shows why, with Try again and Start over, and is never repeated automatically. A check still running after 15 s says a slow connection can take a while; it isn't cut short.
   - The checks live in a `ViewModel`, and turning the phone doesn't recreate the screen, so a check under way is never lost.
   - Whatever ends a check short of signing in (a refusal, a cancelled check, a Keystore failure) puts the account state back as it was.
 - **Storage Security:** The session cookies, account display name, and account key are encrypted at rest using `KeystoreCredentialStore` (AES-256-GCM with keys held in the Android Keystore).
