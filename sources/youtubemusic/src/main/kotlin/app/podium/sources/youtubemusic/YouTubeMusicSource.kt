@@ -316,7 +316,7 @@ class YouTubeMusicSource internal constructor(
         override suspend fun track(ref: SourceRef): Outcome<Track> {
             val videoId = ref.providerKey
             return client.next(videoId, null).watch().map { json ->
-                YouTubeMusicParser.next(json).items.firstOrNull { it.videoId == videoId }
+                YouTubeMusicParser.watchSong(json, videoId)
             }.flatMap { song -> song?.let { Outcome.Success(mapper.track(it)) } ?: Outcome.Failure(PodiumError.NotFound("song")) }
         }
 

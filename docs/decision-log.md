@@ -614,8 +614,9 @@ Every significant decision, newest at the bottom. Major ones have an ADR in `adr
     "Audio from the music video" or "Audio from a video" under the title. That says what the
     recording is, not who serves it (D-36).
   - Album search results: an album titled exactly as searched first, then full albums, EPs,
-    singles and anything unlabelled, otherwise the catalogue's order (`AlbumRanking`). When the
-    top album is titled exactly as searched, the Albums section comes before Songs.
+    singles and anything unlabelled, otherwise the catalogue's order (`AlbumRanking`). ~~When the
+    top album is titled exactly as searched, the Albums section comes before Songs.~~ Withdrawn
+    by D-80: Songs always come first.
   - Now Playing ▸ More has Go to album and Go to artist (a list to choose from when there are
     several), shown only when the song has those pages. Each opens in the song's own environment
     (D-34): the library's page for a local song, the online page for an online one. Online song
@@ -702,3 +703,43 @@ Every significant decision, newest at the bottom. Major ones have an ADR in `adr
     were several. Online song menus name every artist the same way.
   - Provider-neutral: the lookup asks the song's own source through the registry.
 - **Not verified:** which of the service's lists leave the pages out. The fix covers any of them.
+
+### D-80 · Search lists songs first; Go to album and artist made dependable for online songs
+- **Context:** user report (2026-10-12, on the phone, the D-79 build):
+  - Searching showed albums above songs. The user wants songs first, then albums.
+  - Now Playing ▸ More still had no Go to entries for online songs ("Blinding Lights", "STAY",
+    both liked). Offline songs were fine.
+- **Decision (search):** Songs always lead, then Albums, Artists, Playlists, Videos. D-74's rule
+  moving Albums above Songs when the top album's title matched the query is withdrawn. The album
+  ranking inside the Albums section stays.
+- **Cause (Go to), as far as the code shows:** the phone's answers can't be seen from the build
+  container, so every way the pages could go missing was closed:
+  - `SongPages` marked a song "looked up" before the lookup ran. A lookup cut short (the song
+    changed, Now Playing closed, a second copy of the screen asked at the same moment) or one that
+    failed left the song without pages for the rest of the session.
+  - Lists stored in the database (liked songs, playlists) put songs back in the catalog whenever
+    they reload. A song filled in by a lookup was overwritten by its stored copy, and never looked
+    up again.
+  - The parser took a link as an album or artist page only when it stated its page type.
+  - A song's own details were looked for only in each watch-next row's leading version, not the
+    paired one (a song's audio and its music video share a row).
+- **Decision (Go to):**
+  - `SongPages` runs each lookup in the app's scope: it finishes when the screen that asked has
+    gone, and callers at the same moment share it. What it found is kept in `SongPages`, so a list
+    storing the song again doesn't undo it. A lookup that failed (no network, say) is tried again
+    the next time.
+  - When the song's details still leave a page out, it's found by name on the same source: the
+    artist named exactly so, the album with exactly that title by the song's artist. One line
+    naming several artists ("A & B") becomes one credit each, only when every one is found.
+    Nothing close is taken. The name search stays within the song's own source and environment
+    (D-34).
+  - The YouTube Music parser reads links that don't state a page type by their ids (albums
+    `MPRE…`, artists `UC…`). It also reads the row's own menu (Go to album, Go to artist) when the
+    line names the album or artist without linking it. The menu's single artist is never put on
+    a line naming several. A song's details are found in either version of a paired row.
+  - Opening Now Playing ▸ More without Go to entries asks again, so the next opening has them
+    when they've arrived.
+- **Verified:** unit tests for each failure path (`SongPagesTest`, `YouTubeMusicParserTest`). A
+  Robolectric test opens the menu before and after the pages arrive (`NowPlayingGoToTest`).
+- **Not verified:** the phone's own answers. If the entries are still missing, the next step is a
+  captured answer from the device, which the build container can't make.

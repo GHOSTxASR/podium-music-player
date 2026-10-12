@@ -155,6 +155,57 @@ class YouTubeMusicParserTest {
         assertEquals("@listener", account.handle)
     }
 
+    // --- D-80: a song's album and artist pages, however the row links them ---------------------------
+
+    private fun panel(videoId: String, byline: String, menu: String = "[]") = """
+        {"playlistPanelVideoRenderer":{"videoId":"$videoId","title":{"runs":[{"text":"Song $videoId"}]},
+          "longBylineText":{"runs":$byline},"menu":{"menuRenderer":{"items":$menu}}}}"""
+
+    private fun goTo(text: String, id: String, page: String? = null) =
+        """{"menuNavigationItemRenderer":{"text":{"runs":[{"text":"$text"}]},"navigationEndpoint":{"browseEndpoint":{"browseId":"$id"""" +
+            (page?.let { ""","browseEndpointContextSupportedConfigs":{"browseEndpointContextMusicConfig":{"pageType":"$it"}}""" } ?: "") + "}}}}"
+
+    private fun watchNext(vararg rows: String) =
+        json("""{"contents":{"playlistPanelRenderer":{"contents":[${rows.joinToString(",")}]}}}""")
+
+    @Test
+    fun `links that don't say which page they open are known by their ids`() {
+        val byline = """[{"text":"Night Owls","navigationEndpoint":{"browseEndpoint":{"browseId":"UCnightowls00000000000"}}},${Fixtures.SEP},
+            {"text":"Dawn","navigationEndpoint":{"browseEndpoint":{"browseId":"MPREb_dawn000"}}},${Fixtures.SEP},{"text":"2021"}]"""
+        val song = YouTubeMusicParser.next(watchNext(panel("aaaaaaaaaa1", byline))).items.single()
+        assertEquals(listOf(YtmRef("Night Owls", "UCnightowls00000000000")), song.artists)
+        assertEquals(YtmRef("Dawn", "MPREb_dawn000"), song.album)
+    }
+
+    @Test
+    fun `a line that only names the album and artist takes their pages from the row's menu`() {
+        val byline = """[{"text":"Night Owls"},${Fixtures.SEP},{"text":"Dawn"},${Fixtures.SEP},{"text":"2021"}]"""
+        val menu = """[${goTo("Go to album", "MPREb_dawn000", "MUSIC_PAGE_TYPE_ALBUM")},${goTo("Go to artist", "UCnightowls00000000000")}]"""
+        val song = YouTubeMusicParser.next(watchNext(panel("aaaaaaaaaa1", byline, menu))).items.single()
+        assertEquals(listOf(YtmRef("Night Owls", "UCnightowls00000000000")), song.artists)
+        assertEquals(YtmRef("Dawn", "MPREb_dawn000"), song.album)
+    }
+
+    @Test
+    fun `the menu's one artist is never put on a line naming two`() {
+        val byline = """[{"text":"Night Owls & Morning Birds"},${Fixtures.SEP},{"text":"3:10"}]"""
+        val menu = """[${goTo("Go to album", "MPREb_dawn000")},${goTo("Go to artist", "UCnightowls00000000000")}]"""
+        val song = YouTubeMusicParser.next(watchNext(panel("aaaaaaaaaa1", byline, menu))).items.single()
+        assertEquals(listOf(YtmRef("Night Owls & Morning Birds")), song.artists)
+        assertNull(song.album, "a duration is not an album's name")
+    }
+
+    @Test
+    fun `a song's own details are found in either version of a paired row`() {
+        val linked = """[{"text":"Night Owls","navigationEndpoint":{"browseEndpoint":{"browseId":"UCnightowls00000000000"}}}]"""
+        val pair = """{"playlistPanelVideoWrapperRenderer":{"primaryRenderer":${panel("vvvvvvvvvv1", linked)},
+            "counterpart":[{"counterpartRenderer":${panel("aaaaaaaaaa1", linked)}}]}}"""
+        val answer = watchNext(pair)
+        assertEquals("aaaaaaaaaa1", YouTubeMusicParser.watchSong(answer, "aaaaaaaaaa1")?.videoId)
+        assertEquals("vvvvvvvvvv1", YouTubeMusicParser.watchSong(answer, "vvvvvvvvvv1")?.videoId)
+        assertNull(YouTubeMusicParser.watchSong(answer, "zzzzzzzzzz1"))
+    }
+
     @Test
     fun `unrecognisable answers parse to nothing instead of failing`() {
         assertTrue(YouTubeMusicParser.search(json("{}")).items.isEmpty())

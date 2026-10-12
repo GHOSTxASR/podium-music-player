@@ -36,7 +36,7 @@ Online
 ├── Home ─► shelves (Trending this week, Underground, Popular playlists, Trending this month)
 │           + Recently played, Your liked songs, Your playlists ─► songs / playlists (paged)
 ├── Explore ─► genres ─► genre (Genre radio, songs)
-├── Search ─► results (Songs + More songs, Artists, Albums, Playlists) ─► artist / album / playlist / [play]
+├── Search ─► results (Songs + More songs, Albums, Artists, Playlists, Videos; songs always first, D-80) ─► artist / album / playlist / [play]
 ├── Liked songs ─► (Shuffle) songs
 ├── Playlists ─► New playlist (name) · playlist ─► Play, Shuffle, Rename, Delete, songs (hold: move, remove)
 ├── Radio ─► from what's playing · from songs played · genre radios
