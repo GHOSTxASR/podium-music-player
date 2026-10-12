@@ -894,7 +894,7 @@ private fun ScreenContent(
             onUpNext = { navigator.push(Dest.UpNext) },
             environmentOf = { id -> if (graph.environments.isOnline(id)) "Online" else null },
             onLyrics = { navigator.push(Dest.Lyrics) },
-            trackOf = { id -> (graph.catalog.get(id) as? Outcome.Success)?.value },
+            trackOf = { id -> graph.songPages.of(id) },
             sleepTimer = graph.sleepTimer,
             // Each page in the song's own environment (D-34): the library's, or online's.
             onOpenAlbum = { track ->

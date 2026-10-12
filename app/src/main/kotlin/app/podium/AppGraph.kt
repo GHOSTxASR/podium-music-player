@@ -68,6 +68,9 @@ class AppGraph(val context: Context) {
 
     val libraryStore = LibraryStore(database)
     val catalog = TrackCatalog(registry) { id -> libraryStore.track(id) }
+
+    /** A song with its album's and artists' pages, looked up on its source when a list left them out (D-79). */
+    val songPages = SongPages(catalog, registry)
     val queueStore = DatabaseQueueStore(database)
     val artwork = ArtworkResolver(registry)
 
