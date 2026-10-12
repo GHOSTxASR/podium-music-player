@@ -231,7 +231,7 @@ fun NowPlayingScreen(
                         add(MenuAction("Lyrics", onSelect = onLyrics))
                         add(MenuAction("Up Next", onSelect = onUpNext))
                         add(MenuAction(if (isFavorite) "Remove from favorites" else "Add to favorites") { favorites.toggle(item.trackId) })
-                        goToActions(playingTrack, overlay, onOpenAlbum, onOpenArtist).forEach(::add)
+                        goToActions(playingTrack, onOpenAlbum, onOpenArtist).forEach(::add)
                         if (sleepTimer != null) add(MenuAction("Sleep timer") { overlay.show(sleepTimerMenu(sleepTimer)) })
                         if (remoteOwner != null) {
                             add(MenuAction("Open ${remoteOwner.displayName}") { controller.openRemoteApp() })
@@ -1119,12 +1119,11 @@ internal fun videoNote(kind: MediaKind): String? = when (kind) {
 }
 
 /**
- * Go to album and Go to artist for the playing song (D-74): only the pages it has. Several artists
- * open a short list to choose from.
+ * Go to album, and Go to each of the song's artists by name, in the menu itself (D-74, D-79): only
+ * the pages the song has.
  */
 internal fun goToActions(
     track: Track?,
-    overlay: app.podium.core.designsystem.component.OverlayHost,
     onOpenAlbum: (Track) -> Unit,
     onOpenArtist: (ArtistCredit) -> Unit,
 ): List<MenuAction> {
@@ -1132,15 +1131,7 @@ internal fun goToActions(
     val artists = track.artists.filter { it.id != null }.distinctBy { it.id }
     return buildList {
         if (track.album?.id != null) add(MenuAction("Go to album") { onOpenAlbum(track) })
-        when (artists.size) {
-            0 -> Unit
-            1 -> add(MenuAction("Go to artist") { onOpenArtist(artists.single()) })
-            else -> add(
-                MenuAction("Go to artist") {
-                    overlay.show(MenuSpec("Go to artist", artists.map { a -> MenuAction(a.name) { onOpenArtist(a) } }))
-                },
-            )
-        }
+        artists.forEach { a -> add(MenuAction("Go to ${a.name}") { onOpenArtist(a) }) }
     }
 }
 

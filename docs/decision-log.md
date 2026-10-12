@@ -685,3 +685,20 @@ Every significant decision, newest at the bottom. Major ones have an ADR in `adr
   - The covers of the songs either side are loaded ahead at the size Now Playing shows them, so an
     online cover slides in already showing instead of popping in after.
 - **Verified:** filmed frame by frame on Robolectric (`NowPlayingSlideTest`): Next, Previous, same cover.
+
+### D-79 · Go to album and artist for every online song; each artist named in the menu
+- **Context:** user report (2026-10-12, on the phone): Now Playing's menu had no Go to album or
+  artist for an online song. Some of the service's lists name a song's album and artists without
+  linking their pages (shelf tiles, liked-songs rows), so the song Podium held had nothing to go
+  to. The user also asked for every artist to be named in the menu itself.
+- **Decision:**
+  - `SongPages` (app) gives Now Playing the playing song with its pages. When the song has no album
+    page, or an artist without a page, it looks the song up once on its own source (its watch-next
+    details link both), fills in what was missing and remembers it in the catalog.
+  - What the song already links is never replaced. Credits that match none of the source's (one
+    line naming two artists) give way to the source's own, one per artist.
+  - Now Playing ▸ More lists Go to album, then "Go to <artist>" for each artist with a page, in the
+    menu itself. This replaces D-74's single Go to artist entry, which opened a list when there
+    were several. Online song menus name every artist the same way.
+  - Provider-neutral: the lookup asks the song's own source through the registry.
+- **Not verified:** which of the service's lists leave the pages out. The fix covers any of them.

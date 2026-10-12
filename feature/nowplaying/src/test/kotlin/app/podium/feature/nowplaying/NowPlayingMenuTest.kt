@@ -1,6 +1,5 @@
 package app.podium.feature.nowplaying
 
-import app.podium.core.designsystem.component.OverlayHost
 import app.podium.core.model.AlbumId
 import app.podium.core.model.AlbumRef
 import app.podium.core.model.ArtistCredit
@@ -31,24 +30,22 @@ class NowPlayingMenuTest {
     )
 
     @Test
-    fun `go to album and artist appear only for the pages the song has`() {
-        val overlay = OverlayHost()
-        assertEquals(emptyList(), goToActions(null, overlay, {}, {}).map { it.label })
-        assertEquals(emptyList(), goToActions(track(null, ArtistCredit("Nobody")), overlay, {}, {}).map { it.label })
+    fun `go to album and each artist appear only for the pages the song has`() {
+        assertEquals(emptyList(), goToActions(null, {}, {}).map { it.label })
+        assertEquals(emptyList(), goToActions(track(null, ArtistCredit("Nobody")), {}, {}).map { it.label })
         val one = track(AlbumId.of(source, "MPREb_1"), ArtistCredit("A", id = ArtistId.of(source, "UC1")))
-        assertEquals(listOf("Go to album", "Go to artist"), goToActions(one, overlay, {}, {}).map { it.label })
+        assertEquals(listOf("Go to album", "Go to A"), goToActions(one, {}, {}).map { it.label })
     }
 
     @Test
-    fun `go to artist goes straight there for one artist, and asks which for several`() {
-        val overlay = OverlayHost()
+    fun `several artists are each named in the menu itself, once`() {
         val opened = mutableListOf<String>()
-        val a = ArtistCredit("A", id = ArtistId.of(source, "UC1"))
-        val b = ArtistCredit("B", id = ArtistId.of(source, "UC2"))
-        goToActions(track(null, a), overlay, {}, { opened += it.name }).single().onSelect()
-        assertEquals(listOf("A"), opened)
-        goToActions(track(null, a, b, b), overlay, {}, { opened += it.name }).single().onSelect()
-        assertEquals(listOf("A", "B"), overlay.menu?.actions?.map { it.label }, "each artist once, to choose from")
+        val a = ArtistCredit("The Weeknd", id = ArtistId.of(source, "UC1"))
+        val b = ArtistCredit("Daft Punk", id = ArtistId.of(source, "UC2"))
+        val actions = goToActions(track(null, a, b, b, ArtistCredit("Unlinked")), {}, { opened += it.name })
+        assertEquals(listOf("Go to The Weeknd", "Go to Daft Punk"), actions.map { it.label })
+        actions.last().onSelect()
+        assertEquals(listOf("Daft Punk"), opened)
     }
 
     @Test

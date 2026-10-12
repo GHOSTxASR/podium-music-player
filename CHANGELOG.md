@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Sleep timer:** 15 to 90 minutes, the end of the song or the end of the album. The music fades out over the last 10 seconds, then pauses. In Now Playing ▸ More and Settings (D-75).
 - **Equaliser:** ten bands from 31 Hz to 16 kHz, thirteen presets or your own curve, set with the Wheel and heard as you turn. In Settings (D-76).
 - **Crossfade:** songs overlap by 2 to 12 seconds, except an album's tracks that run into each other. In Settings (D-77).
-- **Go to album and Go to artist** in Now Playing's menu, and Go to album in online song menus (D-74).
+- **Go to album and Go to <artist>** in Now Playing's menu, one entry per artist, for local and online songs alike; an online song listed without its album or artist pages has them looked up (D-74, D-79). Online song menus name every artist too.
 - Now Playing says when the sound comes from a video: "Audio from the music video" (D-74).
 - **Cover slide on every song change (D-78):** the playing cover slides off to the left as the next one comes in from the right, even when they share a cover; Previous runs the other way. Covers either side are loaded ahead, so online covers arrive already showing.
 
