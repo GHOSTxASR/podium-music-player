@@ -1,7 +1,8 @@
 # Lyrics architecture
 
-Status: implemented (core:lyrics, feature:nowplaying `LyricsScreen`), 2026-10-06.
-Decisions: D-11 (consent), D-39 (provider and full-screen lyric mode).
+Status: implemented (core:lyrics, feature:nowplaying `LyricsScreen`), 2026-10-06; Continuous line
+theme (§12) 2026-10-12.
+Decisions: D-11 (consent), D-39 (provider and full-screen lyric mode), D-81 (Continuous line).
 
 Now Playing ▸ Lyrics turns the whole virtual display into the lyric. Podium never claims words it
 can't stand behind: lyrics are shown only when a provider's record is confidently the same recording,
@@ -218,8 +219,165 @@ fades — the whole virtual display is the lyric.
   found, a line early in its words, a line half sung). Screenshots land in
   `feature/nowplaying/build/screenshots/`.
 
+- Continuous line (§12): `LineHandTest` (9), `LineCompositionTest` (15), `LinePlayheadTest` (7),
+  `LinePerformanceTest` (2), `ContinuousLineScreenTest` (9 Robolectric screenshots, `line-*.png`);
+  `WordTiming.end` in `LyricsTest`; the setting in `AppearanceLayoutTest.lyricsThemePicker` and
+  `DeviceSettingsPersistenceTest`.
+
 ## 11. Not done / next
 
 - No "clear saved lyrics" control yet (the system clears the cache directory when space is low).
 - Device acceptance (real timing against delegated playback) is listed in
   `docs/testing/UI_DEVICE_ACCEPTANCE.md`; it was not performed from the build container.
+- Continuous line: see §12.8.
+
+## 12. The Continuous line theme (D-81)
+
+An optional lyrics theme (Settings ▸ Appearance ▸ Virtual display ▸ Lyrics theme; Classic stays the
+default). The display becomes a matte black sheet on which one fine ivory line **writes the lyrics
+by hand**, runs on from each phrase's last letter into the next phrase, and draws instrumental line
+art between phrases. The whole song is one drawing; the display is a window that follows the pen.
+Everything else on the screen (finding the words, consent, the Wheel, the details, the error and
+loading states) is the same code as Classic (§7, §8). Code: `feature:nowplaying`, package `line`.
+
+```
+LyricsScreen ── LineScript (timing, pure) ── LineComposition (plan + lazy routes, pure)
+     │                                         ├── LinePhraseSetter ── LineHand (the glyphs)
+     │                                         └── LineMotifs
+     └── ContinuousLine (frame loop) ── LinePlayhead (retrace) ── LinePainter (Canvas)
+```
+
+### 12.1 The hand
+
+- **A single-stroke script drawn for Podium**, not a font file: `LineHandGlyphs.kt` holds each
+  character as a short path in a 100-unit grid (`L`, `Q`, `C` segments; strokes separated by `|`;
+  `*` marks a stroke drawn after the letter, like an i's dot or an x's second bar), its advance and
+  the direction the pen arrives in. `LineHand` parses and flattens them once (adaptive Bézier
+  subdivision to 0.3 grid units), slants them 0.16 like handwriting, and caches the result.
+- **Coverage:** a–z, A–Z, 0–9 and `. , ' ’ ‘ " “ ” ! ¡ ? ¿ - – — : ; ( ) [ ] & / + …`. Accented
+  letters are composed from their canonical decomposition (NFD): the base letter's strokes plus
+  the accent's (acute, grave, circumflex, caron, diaeresis, tilde, ring, macron, breve, dot, double
+  acute, cedilla, ogonek); an accent above an i or j replaces its dot.
+- **Lowercase joins.** Each lowercase letter starts where its body starts (the top of an n's first
+  stem, the top right of an a's bowl) and one generated cubic connector does the upstroke from the
+  previous letter's exit along both letters' directions, so every join is the same smooth curve.
+  Most letters leave along the baseline with a rising flick; b, o, r, v, w leave at the x-height.
+  Capitals and multi-stroke letters lift where a hand lifts (the bar of a t is its exit, so it
+  joins the next letter). Punctuation and numerals are reached with a lift, not joined.
+- **Words** are joined by a quieter hairline; a new row is reached with a lift.
+- **Other characters** (another script, ligatures like æ, symbols): the pen traces the system
+  font's outline (`OutlineGlyphs`: `Paint.getTextPath` + `Path.approximate`, sized to the hand's
+  x-height, slanted the same, cached). It is still line, never fill, but it is an outline, not a
+  single stroke. Characters with no outline (controls, whitespace) are skipped.
+
+### 12.2 Phrases on the paper
+
+`LinePhraseSetter` sets a phrase in rows at most 80 % of the display's width (each row 0.22 em right
+of the one above), at the largest scale that keeps the block within 46 % of the display's height
+(down to 0.42; below that it may overflow and the camera follows the pen). Words are split exactly
+as `WordTiming.words` splits them, so word *n* of the drawing is word *n* of the timing.
+
+`LineComposition` places the phrases down the paper on a diagonal: each starts 24 % of the
+display's width right of the last and 0.55 em below it. The line between two phrases carries on
+from the last letter, drops into the clear space between the phrases, runs back along it and comes
+down into the next first letter — never across the words (`route`). After instrumental line art the
+next phrase starts just ahead of it, down and to the right, so the line runs straight out of the
+last motif into the first letter.
+
+### 12.3 Timing (only what the lyrics say)
+
+`LineScript` turns the lyrics into phrases with word start times and an end:
+
+- **Provider word times** (enhanced LRC, LRCLIB's `lyricsfile` words): each word is reached at its
+  stamp.
+- **Line times only** (most lyrics): the line's start is the provider's; the words inside it are
+  paced by `WordTiming` (§5.1) and the phrase is marked `estimated` — the details overlay already
+  says "Words paced to the line". `WordTiming.end` gives the end of the line's estimated span (or
+  the provider's end time), never past the next line.
+- Phrases sung back to back keep 240 ms for the connector, taken from the end of the phrase before;
+  the next phrase still starts exactly on time.
+- Lyrics paced by Podium (D-50) are drawn the same way and keep their "Timing estimated by Podium".
+- Plain lyrics without a song length are laid on a nominal clock only so each line can be shown
+  written; they are never auto-advanced (the Wheel moves through them, as in Classic).
+- A song LRCLIB marks instrumental is one instrumental composition across its length (four minutes
+  when the length is unknown). Loading, consent, not found, offline and errors keep their messages:
+  nothing is classified instrumental before the provider says so.
+
+Within a word the pen moves at constant speed along its prepared route (pen-time: route length,
+with lifts weighted 0.25 and hairlines 0.8). In instrumental passages the pen moves at about 0.9 em
+a second.
+
+### 12.4 Instrumental line art
+
+`LineMotifs`: nine hand-drawn motifs in the same grid — a flowing wave, a loop, a near-spiral, a
+figure eight, beat dots on an arc, a note, two beamed notes, a crossing, and a long transition. Each
+enters heading right at its origin and leaves heading right, so they chain into one line. A gap is
+filled when the pen would need more than the connectors to cover it: the composition picks motifs
+with SplitMix64 seeded by the track's key (FNV-1a) and the section's index — no two the same in a
+row, a long transition every sixth — and chains them leaning down-right. The same song always draws
+the same motifs; another song draws others. Where a motif crosses itself (found once, when it is
+built) a short gold glint shows as the pen closes the crossing. Beat dots light as the pen passes
+them, the latest one gold; they follow the pen, not the audio — **Podium does not detect beats**.
+
+### 12.5 One drawing, a function of the position
+
+- `LineComposition.cursorAt(position)` maps playback to a cursor: the section index plus the
+  fraction of its pen-time drawn (word keyframes inside a phrase, linear in instrumental sections).
+  `frameAt(cursor)` gives the pen's position and the camera. Both are pure: the same moment is the
+  same frame, however it was reached (tested to the pixel on Robolectric).
+- **The camera** holds still on a phrase while it is written (centred on it), and between phrases
+  moves from one phrase to the next, leaning onto the pen's route smoothed over 3 em through
+  instrumental art, never letting the pen within 10 % of the display's edge. Earlier phrases dim
+  and slide away up and to the left as the next one comes in from the lower right.
+- **Seeking, rewinding, reading with the Wheel:** `LinePlayhead` notices a jump (the position moving
+  unlike the clock by more than 0.6 s, the Wheel choosing another line, or the cursor moving more
+  than 0.35 sections at once) and takes the drawn cursor to the new one over 280–900 ms on an
+  ease-out — the pen retraces its own route and the camera its own diagonal, then lands exactly on
+  the target. While the music plays the drawn cursor *is* the target.
+- **Pause/resume:** paused, the drawing doesn't move (the screen looks for a seek four times a
+  second instead of every frame); resumed, it carries on from the position with no jump.
+- **A new song** gets a new composition and a new playhead: nothing travels over from the last.
+
+### 12.6 Drawing
+
+`LinePainter` draws on the display's Canvas, clipped to it; the camera is a canvas transform.
+
+- Matte black `#060606`; ivory `#F2EBDC` ink; champagne gold `#D6B677` used only for the pen's
+  point and small glow, the last 0.14 em of wet ink behind it, the brief light across a finished
+  phrase's last word, motif glints and the latest beat dot. Quieter lines (earlier phrases,
+  hairlines, instrumental line) are ivory mixed toward the paper, opaque, so overlaps never bead.
+- Strokes: 1.5 dp lettering, 1.15 dp instrumental line, 0.85 dp hairlines; pen 1.9 dp; glow 9 dp.
+- The glow is one radial gradient made once and positioned by a translate — **no blur, no
+  `RenderEffect`, no shader**. Nothing is drawn that isn't written yet.
+- **Reduced motion:** no glow, no gold accents, no retracing (the drawing jumps to the position),
+  and the camera moves between phrases in a few cuts instead of following.
+
+### 12.7 Cost
+
+Prepared once per song and display shape, off the main thread: the glyphs (once per app), each
+phrase's layout and timing keyframes, the motif choices and placements, the camera's smoothed
+route. Each section's route (points, kinds, pen-time, and the segments as `drawLines` arrays) is
+rebuilt from its plan when drawn; eight are kept, and the next two are prepared off the main thread
+as the pen enters a section — memory doesn't grow with the song.
+
+Each frame: read the position, map it to a cursor (binary searches), find the pen on the prepared
+route, and draw the revealed prefix of the visible sections' segments — one `drawLines` call per
+run of one kind, plus a few small circles and lines for the pen and accents. Nothing is laid out,
+shaped, parsed or built per frame; nothing is read from disk or the network.
+
+Measured on the build container's JVM (not the phone; `LinePerformanceTest`, printed in its test
+report): a 48-line song prepares in about 10 ms, a section rebuilds in about 0.04 ms, mapping a
+frame takes about 0.8 µs and allocates nothing over 600 frames; the busiest frame of a 12-, 48- or
+160-line song is at most 82 line-drawing calls and about 3,200 segments. **Frame times on the
+Nothing Phone (3a) have not been measured** (UI_DEVICE_ACCEPTANCE.md §3a.16).
+
+### 12.8 Limits
+
+- The hand is one style, hand-authored; some capitals (B, E, P, S) and numerals are plainer than
+  the lowercase, and capitals that leave at the top (N, V, W) join the next letter with a loop.
+- Characters outside the hand are traced outlines of the system font, not single strokes.
+- Word pacing inside line-timed lyrics is an estimate (§5.1); beat dots are not beats.
+- Very long phrases set below 0.42 may run off the display; the camera follows the pen, so the
+  words being written stay visible, but not the whole phrase at once.
+- The glyph and motif tables are tuned by eye on Robolectric screenshots at one phone size; device
+  acceptance (§3a of the device plan), including frame times, is still open.

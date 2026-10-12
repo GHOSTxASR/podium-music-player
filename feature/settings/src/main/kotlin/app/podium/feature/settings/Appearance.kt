@@ -32,6 +32,7 @@ import app.podium.core.designsystem.shell.DeviceAppearance
 import app.podium.core.designsystem.symbol.PodiumSymbol
 import app.podium.core.designsystem.theme.DisplayBackground
 import app.podium.core.designsystem.theme.LocalPodiumType
+import app.podium.core.designsystem.theme.LyricsTheme
 import app.podium.core.designsystem.theme.PodiumTheme
 import app.podium.core.designsystem.theme.Spacing
 import app.podium.core.designsystem.theme.TextContrast
@@ -234,7 +235,7 @@ fun DeviceBodyScreen(
     }
 }
 
-private enum class DisplayRow { Theme, Font, LyricsFont, Background, BackgroundColor, BackgroundOpacity, NoBackground, TextContrast }
+private enum class DisplayRow { Theme, Font, LyricsFont, LyricsTheme, Background, BackgroundColor, BackgroundOpacity, NoBackground, TextContrast }
 
 /** Settings ▸ Appearance ▸ Virtual display: theme, font, background and contrast. */
 @Composable
@@ -247,6 +248,7 @@ fun VirtualDisplayScreen(
     onBackgroundColor: () -> Unit,
     onLevel: (AppearanceLevel) -> Unit,
     onLyricsFont: () -> Unit = {},
+    onLyricsTheme: () -> Unit = {},
 ) {
     val appearance by repository.appearance.collectAsStateWithLifecycle()
     val haptics = rememberPodiumHaptics()
@@ -270,6 +272,7 @@ fun VirtualDisplayScreen(
             DisplayRow.Theme -> onTheme()
             DisplayRow.Font -> onFont()
             DisplayRow.LyricsFont -> onLyricsFont()
+            DisplayRow.LyricsTheme -> onLyricsTheme()
             DisplayRow.Background -> if (ownDisplay) haptics.reject() else onBackground()
             DisplayRow.BackgroundColor -> if (ownDisplay) haptics.reject() else onBackgroundColor()
             DisplayRow.BackgroundOpacity -> if (AppearanceLevel.BackgroundOpacity.unavailable(appearance) != null) haptics.reject() else onLevel(AppearanceLevel.BackgroundOpacity)
@@ -300,6 +303,7 @@ fun VirtualDisplayScreen(
             DisplayRow.Theme -> MenuRow("Theme", focused, value = appearance.display.label)
             DisplayRow.Font -> MenuRow("Font", focused, value = screen.font.label)
             DisplayRow.LyricsFont -> MenuRow("Lyrics font", focused, value = screen.lyricsFont.label)
+            DisplayRow.LyricsTheme -> MenuRow("Lyrics theme", focused, value = screen.lyricsTheme.label)
             DisplayRow.Background -> MenuRow(
                 "Background",
                 focused,
@@ -375,6 +379,35 @@ fun LyricsFontScreen(repository: DeviceSettingsRepository) {
         CompositionLocalProvider(LocalTypographyPreset provides specimen, LocalPodiumType provides specimen.type) {
             MenuRow(font.label, focused, selected = font == appearance.screen.lyricsFont, showChevron = false)
         }
+    }
+}
+
+/**
+ * Lyrics theme picker (D-81): Classic (one line at a time, inverting the display) or Continuous
+ * line (one ivory line writing the words by hand). Center keeps it; the lyrics screen changes the
+ * next time it draws — the music, its position and the queue are untouched.
+ */
+@Composable
+fun LyricsThemeScreen(repository: DeviceSettingsRepository) {
+    val appearance by repository.appearance.collectAsStateWithLifecycle()
+    val haptics = rememberPodiumHaptics()
+    val themes = LyricsTheme.entries
+    val focus = remember { FocusListState(initialIndex = themes.indexOf(repository.appearance.value.screen.lyricsTheme)) }
+    val activate: (Int) -> Unit = { index ->
+        haptics.confirm()
+        val current = repository.appearance.value
+        repository.setAppearance(current.copy(screen = current.screen.copy(lyricsTheme = themes[index])))
+    }
+    ListInputEffect(focus, onActivate = activate)
+    FocusList(
+        items = themes,
+        state = focus,
+        key = { it },
+        contentPadding = LocalScreenInsets.current.listPadding(),
+        onActivate = activate,
+        modifier = Modifier.fillMaxSize(),
+    ) { theme, _, focused ->
+        MenuRow(theme.label, focused, selected = theme == appearance.screen.lyricsTheme, showChevron = false)
     }
 }
 

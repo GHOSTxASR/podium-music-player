@@ -38,20 +38,47 @@ object WordTiming {
             var last = line.startMs
             return line.words.map { w -> maxOf(last, w.startMs).also { last = it } }
         }
-        val weights = words.mapIndexed { i, word ->
-            syllables(word) + if (i > 0 && words[i - 1].last() in PAUSE_AFTER) 0.5 else 0.0
-        }
+        val weights = weights(words)
         val total = weights.sum()
+        val span = span(line, nextStartMs, total)
+        var before = 0.0
+        return weights.map { w ->
+            (line.startMs + span * (before / total)).toLong().also { before += w }
+        }
+    }
+
+    /**
+     * When [line] has been sung through: its last word's end. With the provider's word times, the
+     * line's own end (or its last word plus a syllable-paced share, never past the next line);
+     * otherwise the end of the estimated span [starts] spreads the words across. Never before the
+     * last word starts, never after [nextStartMs]. Used by the Continuous line theme to know when
+     * the pen leaves a phrase (LYRICS_ARCHITECTURE.md §12.3).
+     */
+    fun end(line: LyricsLine, nextStartMs: Long?): Long {
+        val words = words(line)
+        val starts = starts(line, nextStartMs)
+        val last = starts.lastOrNull() ?: return line.startMs
+        val end = if (!isEstimated(line)) {
+            val lastWord = (syllables(words.last()) * LAST_LINE_MS_PER_SYLLABLE)
+            line.endMs?.takeIf { it > last } ?: (last + lastWord)
+        } else {
+            (line.startMs + span(line, nextStartMs, weights(words).sum())).toLong()
+        }
+        return if (nextStartMs != null && nextStartMs > last) minOf(end, nextStartMs).coerceAtLeast(last) else end.coerceAtLeast(last)
+    }
+
+    private fun weights(words: List<String>): List<Double> = words.mapIndexed { i, word ->
+        syllables(word) + if (i > 0 && words[i - 1].last() in PAUSE_AFTER) 0.5 else 0.0
+    }
+
+    /** The estimate's span: the line's real window, but never slower than [MAX_MS_PER_SYLLABLE]. */
+    private fun span(line: LyricsLine, nextStartMs: Long?, total: Double): Double {
         val window = when {
             line.endMs != null && line.endMs > line.startMs -> line.endMs - line.startMs
             nextStartMs != null && nextStartMs > line.startMs -> ((nextStartMs - line.startMs) * SHARE_OF_GAP).toLong()
             else -> (total * LAST_LINE_MS_PER_SYLLABLE).toLong()
         }
-        val span = minOf(window.toDouble(), total * MAX_MS_PER_SYLLABLE)
-        var before = 0.0
-        return weights.map { w ->
-            (line.startMs + span * (before / total)).toLong().also { before += w }
-        }
+        return minOf(window.toDouble(), total * MAX_MS_PER_SYLLABLE)
     }
 
     /** How many of the words of [line] have appeared at [positionMs]. */

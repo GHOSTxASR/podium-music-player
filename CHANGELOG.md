@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Continuous line lyrics theme (D-81):** an optional look for Now Playing ▸ Lyrics. A single ivory line writes the words by hand on a black sheet, flows from each phrase into the next and draws loops, spirals and notes through instrumental passages, with a touch of champagne gold at the pen. It follows the music; seeking or rewinding brings back the same drawing. In Settings ▸ Appearance ▸ Virtual display ▸ Lyrics theme. Classic stays the default.
+
 ## [0.1.2] - 2026-10-12
 
 Release notes: [docs/releases/v0.1.2.md](docs/releases/v0.1.2.md).

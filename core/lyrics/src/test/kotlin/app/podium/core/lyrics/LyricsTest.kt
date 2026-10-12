@@ -126,6 +126,27 @@ class WordTimingTest {
     }
 
     @Test
+    fun `a line ends with its last word, inside its window`() {
+        // Estimated: the end of the span the words were spread across, before the next line.
+        val line = LyricsLine(10_000, "I wish that I could be like the cool kids")
+        val starts = WordTiming.starts(line, 14_000)
+        val end = WordTiming.end(line, 14_000)
+        assertTrue(end > starts.last() && end <= 10_000 + (4_000 * 0.85).toLong())
+        // A break after the line: the words still finish at singing pace, not across the break.
+        val held = LyricsLine(5_000, "hold on")
+        assertTrue(WordTiming.end(held, 60_000) <= 5_000 + 2 * WordTiming.MAX_MS_PER_SYLLABLE)
+        // Provider times: the provider's end when it gives one, never past the next line.
+        val timed = LyricsLine(1_000, "one two", endMs = 2_400, words = listOf(LyricsWord(1_000, "one"), LyricsWord(1_500, "two")))
+        assertEquals(2_400L, WordTiming.end(timed, 9_000))
+        assertEquals(2_000L, WordTiming.end(timed, 2_000))
+        // Without an end, the last word gets a syllable's pace.
+        val open = timed.copy(endMs = null)
+        assertEquals(1_800L, WordTiming.end(open, 9_000))
+        // Nothing to sing: the line ends where it starts.
+        assertEquals(3_000L, WordTiming.end(LyricsLine(3_000, ""), 9_000))
+    }
+
+    @Test
     fun `syllables are counted roughly but sensibly`() {
         assertEquals(1, WordTiming.syllables("I"))
         assertEquals(1, WordTiming.syllables("love"))

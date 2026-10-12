@@ -17,6 +17,18 @@ enum class DisplayBackground(val label: String) {
     IMAGE("Image"),
 }
 
+/**
+ * How Now Playing ▸ Lyrics draws the words (D-81). Content inside the display, never the display's
+ * own colours (D-26).
+ */
+enum class LyricsTheme(val label: String) {
+    /** One line at a time, as large as it fits, the display inverting line by line (D-39). */
+    CLASSIC("Classic"),
+
+    /** One ivory line writes the words by hand on black and draws the music between them. */
+    CONTINUOUS_LINE("Continuous line"),
+}
+
 /** How far secondary text steps back from primary text. High brings it forward. */
 enum class TextContrast(val label: String) {
     STANDARD("Standard"),
@@ -37,6 +49,8 @@ data class VirtualDisplay(
     val font: DisplayFont = DisplayFont.CLASSIC,
     /** The lyrics screen's face (D-50): the display's own, or one of its own. */
     val lyricsFont: LyricsFont = LyricsFont.SAME_AS_DISPLAY,
+    /** How the lyrics screen draws (D-81): Classic unless the listener chooses otherwise. */
+    val lyricsTheme: LyricsTheme = LyricsTheme.CLASSIC,
     val background: DisplayBackground = DisplayBackground.NONE,
     /** The solid colour (opaque ARGB): the background itself, or the base under an image. */
     val solidArgb: Int = DEFAULT_SOLID,
@@ -74,6 +88,9 @@ class DisplayImage(val bitmap: ImageBitmap, val luminance: Float)
  */
 @Immutable
 data class DisplaySurface(val solid: Color, val image: ImageBitmap?, val imageAlpha: Float, val veil: Float = 0f)
+
+/** The lyrics theme the listener chose (D-81), provided by `PodiumTheme`. */
+val LocalLyricsTheme = staticCompositionLocalOf { LyricsTheme.CLASSIC }
 
 /** The resolved surface, or null when the theme's own canvas is shown. Read by `VirtualScreen`. */
 val LocalDisplaySurface = staticCompositionLocalOf<DisplaySurface?> { null }

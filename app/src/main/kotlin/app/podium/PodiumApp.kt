@@ -161,6 +161,7 @@ import app.podium.feature.settings.FinishScreen
 import app.podium.feature.settings.FontScreen
 import app.podium.feature.settings.LevelScreen
 import app.podium.feature.settings.LyricsFontScreen
+import app.podium.feature.settings.LyricsThemeScreen
 import app.podium.space.LocalPodiumSpace
 import app.podium.space.HelpContent
 import app.podium.space.StickerDetail
@@ -229,6 +230,9 @@ sealed interface Dest {
     data object Theme : Dest
     data object Font : Dest
     data object LyricsFont : Dest
+
+    /** Settings ▸ Appearance ▸ Virtual display ▸ Lyrics theme (D-81). */
+    data object LyricsTheme : Dest
     data object Background : Dest
     data object Finish : Dest
     data object CustomColor : Dest
@@ -258,7 +262,7 @@ sealed interface Dest {
 private val fixedDests = listOf(
     Dest.Home, Dest.Music, Dest.CoverFlow, Dest.Albums, Dest.Artists, Dest.Songs, Dest.Favorites, Dest.NowPlaying,
     Dest.UpNext, Dest.Lyrics, Dest.Settings, Dest.Appearance, Dest.DeviceBody, Dest.VirtualDisplay, Dest.Theme, Dest.Font,
-    Dest.LyricsFont, Dest.Background, Dest.Finish, Dest.CustomColor, Dest.DisplayColor, Dest.OnlineSources, Dest.Equalizer,
+    Dest.LyricsFont, Dest.LyricsTheme, Dest.Background, Dest.Finish, Dest.CustomColor, Dest.DisplayColor, Dest.OnlineSources, Dest.Equalizer,
 ).associateBy { it.toString() }
 
 private fun Dest.encode(): String = when (this) {
@@ -309,6 +313,7 @@ private fun titleOf(dest: Dest, graph: AppGraph): String = when (dest) {
     Dest.Theme -> "Theme"
     Dest.Font -> "Font"
     Dest.LyricsFont -> "Lyrics font"
+    Dest.LyricsTheme -> "Lyrics theme"
     Dest.Background -> "Background"
     Dest.Finish -> "Finish"
     Dest.CustomColor -> "Custom color"
@@ -786,6 +791,7 @@ private fun PreviousColumn(previous: Dest, current: Dest, graph: AppGraph, navig
         Dest.Theme -> "Theme"
         Dest.Font -> "Font"
         Dest.LyricsFont -> "LyricsFont"
+        Dest.LyricsTheme -> "LyricsTheme"
         Dest.Background -> "Background"
         Dest.Finish -> "Finish"
         Dest.CustomColor -> if (previous == Dest.Finish) "CUSTOM" else "CustomColor"
@@ -959,6 +965,7 @@ private fun ScreenContent(
                 onTheme = { navigator.push(Dest.Theme) },
                 onFont = { navigator.push(Dest.Font) },
                 onLyricsFont = { navigator.push(Dest.LyricsFont) },
+                onLyricsTheme = { navigator.push(Dest.LyricsTheme) },
                 onBackground = { navigator.push(Dest.Background) },
                 onBackgroundColor = { navigator.push(Dest.DisplayColor) },
                 onLevel = { navigator.push(Dest.Level(it)) },
@@ -967,6 +974,7 @@ private fun ScreenContent(
         Dest.Theme -> ThemeScreen(settings)
         Dest.Font -> FontScreen(settings)
         Dest.LyricsFont -> LyricsFontScreen(settings)
+        Dest.LyricsTheme -> LyricsThemeScreen(settings)
         Dest.Background -> {
             val image by graph.displayImages.state.collectAsStateWithLifecycle()
             // The system photo picker: no storage permission; Podium keeps only the URI.

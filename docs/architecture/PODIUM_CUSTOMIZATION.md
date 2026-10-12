@@ -17,6 +17,7 @@ DeviceAppearance
 ├── display: DisplayTheme               the display's visual system: GLASS, CARBON, BONE, CUSTOM
 └── screen: VirtualDisplay              the display's dress (§2)
         ├── font: DisplayFont           (§3)
+        ├── lyricsFont, lyricsTheme     (§3; the lyrics theme, D-81)
         ├── background, solidArgb, imageUri, imageOpacity   (§4)
         └── contrast: TextContrast      (§5)
 ```
@@ -79,6 +80,11 @@ font or a colour on its own.
   (UnifrakturMaguntia), Pirata (Pirata One), Jacquard (Jacquard 24, a pixel blackletter).
   `LyricsTypeface` picks the family per line with the same whole-string fallback to Inter; in
   Settings each is set in itself (`LyricsTypeface.specimen`).
+- **Lyrics theme (D-81)**, Classic (default: one line at a time, inverting the display) or
+  Continuous line (one ivory line writing the words by hand on black, LYRICS_ARCHITECTURE.md §12).
+  Continuous line writes with Podium's own single-stroke hand, so the lyrics font doesn't apply to
+  it; the font choice is kept and returns with Classic. It is content inside the display, like
+  Classic's paper: the display theme, the body and the Wheel are untouched (D-26).
 - All faces are bundled, unmodified, SIL OFL 1.1, from the official Google Fonts repository; license
   texts in `third_party/licenses/`, provenance in `third_party/FONTS.md`. No font is ever
   downloaded at runtime. Added APK size: about 400 KB for the first six, about 5 MB with the D-50
@@ -157,8 +163,8 @@ font or a colour on its own.
 
 ## 7. Persistence
 
-`SharedPrefsDeviceSettings` (private `device` preferences): every field of `DeviceAppearance`, read
-defensively (unknown enum names → defaults, levels clamped to 0–1, colours forced opaque). It
+`SharedPrefsDeviceSettings` (private `device` preferences): every field of `DeviceAppearance`
+(the lyrics theme as `lyrics_theme`, D-81), read defensively (unknown enum names → defaults, levels clamped to 0–1, colours forced opaque). It
 survives force stop, restart and reboot; it is independent of the library database, so database
 migrations can't touch it. The picture is stored only as its URI. Tested by
 `DeviceSettingsPersistenceTest` (round trip, fresh install, damaged values).
@@ -182,6 +188,7 @@ Settings
         │          Elegant, Elegant italic, Typewriter, Rounded, Handwritten, Script, Bubbly, Gothic)
         ├── Lyrics font ▸ (Same as the display, the display faces, Typewriter italic, Calligraphy,
         │                 French script, Loopy, Fraktur, Pirata, Jacquard)
+        ├── Lyrics theme ▸ (Classic, Continuous line)
         ├── Background ▸ (None, Solid, Picture / Choose a picture, Choose another picture)
         ├── Background color ▸ (hex, or hue / saturation / brightness bars, D-51)
         ├── Background opacity ▸ (level; only with a picture)
@@ -202,7 +209,7 @@ Center keeps) and explain when they can't be adjusted yet.
 - `CustomizationScreenshotTest` (3, Robolectric native graphics): glitter on three bodies and the
   pixel-identical "off"; every font; Custom on paper, mid blue and a loud generated picture
   (standard and High contrast); Glass on a picture; Carbon ignoring a picture.
-- `DeviceSettingsPersistenceTest` (3).
+- `DeviceSettingsPersistenceTest` (4, with the lyrics theme's round trip and default).
 - Device steps: `docs/testing/UI_DEVICE_ACCEPTANCE.md` §2 (not yet performed on the phone).
 
 ## 10. Limits

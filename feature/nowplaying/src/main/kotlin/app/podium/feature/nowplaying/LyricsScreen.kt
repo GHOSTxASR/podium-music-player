@@ -43,6 +43,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.podium.core.designsystem.component.Pinwheel
 import app.podium.core.designsystem.theme.BoneColors
 import app.podium.core.designsystem.theme.CarbonColors
+import app.podium.core.designsystem.theme.LocalLyricsTheme
+import app.podium.core.designsystem.theme.LyricsTheme
 import app.podium.core.designsystem.theme.PodiumTheme
 import app.podium.core.designsystem.type.LocalLyricsTypeface
 import app.podium.core.designsystem.type.PodiumText
@@ -57,6 +59,9 @@ import app.podium.core.lyrics.LyricsRequest
 import app.podium.core.lyrics.LyricsResult
 import app.podium.core.lyrics.LyricsTiming
 import app.podium.core.lyrics.WordTiming
+import app.podium.feature.nowplaying.line.ContinuousLine
+import app.podium.feature.nowplaying.line.LineInk
+import app.podium.feature.nowplaying.line.LineScript
 import app.podium.player.api.PlayIntent
 import app.podium.player.api.PlaybackController
 import kotlinx.coroutines.delay
@@ -86,6 +91,9 @@ interface LyricsGateway {
  * - Lyrics without usable times are paced across the song by Podium ([app.podium.core.lyrics.LyricsFormatter],
  *   D-50), so they follow the music too; the details say the timing is an estimate. Only when the
  *   song's length is unknown do they stay plain, moved through with the Wheel.
+ * - The Continuous line theme (D-81, [LyricsTheme.CONTINUOUS_LINE]) draws the same lyrics as one
+ *   line writing by hand on black ([ContinuousLine]); everything else here — finding the words,
+ *   consent, the Wheel, the details — is shared.
  */
 @Composable
 fun LyricsScreen(controller: PlaybackController, gateway: LyricsGateway) {
@@ -210,13 +218,28 @@ fun LyricsScreen(controller: PlaybackController, gateway: LyricsGateway) {
         }
     }
 
-    // The two states of the display: Bone's paper and Carbon's black, never anything else.
-    val inverted = lines.isNotEmpty() && index % 2 == 1
+    // Classic: the two states of the display, Bone's paper and Carbon's black, never anything else.
+    // Continuous line: one matte black sheet with ivory ink (D-81).
+    val continuous = LocalLyricsTheme.current == LyricsTheme.CONTINUOUS_LINE
+    val inverted = !continuous && lines.isNotEmpty() && index % 2 == 1
     val reduced = PodiumTheme.motion.reduced
-    val spec = if (reduced) snap<Color>() else tween<Color>(INVERT_MS)
-    val paper by animateColorAsState(if (inverted) CarbonColors.canvas else BoneColors.canvas, spec, label = "lyricPaper")
-    val ink by animateColorAsState(if (inverted) CarbonColors.labelPrimary else BoneColors.labelPrimary, spec, label = "lyricInk")
-    val quiet = if (inverted) CarbonColors.labelSecondary else BoneColors.labelSecondary
+    val spec = if (reduced || continuous) snap<Color>() else tween<Color>(INVERT_MS)
+    val paper by animateColorAsState(if (continuous) LineInk.Paper else if (inverted) CarbonColors.canvas else BoneColors.canvas, spec, label = "lyricPaper")
+    val ink by animateColorAsState(if (continuous) LineInk.Ivory else if (inverted) CarbonColors.labelPrimary else BoneColors.labelPrimary, spec, label = "lyricInk")
+    val quiet = if (continuous) LineInk.Quiet else if (inverted) CarbonColors.labelSecondary else BoneColors.labelSecondary
+    // What the line draws: the same lyrics, timed by the same rules (LYRICS_ARCHITECTURE.md §12.3).
+    val script = remember(lyrics, item?.durationMs, continuous) {
+        if (!continuous) {
+            null
+        } else {
+            when (lyrics) {
+                is Lyrics.Synced -> LineScript.synced(lyrics, item?.durationMs)
+                is Lyrics.Plain -> LineScript.plain(lyrics.lines)
+                Lyrics.Instrumental -> LineScript.instrumental(item?.durationMs)
+                null -> null
+            }
+        }
+    }
 
     Box(
         Modifier
@@ -237,6 +260,23 @@ fun LyricsScreen(controller: PlaybackController, gateway: LyricsGateway) {
             result == LyricsResult.Offline -> Message("Lyrics unavailable offline", "Connect, then press Center to try again.", ink, quiet)
             result == LyricsResult.RateLimited -> Message("Too many requests", "Wait a moment, then press Center to try again.", ink, quiet)
             result == LyricsResult.Failed -> Message("Couldn't load lyrics", "Press Center to try again.", ink, quiet)
+            script != null && item != null -> {
+                // A song without words is drawn too: one instrumental composition across it.
+                val words = lyrics != Lyrics.Instrumental
+                ContinuousLine(
+                    controller = controller,
+                    script = script,
+                    trackKey = item.trackId.value,
+                    // Synced words follow the music unless the Wheel is reading; a song without words always does.
+                    following = !words || (lyrics is Lyrics.Synced && following),
+                    readingLine = if (lyrics is Lyrics.Synced && following) -1 else index,
+                    playing = playing,
+                    description = if (words) lines.getOrElse(index) { "" } else "Instrumental. This song has no words.",
+                )
+                if (!words) {
+                    PodiumText("Instrumental", PodiumTheme.type.footnote, quiet, textAlign = TextAlign.Center, modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth().padding(top = 14.dp))
+                }
+            }
             lyrics == Lyrics.Instrumental -> Message("Instrumental", "This song has no words.", ink, quiet)
             else -> Lyric(lines.getOrElse(index) { "" }, ink, quiet, if (lyrics is Lyrics.Synced) shown else Int.MAX_VALUE)
         }

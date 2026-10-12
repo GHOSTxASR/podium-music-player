@@ -8,6 +8,7 @@ import app.podium.core.designsystem.shell.FinishPreset
 import app.podium.core.designsystem.shell.Glitter
 import app.podium.core.designsystem.theme.DisplayBackground
 import app.podium.core.designsystem.theme.DisplayTheme
+import app.podium.core.designsystem.theme.LyricsTheme
 import app.podium.core.designsystem.theme.TextContrast
 import app.podium.core.designsystem.theme.VirtualDisplay
 import app.podium.core.designsystem.type.DisplayFont
@@ -30,6 +31,7 @@ class DeviceSettingsPersistenceTest {
             glitter = Glitter(enabled = true, amount = 0.6f, density = 0.7f, size = 0.2f, opacity = 0.35f, glow = 0.8f, tilt = false),
             screen = VirtualDisplay(
                 font = DisplayFont.PIXEL,
+                lyricsTheme = LyricsTheme.CONTINUOUS_LINE,
                 background = DisplayBackground.IMAGE,
                 solidArgb = 0xFF305060.toInt(),
                 imageUri = "content://media/picker/0/com.android.providers.media.photopicker/media/1000",
@@ -54,6 +56,23 @@ class DeviceSettingsPersistenceTest {
         assertFalse(fresh.glitter.enabled)
         assertEquals(DisplayFont.CLASSIC, fresh.screen.font)
         assertEquals(DisplayBackground.NONE, fresh.screen.background)
+        // The lyrics keep their classic look until the listener chooses another (D-81).
+        assertEquals(LyricsTheme.CLASSIC, fresh.screen.lyricsTheme)
+    }
+
+    @Test
+    fun `the lyrics theme is kept on its own and restored after a restart`() {
+        context.getSharedPreferences("device", Context.MODE_PRIVATE).edit().clear().commit()
+        val settings = SharedPrefsDeviceSettings(context)
+        val before = settings.appearance.value
+        settings.setAppearance(before.copy(screen = before.screen.copy(lyricsTheme = LyricsTheme.CONTINUOUS_LINE)))
+        val restored = SharedPrefsDeviceSettings(context).appearance.value
+        assertEquals(LyricsTheme.CONTINUOUS_LINE, restored.screen.lyricsTheme)
+        // Nothing else changed with it.
+        assertEquals(before.copy(screen = before.screen.copy(lyricsTheme = LyricsTheme.CONTINUOUS_LINE)), restored)
+        // And back to Classic.
+        SharedPrefsDeviceSettings(context).setAppearance(restored.copy(screen = restored.screen.copy(lyricsTheme = LyricsTheme.CLASSIC)))
+        assertEquals(LyricsTheme.CLASSIC, SharedPrefsDeviceSettings(context).appearance.value.screen.lyricsTheme)
     }
 
     @Test
@@ -62,12 +81,14 @@ class DeviceSettingsPersistenceTest {
             .clear()
             .putString("display_font", "COMIC")
             .putString("display_background", "VIDEO")
+            .putString("lyrics_theme", "NEON")
             .putFloat("glitter_opacity", 7f)
             .putInt("display_solid", 0x00112233)
             .commit()
         val read = SharedPrefsDeviceSettings(context).appearance.value
         assertEquals(DisplayFont.CLASSIC, read.screen.font)
         assertEquals(DisplayBackground.NONE, read.screen.background)
+        assertEquals(LyricsTheme.CLASSIC, read.screen.lyricsTheme)
         assertEquals(1f, read.glitter.opacity)
         assertEquals(0xFF112233.toInt(), read.screen.solidArgb, "always opaque")
     }

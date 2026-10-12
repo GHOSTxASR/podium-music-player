@@ -92,6 +92,41 @@ On the device:
 | 3.15 | Open the details overlay on a song without word stamps | it says the words are paced to the line |
 | 3.16 | Turn the Wheel back to a sung line | the whole line shows at once |
 
+### 3a. Continuous line lyrics theme (D-81)
+
+**Status (2026-10-12): not performed on a device.** Built and tested in the cloud container only.
+
+Automated (`LineHandTest`, `LineCompositionTest`, `LinePlayheadTest`, `LinePerformanceTest`,
+`ContinuousLineScreenTest`, `AppearanceLayoutTest.lyricsThemePicker`,
+`DeviceSettingsPersistenceTest`): glyph construction and stroke order, phrase setting, timing from
+word and line stamps, determinism (the same moment draws the same pixels after rewinding and after
+seeking back and forth), instrumental motifs and their seeding, bounded memory, no allocation while
+mapping a frame, bounded draw calls, theme switching without any player command, a new song's own
+drawing, reduced motion without gold, persistence; screenshots in
+`feature/nowplaying/build/screenshots/line-*.png`.
+
+On the device:
+
+| # | Step | Expect |
+|---|---|---|
+| 3a.1 | Settings ▸ Appearance ▸ Virtual display ▸ Lyrics theme ▸ Continuous line; Center | the row says "Continuous line"; the music doesn't stop, skip or seek |
+| 3a.2 | Now Playing ▸ Lyrics with a synced song | a black sheet; an ivory line writes the words letter by letter in a joined hand, the small pen point leading with a faint gold light |
+| 3a.3 | A song with word stamps (enhanced LRC), then one timed by line only | the pen reaches each word on its stamp; line-only: the first word on time, the rest paced, details say "Words paced to the line" |
+| 3a.4 | The end of a phrase | the last letter's stroke carries on into a curve and into the next phrase's first letter; a brief gold light crosses the last word |
+| 3a.5 | An instrumental break of 10 s or more | the line keeps drawing loops, spirals, notes and beat dots, then runs into the next phrase's first letter |
+| 3a.6 | Watch several phrases | each new phrase sits lower and further right; the display follows gently; earlier phrases dim and slide away up and left |
+| 3a.7 | Seek back 20 s from Now Playing, return to Lyrics | the pen retraces its own route back; the same words, motifs and positions as before |
+| 3a.8 | Seek to the same moment three times | the same drawing each time |
+| 3a.9 | Pause for 30 s, resume | the drawing holds still, then carries on with no jump |
+| 3a.10 | Skip to the next song mid-phrase | the new song's drawing starts; nothing of the last song's words or motifs remains |
+| 3a.11 | Turn the Wheel back two lines, then Center | the camera travels back along the drawing to that line, written; Center seeks there |
+| 3a.12 | A song LRCLIB marks instrumental | a full-screen line drawing that evolves with the song, "Instrumental" small at the top |
+| 3a.13 | Accents (é, ñ, ü) and another script (Cyrillic, Japanese) | accents written by the hand; other scripts traced in outline by the same line |
+| 3a.14 | Reduced motion (animator scale 0) | no glow, no shimmer, no retracing; the camera moves in cuts; the words still follow the music |
+| 3a.15 | Leave the lyrics, come back repeatedly; switch themes back and forth | no stutter in the music or the Wheel; Classic looks exactly as before |
+| 3a.16 | Profile: `adb shell dumpsys gfxinfo app.podium.debug` over a minute of lyrics | record frame times p50/p90/p99 here; nothing measured yet |
+| 3a.17 | TalkBack | each line announced politely; a song without words is announced as instrumental |
+
 ## 4. The Podium keyboard (D-45)
 
 Automated (`KeyboardEditorTest`, `WheelKeyboardTest`): typing, shift and caps lock, delete, hex

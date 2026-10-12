@@ -743,3 +743,45 @@ Every significant decision, newest at the bottom. Major ones have an ADR in `adr
   Robolectric test opens the menu before and after the pages arrive (`NowPlayingGoToTest`).
 - **Not verified:** the phone's own answers. If the entries are still missing, the next step is a
   captured answer from the device, which the build container can't make.
+
+### D-81 · Continuous line: an optional lyrics theme where one line writes the words
+- **Context:** user request (2026-10-12) for a second lyrics theme. A matte black screen; a fine
+  ivory line that actually writes each lyric letter by letter, flows from phrase to phrase and
+  draws musical line art in instrumental passages; restrained champagne gold; seeking and
+  rewinding must restore the same artwork; light enough for ordinary phones.
+- **Decision:**
+  - `VirtualDisplay.lyricsTheme` (`LyricsTheme.CLASSIC`, the default, or `CONTINUOUS_LINE`),
+    persisted as `lyrics_theme`, chosen in Settings ▸ Appearance ▸ Virtual display ▸ Lyrics theme
+    and provided by `PodiumTheme` like the lyrics font. Classic is unchanged. The label is
+    "Continuous line" in sentence case (copy rule).
+  - **Real stroke lettering**, not a font revealed under a moving dot. Podium's own single-stroke
+    hand (`LineHandGlyphs.kt`), hand-authored as small vector paths: a–z, A–Z, 0–9, common
+    punctuation, accents composed from canonical decomposition. Lowercase letters join with one
+    generated connector; the pen lifts only where a hand lifts. Characters outside the hand are
+    traced from the system font's outline by the same line (honestly an outline, not one stroke).
+  - **The drawing is a function of the playback position.** Position → cursor (section and
+    fraction of its pen-time) → pen and camera, from a composition prepared once per song and
+    display shape. Timing comes only from the lyrics: provider word times when present, otherwise
+    the line's start with the words paced by `WordTiming` and marked estimated. `WordTiming.end`
+    added for the end of a line's words.
+  - Seeks, rewinds and reading with the Wheel make the pen retrace its own route to the new place
+    (280–900 ms), then land exactly on the position. The same moment always draws the same frame.
+  - **Instrumental passages** chain nine hand-drawn motifs chosen with a seed from the track's key
+    and the passage's index, so the same song always draws the same art. Beat dots follow the pen
+    and are not presented as detected beats.
+  - **Performance:** prepared geometry as flat arrays drawn with `drawLines`; section routes rebuilt
+    on demand, eight kept; nothing laid out, built or allocated while mapping a frame; the glow is
+    one cached radial gradient. No blur, `RenderEffect` or `RuntimeShader`, so the glass rule is
+    kept.
+  - **Colour:** the theme is content drawn inside the display, like Classic's alternating paper. It
+    sets no display, body or Wheel colour (D-26). Its champagne gold is a deliberate, opt-in
+    exception to D-29's "album art is the only colour" on Carbon and Bone. It is confined to the
+    pen's point and glow, the wet edge of the ink and brief accents, and is never on text
+    containers or controls.
+  - Reduced motion: no glow, no gold accents, no retracing; the camera moves in cuts.
+- **Verified:** unit and Robolectric tests (LYRICS_ARCHITECTURE.md §10, §12). Screenshots of
+  the real screen at many positions. Pixel-identical frames after a rewind and after repeated seeks.
+  Zero allocation while mapping 600 frames. Bounded draw calls (at most 82 a frame) for 12- to
+  160-line songs. Theme switching issues no player command.
+- **Not verified:** anything on the phone, including frame times on the Nothing Phone (3a)
+  (UI_DEVICE_ACCEPTANCE.md §3a).

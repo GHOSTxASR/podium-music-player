@@ -33,10 +33,14 @@ import app.podium.core.designsystem.shell.ScreenHeader
 import app.podium.core.designsystem.shell.ScreenHeaderHeight
 import app.podium.core.designsystem.shell.palette
 import app.podium.core.designsystem.theme.DisplayTheme
+import app.podium.core.designsystem.theme.LyricsTheme
 import app.podium.core.designsystem.theme.PodiumTheme
 import app.podium.core.interaction.InputRouter
 import app.podium.core.interaction.LocalInputRouter
+import app.podium.core.interaction.PodiumInput
+import app.podium.core.interaction.WheelButton
 import java.io.File
+import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.Rule
@@ -105,14 +109,32 @@ class AppearanceLayoutTest {
 
     @Test fun levelEditor() = check("level-glitter-size", SMALL, glitterOn, "Glitter size") { LevelScreen(it, AppearanceLevel.GlitterSize) }
 
+    // D-81: Classic stays the default; Continuous line is chosen with the Wheel and kept.
+    @Test fun lyricsThemePicker() {
+        check("lyrics-theme", SMALL, carbon, "Lyrics theme") { LyricsThemeScreen(it) }
+        val settings = shown
+        assertEquals(LyricsTheme.CLASSIC, settings.appearance.value.screen.lyricsTheme)
+        compose.runOnIdle { router.dispatch(PodiumInput.Rotate(1)) }
+        compose.mainClock.advanceTimeBy(500)
+        compose.runOnIdle { router.dispatch(PodiumInput.Press(WheelButton.CENTER)) }
+        compose.waitForIdle()
+        assertEquals(LyricsTheme.CONTINUOUS_LINE, settings.appearance.value.screen.lyricsTheme)
+        // Nothing else about the look changes with it.
+        assertEquals(carbon.copy(screen = carbon.screen.copy(lyricsTheme = LyricsTheme.CONTINUOUS_LINE)), settings.appearance.value)
+    }
+
+    private val router = InputRouter()
+    private lateinit var shown: Settings
+
     private fun check(name: String, qualifiers: String, appearance: DeviceAppearance, title: String, screen: @Composable (DeviceSettingsRepository) -> Unit) {
         RuntimeEnvironment.setQualifiers(qualifiers)
         val settings = Settings(appearance)
+        shown = settings
         compose.setContent {
             val a = settings.preview.value ?: settings.appearance.value
             PodiumTheme(darkTheme = true, displayTheme = a.display, display = a.screen) {
                 val palette = a.palette(PodiumTheme.colors.isDark)
-                CompositionLocalProvider(LocalInputRouter provides InputRouter(), LocalOverlayHost provides OverlayHost()) {
+                CompositionLocalProvider(LocalInputRouter provides router, LocalOverlayHost provides OverlayHost()) {
                     Box(Modifier.fillMaxSize()) {
                         DeviceBody(palette, Modifier.fillMaxSize())
                         DeviceLayout(
