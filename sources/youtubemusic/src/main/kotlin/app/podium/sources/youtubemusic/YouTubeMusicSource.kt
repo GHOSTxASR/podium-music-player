@@ -54,6 +54,7 @@ import app.podium.sources.api.SignInResult
 import app.podium.sources.api.SourceCapabilities
 import app.podium.sources.api.SourceDescriptor
 import app.podium.sources.api.WebSignIn
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -195,30 +196,59 @@ class YouTubeMusicSource internal constructor(
             allowedHostSuffixes = listOf("google.com", "youtube.com", "gstatic.com", "googleusercontent.com", "ggpht.com", "ytimg.com", "googleapis.com"),
         )
 
+        /**
+         * Checks the page's session against the account menu, then keeps it sealed. Whatever ends
+         * the check short of signing in — a refusal, a failure to save, or the caller giving up
+         * (the sign-in screen closed) — puts the account back as it was, so it is never left
+         * "signing in" with nothing running.
+         */
         override suspend fun signIn(values: Map<String, String>): SignInResult {
             val candidate = WebSession.parse(values[WebSignIn.SESSION_KEY]) ?: return SignInResult.Refused(SetupProblem.WRONG_CREDENTIALS)
+            val before = _auth.value
             _auth.value = AuthState.SigningIn
-            pendingSession = candidate
-            val result = try {
-                client.accountMenu()
+            var signedIn = false
+            try {
+                pendingSession = candidate
+                val result = try {
+                    client.accountMenu()
+                } finally {
+                    pendingSession = null
+                }
+                val account = (result as? Outcome.Success)?.value?.let(YouTubeMusicParser::account)
+                    ?: return SignInResult.Refused(
+                        when ((result as? Outcome.Failure)?.error) {
+                            is PodiumError.Network, PodiumError.Offline, is PodiumError.Server, is PodiumError.RateLimited -> SetupProblem.UNREACHABLE
+                            else -> SetupProblem.WRONG_CREDENTIALS
+                        },
+                    )
+                val key = accountKeyOf(account.handle ?: account.name)
+                try {
+                    credentials.write(id, mapOf(KEY_SESSION to candidate.cookieHeader, KEY_NAME to account.name, KEY_ACCOUNT to key))
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    // The Keystore couldn't seal it: nothing is kept, and the listener can try again.
+                    return SignInResult.Refused(SetupProblem.UNKNOWN)
+                }
+                session = candidate
+                setAuth(AuthState.SignedIn(account.name, key))
+                signedIn = true
+                return SignInResult.SignedIn
             } finally {
-                pendingSession = null
+                if (!signedIn) settle(before)
             }
-            val account = (result as? Outcome.Success)?.value?.let(YouTubeMusicParser::account)
-            if (account == null) {
-                setAuth(if (session != null) _auth.value.takeIf { it is AuthState.SignedIn } ?: AuthState.SignedOut else AuthState.SignedOut)
-                return SignInResult.Refused(
-                    when ((result as? Outcome.Failure)?.error) {
-                        is PodiumError.Network, PodiumError.Offline, is PodiumError.Server, is PodiumError.RateLimited -> SetupProblem.UNREACHABLE
-                        else -> SetupProblem.WRONG_CREDENTIALS
-                    },
-                )
-            }
-            val key = accountKeyOf(account.handle ?: account.name)
-            credentials.write(id, mapOf(KEY_SESSION to candidate.cookieHeader, KEY_NAME to account.name, KEY_ACCOUNT to key))
-            session = candidate
-            setAuth(AuthState.SignedIn(account.name, key))
-            return SignInResult.SignedIn
+        }
+
+        /** After a sign-in that didn't happen: the account as it was, unless something else moved it on meanwhile. */
+        private fun settle(before: AuthState) {
+            if (_auth.value != AuthState.SigningIn) return // e.g. signed out while the check ran
+            setAuth(
+                when {
+                    before is AuthState.SignedIn && session != null -> before
+                    before is AuthState.Expired -> AuthState.Expired
+                    else -> AuthState.SignedOut
+                },
+            )
         }
 
         override suspend fun signOut() {

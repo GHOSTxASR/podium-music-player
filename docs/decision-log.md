@@ -566,3 +566,36 @@ Every significant decision, newest at the bottom. Major ones have an ADR in `adr
     restoring active sessions seamlessly across process termination without re-prompting the user.
 - **Tradeoff:** Cached library shelves and likes metadata reset cleanly across explicit account
   transitions while remaining reliably available during cold startup.
+
+### D-73 · Sign-in never loads forever
+- **Context:** user report (2026-10-12): a listener couldn't sign in because the screen kept
+  loading. After D-72 the code still had ways to stall: a failed account check rebuilt the web
+  view, which signed in again by itself and failed again in a loop; a check cancelled by closing
+  or recreating the screen left the account "signing in" for good, and Settings and Online then
+  refused to start another; a recreated screen restored "checking" without a check running; and
+  the automatic look for the session began on the first page and ended a minute later for good.
+- **Decision:**
+  - `WebSignInChecks` decides when to check, apart from the web view, and lives in a `ViewModel`.
+    It looks for the session only once the page is on the service's own site, at each navigation
+    and on a one-minute poll that starts again with the next navigation there.
+  - A session found is checked once. A failed check stops the automatic checks: the reason shows
+    with Try again (when checking the same session again could help) and Start over, and only
+    the listener starts the next one. The web view is kept under the message, never rebuilt by a
+    failure.
+  - Start over wipes the web state, waits for the cookies to be gone, then loads a new page.
+  - The screen isn't recreated by turning, folding or resizing the phone, so neither the page nor
+    a check under way is lost; if it is recreated anyway, the check carries on in the `ViewModel`.
+  - The source puts the account back as it was after any sign-in that doesn't finish: refused,
+    cancelled, or unable to seal the session in the Keystore (now a refusal rather than a crash).
+    A failed sign-in while signed in keeps that account; from Expired it stays Expired.
+  - A page the sign-in stops, a load or certificate error, and a crashed page renderer are told to
+    the listener with Start over, instead of a page that silently stops.
+  - When the music page redirects a request without cookies (in some regions, to a consent page),
+    its settings are read again with the session, instead of falling back to a built-in client
+    version that ages.
+- **Not done:** an overall time limit on the account check. Each request already gives up on its
+  own (8 s to connect, 12 s between reads), so the check ends by itself, about 80 s at worst on a
+  connection that stalls, and a fixed limit short enough to feel quick would cut off slow
+  connections that would have finished.
+- **Tradeoff:** after a failure the listener taps once more to retry; a loop that retried by
+  itself could hammer the service (rate limits) and never let the message be read.

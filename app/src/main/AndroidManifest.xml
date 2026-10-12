@@ -33,9 +33,11 @@
             </intent-filter>
         </activity>
 
-        <!-- Signing in on the online service's own page (§6); never started from outside Podium. -->
+        <!-- Signing in on the online service's own page (§6); never started from outside Podium.
+             Turning, folding or resizing the phone keeps the page (and anything typed into it). -->
         <activity
             android:name=".WebSignInActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode"
             android:exported="false"
             android:windowSoftInputMode="adjustResize" />
     </application>
