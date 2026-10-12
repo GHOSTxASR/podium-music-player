@@ -38,6 +38,10 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.podium.core.designsystem.component.FocusList
+import app.podium.player.api.AudioEffects
+import app.podium.player.api.SleepTimer
+import app.podium.player.api.SleepTimerState
+import app.podium.player.api.SleepTimerText
 import app.podium.core.designsystem.component.KeyLayout
 import app.podium.core.designsystem.component.KeyboardAction
 import app.podium.core.designsystem.component.ListInputEffect
@@ -66,7 +70,7 @@ import app.podium.core.interaction.WheelContext
 import app.podium.core.interaction.rememberFocusListState
 import app.podium.core.interaction.rememberPodiumHaptics
 
-private enum class SettingsRow { Appearance, PodiumSpace, Keyboard, MusicFolders, OnlineSources, Autoplay, Recommendations, AvoidRepeats, OnlineLyrics, LyricsCredit, Haptics, Clicks, StartupSound }
+private enum class SettingsRow { Appearance, PodiumSpace, Keyboard, MusicFolders, OnlineSources, Autoplay, Recommendations, AvoidRepeats, Crossfade, Equalizer, SleepTimer, OnlineLyrics, LyricsCredit, Haptics, Clicks, StartupSound }
 
 /**
  * Settings (D-26, D-32, D-35): the device's look, which folders hold its music, which online sources it
@@ -82,6 +86,11 @@ fun SettingsScreen(
     onOnlineService: () -> Unit,
     /** Podium's space (D-54) without the two-finger pinch: personalize, stickers, help. */
     onPodiumSpace: () -> Unit = {},
+    /** Settings ▸ Equaliser (D-76). */
+    onEqualizer: () -> Unit = {},
+    /** The sleep timer (D-75): its row shows when the music stops; choosing opens its choices. */
+    sleepTimer: SleepTimer? = null,
+    onSleepTimer: () -> Unit = {},
 ) {
     val appearance by repository.appearance.collectAsStateWithLifecycle()
     val startupSound by repository.startupSound.collectAsStateWithLifecycle()
@@ -95,9 +104,19 @@ fun SettingsScreen(
     val folderList by folders.folders.collectAsStateWithLifecycle()
     val selection by folders.selection.collectAsStateWithLifecycle()
     val service by onlineService.state.collectAsStateWithLifecycle()
+    val effects by repository.effects.collectAsStateWithLifecycle()
+    val overlay = app.podium.core.designsystem.component.LocalOverlayHost.current
+    val sleepState by (sleepTimer?.state ?: remember { kotlinx.coroutines.flow.MutableStateFlow<SleepTimerState>(SleepTimerState.Off) }).collectAsStateWithLifecycle()
+    val sleepSummary by androidx.compose.runtime.produceState(SleepTimerText.summary(sleepState, sleepTimer?.remainingMs()), sleepState) {
+        while (true) {
+            value = SleepTimerText.summary(sleepState, sleepTimer?.remainingMs())
+            if (sleepState !is SleepTimerState.Counting) break
+            kotlinx.coroutines.delay(1_000)
+        }
+    }
     val haptics = rememberPodiumHaptics()
     // Only a build with an online service has anything to choose there.
-    val rows = SettingsRow.entries.filter { it != SettingsRow.OnlineSources || service != null }
+    val rows = SettingsRow.entries.filter { (it != SettingsRow.OnlineSources || service != null) && (it != SettingsRow.SleepTimer || sleepTimer != null) }
     val focus = rememberFocusListState("settings")
     val activate: (Int) -> Unit = { index ->
         when (rows[index]) {
@@ -121,6 +140,16 @@ fun SettingsScreen(
                 haptics.confirm()
                 repository.setAvoidRepeats(!avoidRepeatsOn)
             }
+            SettingsRow.Crossfade -> overlay.show(
+                app.podium.core.designsystem.component.MenuSpec(
+                    if (effects.crossfadeSeconds == 0) "Crossfade is off" else "Crossfade: ${crossfadeLabel(effects.crossfadeSeconds)}",
+                    AudioEffects.CROSSFADE_CHOICES.map { seconds ->
+                        app.podium.core.designsystem.component.MenuAction(if (seconds == 0) "Off" else crossfadeLabel(seconds)) { repository.setCrossfade(seconds) }
+                    },
+                ),
+            )
+            SettingsRow.Equalizer -> onEqualizer()
+            SettingsRow.SleepTimer -> onSleepTimer()
             SettingsRow.OnlineLyrics -> {
                 haptics.confirm()
                 repository.setOnlineLyrics(!onlineLyricsOn)
@@ -173,6 +202,10 @@ fun SettingsScreen(
             SettingsRow.Autoplay -> MenuRow("Autoplay", focused, value = if (autoplayOn) "On" else "Off", showChevron = false)
             SettingsRow.Recommendations -> MenuRow("Online recommendations", focused, value = if (recommendationsOn) "On" else "Off", enabled = autoplayOn, showChevron = false)
             SettingsRow.AvoidRepeats -> MenuRow("Avoid repeats", focused, value = if (avoidRepeatsOn) "On" else "Off", enabled = autoplayOn, showChevron = false)
+            // Podium's own player (D-75 – D-77).
+            SettingsRow.Crossfade -> MenuRow("Crossfade", focused, value = if (effects.crossfadeSeconds == 0) "Off" else "${effects.crossfadeSeconds} s", showChevron = false)
+            SettingsRow.Equalizer -> MenuRow("Equaliser", focused, value = if (effects.equalizer.enabled) effects.equalizer.preset.label else "Off")
+            SettingsRow.SleepTimer -> MenuRow("Sleep timer", focused, value = sleepSummary, showChevron = false)
             SettingsRow.OnlineLyrics -> MenuRow("Online lyrics", focused, value = if (onlineLyricsOn) "On" else "Off", showChevron = false)
             // The lyrics service's credit (LYRICS_ARCHITECTURE.md §9): its community wrote the words.
             SettingsRow.LyricsCredit -> MenuRow("Lyrics from LRCLIB, written by its community", focused, enabled = false, showChevron = false)
@@ -182,6 +215,9 @@ fun SettingsScreen(
         }
     }
 }
+
+/** "2 seconds", "12 seconds". */
+internal fun crossfadeLabel(seconds: Int): String = if (seconds == 1) "1 second" else "$seconds seconds"
 
 /**
  * Finish picker. Turning the wheel tries each finish on the device itself; the center keeps it,

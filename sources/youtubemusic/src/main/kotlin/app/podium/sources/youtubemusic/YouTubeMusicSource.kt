@@ -295,7 +295,7 @@ class YouTubeMusicSource internal constructor(
                 (artistAlbums + items.filterIsInstance<YtmAlbum>().filter { a -> a.artists.any { sameName(it.name, text) } })
                     .distinctBy { it.browseId }.take(ALBUM_RESULTS)
             } else {
-                (items.filterIsInstance<YtmAlbum>() + typedAlbums.orEmpty()).distinctBy { it.browseId }
+                AlbumRanking.rank(text, (items.filterIsInstance<YtmAlbum>() + typedAlbums.orEmpty()).distinctBy { it.browseId })
             }
             val playable = items.filterIsInstance<YtmSong>()
             return Outcome.Success(

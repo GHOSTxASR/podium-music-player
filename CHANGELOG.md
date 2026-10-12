@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Sleep timer:** 15 to 90 minutes, the end of the song or the end of the album. The music fades out over the last 10 seconds, then pauses. In Now Playing ▸ More and Settings (D-75).
+- **Equaliser:** ten bands from 31 Hz to 16 kHz, thirteen presets or your own curve, set with the Wheel and heard as you turn. In Settings (D-76).
+- **Crossfade:** songs overlap by 2 to 12 seconds, except an album's tracks that run into each other. In Settings (D-77).
+- **Go to album and Go to artist** in Now Playing's menu, and Go to album in online song menus (D-74).
+- Now Playing says when the sound comes from a video: "Audio from the music video" (D-74).
+
+### Changed
+- A song played from search is followed by songs like it, not by the rest of the search results (D-74).
+- Album searches show full albums before EPs and singles; searching an album's exact title shows albums first (D-74).
+
 ### Fixed
 - **Sign-in that kept loading (D-73):** a failed account check no longer reloads the page and checks again by itself in a loop; it says why, with Try again and Start over.
 - **Stuck on "Signing in":** closing the sign-in screen, or Android recreating it, during the account check no longer leaves the account signing in for good; Settings and Online can start a new sign-in at once.

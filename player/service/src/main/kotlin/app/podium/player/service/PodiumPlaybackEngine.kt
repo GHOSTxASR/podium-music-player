@@ -75,7 +75,9 @@ import kotlinx.coroutines.withTimeoutOrNull
 class PodiumPlaybackEngine(
     context: Context,
     private val deps: PlaybackDependencies,
-    /** Builds the player around the engine's resolving media-source factory (tests inject their own). */
+    /** Builds crossfade's second player (tests inject their own); by default like the first, without audio focus. */
+    private val helperFactory: ((Context, MediaSource.Factory) -> ExoPlayer)? = null,
+    /** Builds the player around the engine's resolving media-source factory (tests inject their own). Last, for a trailing lambda. */
     playerFactory: ((Context, MediaSource.Factory) -> ExoPlayer)? = null,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -106,10 +108,14 @@ class PodiumPlaybackEngine(
     private val mediaSourceFactory: MediaSource.Factory =
         DefaultMediaSourceFactory(ResolvingDataSource.Factory(DefaultDataSource.Factory(context), QueueDataSpecResolver()))
 
+    /** Settings ▸ Equaliser (D-76), in each player's own audio path. */
+    private val equalizer = EqualizerProcessor()
+    private var helperEqualizer: EqualizerProcessor? = null
+
     val player: ExoPlayer = playerFactory?.invoke(context, mediaSourceFactory) ?: buildPlayer(context)
 
     private fun buildPlayer(context: Context): ExoPlayer {
-        return ExoPlayer.Builder(context)
+        return ExoPlayer.Builder(context, EffectsRenderersFactory(context, equalizer))
             .setMediaSourceFactory(mediaSourceFactory)
             .setAudioAttributes(
                 AudioAttributes.Builder()
@@ -121,6 +127,54 @@ class PodiumPlaybackEngine(
             .setHandleAudioBecomingNoisy(true)
             .setWakeMode(C.WAKE_MODE_NETWORK)
             .build()
+    }
+
+    /**
+     * Crossfade's second player (D-77): the same media and equaliser, silent until it carries the
+     * end of a song. It never takes audio focus or the session; the engine's [player] keeps both.
+     */
+    private fun buildHelper(context: Context): ExoPlayer = (helperFactory?.invoke(context, mediaSourceFactory)
+        ?: ExoPlayer.Builder(context, EffectsRenderersFactory(context, EqualizerProcessor().also { eq -> eq.update(deps.effects.value.equalizer); helperEqualizer = eq }))
+            .setMediaSourceFactory(mediaSourceFactory)
+            .setAudioAttributes(
+                AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build(),
+                /* handleAudioFocus = */ false,
+            )
+            .build())
+
+    // The player's volume is the sleep timer's share times crossfade's (D-75, D-77); never the phone's volume.
+    private var sleepShare = 1f
+    private var fadeShare = 1f
+    private var helperShare = 0f
+
+    private fun applyVolumes() {
+        player.volume = sleepShare * fadeShare
+        crossfader.helperPlayer?.volume = sleepShare * helperShare
+    }
+
+    private val crossfader: Crossfader = Crossfader(
+        main = player,
+        newHelper = { buildHelper(context) },
+        songAt = ::crossfadeSong,
+        setMainShare = { share ->
+            fadeShare = share
+            applyVolumes()
+        },
+        setHelperShare = { helper, share ->
+            helperShare = share
+            helper.volume = sleepShare * share
+        },
+        scope = scope,
+        blocked = { player.pauseAtEndOfMediaItems },
+    )
+
+    /** What crossfade's rules need of the song at a position in the player's playlist. */
+    private fun crossfadeSong(index: Int): app.podium.player.api.CrossfadeRules.Song? {
+        if (index !in 0 until player.mediaItemCount) return null
+        val uid = QueueUid(player.getMediaItemAt(index).mediaId)
+        val track = queue.state.value.items.firstOrNull { it.uid == uid }?.track ?: return null
+        val duration = track.durationMs ?: player.duration.takeIf { index == player.currentMediaItemIndex && it != C.TIME_UNSET && it > 0 }
+        return app.podium.player.api.CrossfadeRules.Song(track.album?.id?.value, track.trackNumber, duration)
     }
 
     init {
@@ -152,11 +206,73 @@ class PodiumPlaybackEngine(
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 if (isPlaying) keepPositionSaved() else savePosition()
             }
+
+            override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+                val timer = deps.sleepTimer ?: return
+                if (playWhenReady) {
+                    timer.resumed()
+                } else if (reason == Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM && player.pauseAtEndOfMediaItems) {
+                    // Paused where the sleep timer asked: at the end of the song or the album.
+                    player.pauseAtEndOfMediaItems = false
+                    timer.endReached()
+                }
+            }
         })
         restoreSavedQueue()
         saveQueueChanges()
         keepOnlineMusicGoing()
         forgetStreamsOfSourcesThatStop()
+        followEffects()
+        followSleepTimer()
+    }
+
+    // --- Equaliser and crossfade (D-76, D-77) -------------------------------------------------------
+
+    private fun followEffects() {
+        scope.launch {
+            deps.effects.collect { effects ->
+                equalizer.update(effects.equalizer)
+                helperEqualizer?.update(effects.equalizer)
+                crossfader.seconds = effects.crossfadeSeconds
+            }
+        }
+    }
+
+    // --- Sleep timer (D-75) -------------------------------------------------------------------------
+
+    /**
+     * The timer's fade is the player's own volume; when it runs out the player pauses (in silence,
+     * the volume stays down until the music plays again). The end of a song or an album is the
+     * player's own pause at the end of an item, set only for the song that ends it.
+     */
+    private fun followSleepTimer() {
+        val timer = deps.sleepTimer ?: return
+        scope.launch {
+            timer.volume.collect { v ->
+                sleepShare = v
+                applyVolumes()
+            }
+        }
+        scope.launch {
+            timer.expired.collect {
+                crossfader.stop()
+                player.pause()
+            }
+        }
+        scope.launch {
+            combine(timer.state, queue.state) { state, q -> state to q }.collect { (state, q) ->
+                player.pauseAtEndOfMediaItems = when (state) {
+                    app.podium.player.api.SleepTimerState.EndOfSong -> true
+                    app.podium.player.api.SleepTimerState.EndOfAlbum -> {
+                        // Only the album's last song (the next one is another album's, or none).
+                        val current = q.current?.track
+                        val next = q.items.getOrNull(q.currentIndex + 1)?.track
+                        current != null && (next == null || current.album?.id == null || next.album?.id != current.album?.id)
+                    }
+                    else -> false
+                }
+            }
+        }
     }
 
     // --- Sources that stop serving -------------------------------------------------------------------
@@ -512,6 +628,7 @@ class PodiumPlaybackEngine(
             if (index >= 0) runBlocking { withTimeoutOrNull(500) { runCatching { store.savePosition(index, player.currentPosition) } } }
         }
         scope.cancel()
+        crossfader.release()
         player.release()
     }
 

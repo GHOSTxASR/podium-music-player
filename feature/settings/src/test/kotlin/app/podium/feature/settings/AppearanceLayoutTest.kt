@@ -60,6 +60,9 @@ class AppearanceLayoutTest {
         override val appearance = MutableStateFlow(initial)
         override val preview = MutableStateFlow<DeviceAppearance?>(null)
         override val startupSound = MutableStateFlow(true)
+        override val effects = MutableStateFlow(app.podium.player.api.AudioEffects())
+        override fun setEqualizer(settings: app.podium.player.api.EqualizerSettings) = Unit
+        override fun setCrossfade(seconds: Int) = Unit
         override val haptics = MutableStateFlow(true)
         override val clicks = MutableStateFlow(false)
         override val autoplay = MutableStateFlow(true)

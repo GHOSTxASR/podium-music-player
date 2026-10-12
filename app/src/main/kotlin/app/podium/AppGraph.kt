@@ -17,6 +17,7 @@ import app.podium.core.model.SourceId
 import app.podium.player.api.AutoplaySettings
 import app.podium.player.api.PlayIntent
 import app.podium.player.api.SourceRecommendationEngine
+import app.podium.player.api.SleepTimer
 import app.podium.player.api.TrackCatalog
 import app.podium.player.service.BuildConfigFlags
 import app.podium.player.service.MediaControllerPlaybackController
@@ -148,6 +149,14 @@ class AppGraph(val context: Context) {
         deviceSettings.autoplay, deviceSettings.onlineRecommendations, deviceSettings.avoidRepeats,
     ) { on, recs, repeats -> AutoplaySettings(on, recs, repeats) }
         .stateIn(appScope, SharingStarted.Eagerly, AutoplaySettings())
+
+    /**
+     * The sleep timer (D-75): shared by the screens that set it and the player that carries it
+     * out. Podium's own player fades and pauses itself; music another app plays is paused too.
+     */
+    val sleepTimer = SleepTimer(appScope, android.os.SystemClock::elapsedRealtime).also { timer ->
+        appScope.launch { timer.expired.collect { if (playbackController.snapshot.value.owner != app.podium.player.api.PlaybackOwner.Podium) playbackController.pause() } }
+    }
 
     private var listening = false
 
@@ -287,6 +296,8 @@ class AppGraph(val context: Context) {
         override val clock = this@AppGraph.clock
         override val queueStore = this@AppGraph.queueStore
         override val autoplay = this@AppGraph.autoplaySettings
+        override val effects = this@AppGraph.deviceSettings.effects
+        override val sleepTimer = this@AppGraph.sleepTimer
         override val recommendations = this@AppGraph.recommendations
         override val equivalence = this@AppGraph.equivalence
         override suspend fun playedSince(sinceMillis: Long) = onlineStore.playedSince(sinceMillis)

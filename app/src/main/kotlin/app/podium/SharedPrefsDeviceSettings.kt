@@ -12,6 +12,9 @@ import app.podium.core.designsystem.theme.VirtualDisplay
 import app.podium.core.designsystem.type.DisplayFont
 import app.podium.core.designsystem.type.LyricsFont
 import app.podium.feature.settings.DeviceSettingsRepository
+import app.podium.player.api.AudioEffects
+import app.podium.player.api.EqualizerPreset
+import app.podium.player.api.EqualizerSettings
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -160,7 +163,41 @@ class SharedPrefsDeviceSettings(context: Context) : DeviceSettingsRepository {
         prefs.edit { putBoolean(KEY_SOUND, enabled) }
     }
 
+    private val _effects = MutableStateFlow(
+        AudioEffects(
+            equalizer = run {
+                val preset = enumOf(prefs.getString(KEY_EQ_PRESET, null), EqualizerPreset.FLAT)
+                val gains = prefs.getString(KEY_EQ_GAINS, null)?.split(',')?.mapNotNull { it.toFloatOrNull() }
+                    ?.takeIf { it.size == EqualizerSettings.BANDS_HZ.size }
+                    ?.map { it.coerceIn(-EqualizerSettings.MAX_GAIN_DB, EqualizerSettings.MAX_GAIN_DB) }
+                    ?: preset.gainsDb
+                EqualizerSettings(prefs.getBoolean(KEY_EQ_ON, false), preset, gains)
+            },
+            crossfadeSeconds = prefs.getInt(KEY_CROSSFADE, 0).takeIf { it in AudioEffects.CROSSFADE_CHOICES } ?: 0,
+        ),
+    )
+    override val effects: StateFlow<AudioEffects> = _effects.asStateFlow()
+
+    override fun setEqualizer(settings: EqualizerSettings) {
+        _effects.value = _effects.value.copy(equalizer = settings)
+        prefs.edit {
+            putBoolean(KEY_EQ_ON, settings.enabled)
+            putString(KEY_EQ_PRESET, settings.preset.name)
+            putString(KEY_EQ_GAINS, settings.gainsDb.joinToString(","))
+        }
+    }
+
+    override fun setCrossfade(seconds: Int) {
+        val chosen = seconds.takeIf { it in AudioEffects.CROSSFADE_CHOICES } ?: 0
+        _effects.value = _effects.value.copy(crossfadeSeconds = chosen)
+        prefs.edit { putInt(KEY_CROSSFADE, chosen) }
+    }
+
     private companion object {
+        const val KEY_EQ_ON = "equalizer"
+        const val KEY_EQ_PRESET = "equalizer_preset"
+        const val KEY_EQ_GAINS = "equalizer_gains"
+        const val KEY_CROSSFADE = "crossfade_seconds"
         const val KEY_FINISH = "finish"
         const val KEY_CUSTOM = "custom_argb"
         const val KEY_GRAIN = "grain"

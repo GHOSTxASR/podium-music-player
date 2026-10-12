@@ -1,6 +1,8 @@
 package app.podium.feature.settings
 
 import app.podium.core.designsystem.shell.DeviceAppearance
+import app.podium.player.api.AudioEffects
+import app.podium.player.api.EqualizerSettings
 import kotlinx.coroutines.flow.StateFlow
 
 /** The device's own settings: its finish, startup sound and touch feedback (D-26, D-32). */
@@ -45,6 +47,14 @@ interface DeviceSettingsRepository {
     val podiumKeyboard: StateFlow<Boolean>
 
     fun setPodiumKeyboard(enabled: Boolean)
+
+    /** Settings ▸ Equaliser and Crossfade (D-76, D-77): how Podium's own player shapes the sound. */
+    val effects: StateFlow<AudioEffects>
+
+    fun setEqualizer(settings: EqualizerSettings)
+
+    /** Seconds of overlap between songs; 0 is off. */
+    fun setCrossfade(seconds: Int)
 
     fun setAppearance(appearance: DeviceAppearance)
     fun setPreview(appearance: DeviceAppearance?)

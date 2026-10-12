@@ -36,6 +36,7 @@ object QueueMediaItems {
         val extras = Bundle().apply {
             putString(PodiumExtras.TRACK_ID, track.id.value)
             putString(PodiumExtras.ORIGIN, item.origin.name)
+            putString(PodiumExtras.MEDIA_KIND, track.kind.name)
         }
         val metadata = MediaMetadata.Builder()
             .setTitle(track.title)

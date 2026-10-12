@@ -600,3 +600,70 @@ Every significant decision, newest at the bottom. Major ones have an ADR in `adr
   slow connection. Keep waiting, or tap Cancel to stop."
 - **Tradeoff:** after a failure the listener taps once more to retry; a loop that retried by
   itself could hammer the service (rate limits) and never let the message be read.
+
+### D-74 · Searching plays the song, then songs like it; videos say so; Go to album and artist
+- **Context:** user requests (2026-10-12): a song played from search was followed by the other
+  search results instead of similar songs; Now Playing should say when the sound comes from a
+  video; searching for an album should bring up albums of songs first; Now Playing's menu should
+  go to the album and the artist.
+- **Decision:**
+  - A song (or video) chosen in search plays on its own. Up Next is then short, so autoplay asks
+    the song's own source for songs like it straight away (D-34) and they follow. Nothing else
+    the search found joins the queue. With Autoplay off, the song plays alone.
+  - `NowPlayingItem.kind` carries the item's `MediaKind` (a media item extra). Now Playing adds
+    "Audio from the music video" or "Audio from a video" under the title. That says what the
+    recording is, not who serves it (D-36).
+  - Album search results: an album titled exactly as searched first, then full albums, EPs,
+    singles and anything unlabelled, otherwise the catalogue's order (`AlbumRanking`). When the
+    top album is titled exactly as searched, the Albums section comes before Songs.
+  - Now Playing ▸ More has Go to album and Go to artist (a list to choose from when there are
+    several), shown only when the song has those pages. Each opens in the song's own environment
+    (D-34): the library's page for a local song, the online page for an online one. Online song
+    menus gain Go to album too.
+- **Not verified:** the live search answers. What "video albums" were could only be inferred,
+  because Podium never probes the service from the build container.
+
+### D-75 · Sleep timer
+- **Context:** user request (2026-10-12); specified in audio-architecture.md §9.
+- **Decision:** `SleepTimer` (player:api) is shared by the screens and the playback engine. It
+  offers 15, 30, 45, 60 or 90 minutes, the end of the song, or the end of the album.
+  - A countdown fades the player's own volume over its last 10 s, then pauses. The volume stays
+    down until the music plays again.
+  - The end of a song or album uses the player's own pause at the end of that item (set only for
+    the album's last song).
+  - It's reachable from Now Playing ▸ More ▸ Sleep timer and Settings ▸ Sleep timer. Now Playing
+    shows "Music stops in 23 min" while it's set.
+  - It isn't kept across restarts: a timer belongs to a listening session.
+- **Tradeoff:** music another app plays is paused when the countdown ends, but can't be faded.
+
+### D-76 · A built-in equaliser
+- **Context:** user request (2026-10-12): a configurable equaliser. audio-architecture.md had
+  planned only to open the phone's own panel.
+- **Decision:** Podium's own `AudioProcessor` in each player's audio path, so it sounds the same
+  on every phone and for local and online songs alike.
+  - Ten peaking filters an octave apart (31 Hz to 16 kHz), ±12 dB in 1 dB steps.
+  - Thirteen presets, and Custom when a band is moved by hand.
+  - Settings ▸ Equaliser lists the bands; each opens to be set with the Wheel, heard as it turns.
+  - Off or flat, the audio passes through sample for sample. Boosts lower the whole signal first
+    by the curve's peak, so they never clip.
+- **Tradeoff:** the decoded audio is changed, so with the equaliser on the sound is no longer
+  bit-for-bit what the file holds. The quality label still reports the source, and is never
+  "Lossless" on its account.
+
+### D-77 · Crossfade
+- **Context:** user request (2026-10-12). Media3 1.11 has no crossfade of its own.
+- **Decision:** Settings ▸ Crossfade offers off, 2, 4, 6, 8 or 12 seconds (off by default).
+  - The engine's one player keeps the queue, the session and the notification, so local playback
+    and everything that controls it work as before.
+  - A second, silent player (`Crossfader`) takes over only the outgoing song's last seconds. It
+    starts the same song just ahead and is levelled with the first by playing a little slower or
+    faster while silent. The same audio is then swapped across unheard.
+  - The first player moves to the next song, which fades in from its start while the old one
+    fades out, on equal-power curves.
+  - Never for an album's next track (gapless, as mastered), repeat-one, songs shorter than three
+    times the overlap, or a song the sleep timer ends with.
+  - Any pause, skip, seek or error ends a crossfade at once: the second player stops, and the
+    song playing is at full volume.
+- **Verified:** on Media3's test players with generated tones (the crossfade happens, the queue
+  moves with it, the second player stops, gapless album tracks are left alone). **Not** heard on a
+  phone: the levelling's accuracy on real hardware is unmeasured.
