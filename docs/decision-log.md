@@ -593,9 +593,10 @@ Every significant decision, newest at the bottom. Major ones have an ADR in `adr
   - When the music page redirects a request without cookies (in some regions, to a consent page),
     its settings are read again with the session, instead of falling back to a built-in client
     version that ages.
-- **Not done:** an overall time limit on the account check. Each request already gives up on its
-  own (8 s to connect, 12 s between reads), so the check ends by itself, about 80 s at worst on a
-  connection that stalls, and a fixed limit short enough to feel quick would cut off slow
-  connections that would have finished.
+- **No overall time limit on the account check.** Each request already gives up on its own (8 s
+  to connect, 12 s between reads), so the check ends by itself, about 80 s at worst on a connection
+  that stalls, and a fixed limit short enough to feel quick would cut off slow connections that
+  would have finished. Instead, a check still running after 15 s says "This can take a while on a
+  slow connection. Keep waiting, or tap Cancel to stop."
 - **Tradeoff:** after a failure the listener taps once more to retry; a loop that retried by
   itself could hammer the service (rate limits) and never let the message be read.

@@ -178,11 +178,16 @@ class WebSignInActivity : ComponentActivity() {
                             }
                         }
                         when (state.step) {
-                            WebSignInChecks.Step.CHECKING, WebSignInChecks.Step.DONE -> Box(
+                            WebSignInChecks.Step.CHECKING, WebSignInChecks.Step.DONE -> Column(
                                 Modifier.fillMaxSize().background(colors.canvas).padding(24.dp),
-                                contentAlignment = Alignment.Center,
+                                verticalArrangement = Arrangement.Center,
+                                horizontalAlignment = Alignment.CenterHorizontally,
                             ) {
                                 PodiumText("Checking your account…", type.body, colors.labelPrimary)
+                                if (state.slow) {
+                                    Spacer(Modifier.height(8.dp))
+                                    PodiumText(WebSignInChecks.SLOW, type.caption, colors.labelSecondary)
+                                }
                             }
                             WebSignInChecks.Step.FAILED -> Column(
                                 Modifier.fillMaxSize().background(colors.canvas).padding(24.dp),

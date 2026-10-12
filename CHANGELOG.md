@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Sign-in that kept loading (D-73):** a failed account check no longer reloads the page and checks again by itself in a loop; it says why, with Try again and Start over.
 - **Stuck on "Signing in":** closing the sign-in screen, or Android recreating it, during the account check no longer leaves the account signing in for good; Settings and Online can start a new sign-in at once.
 - **Turning the phone during sign-in** no longer reloads the page or loses a check under way.
+- **A slow connection** is told after 15 seconds of checking that it can take a while, instead of a bare "Checking your account…"; the check isn't cut short.
 - **Session detection** starts once the page reaches YouTube and starts again with each navigation there, instead of ending a minute after the page opened.
 - A page the sign-in stops, a page that can't load, a certificate problem and a crashed page now say so, with Start over.
 - A session the phone can't seal in the Keystore is refused with a message instead of crashing the app.
