@@ -5,6 +5,20 @@ All notable changes to Podium will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **Sign-in that kept loading (D-73):** a failed account check no longer reloads the page and checks again by itself in a loop; it says why, with Try again and Start over.
+- **Stuck on "Signing in":** closing the sign-in screen, or Android recreating it, during the account check no longer leaves the account signing in for good; Settings and Online can start a new sign-in at once.
+- **Turning the phone during sign-in** no longer reloads the page or loses a check under way.
+- **Session detection** starts once the page reaches YouTube and starts again with each navigation there, instead of ending a minute after the page opened.
+- A page the sign-in stops, a page that can't load, a certificate problem and a crashed page now say so, with Start over.
+- A session the phone can't seal in the Keystore is refused with a message instead of crashing the app.
+- In regions where YouTube Music's page redirects requests without cookies to a consent page, the account check reads the page's settings with the session.
+
+### Removed
+- The debug APK that had been committed to the repository with the boot-wordmark merge (D-69).
+
 ## [0.1.1] - 2026-10-10
 
 ### Added

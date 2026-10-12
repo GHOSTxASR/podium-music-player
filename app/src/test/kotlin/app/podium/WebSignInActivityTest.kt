@@ -139,4 +139,29 @@ class WebSignInActivityTest {
         assertFalse("https://accounts.youtube.com/accounts/SetSID".startsWith(flow.doneUrlPrefix))
         assertFalse("https://accounts.google.com/CheckCookie".startsWith(flow.doneUrlPrefix))
     }
+
+    // --- Where the session is looked for (D-73) ----------------------------------------------------------
+
+    @Test
+    fun `the session is looked for only once the page is on the service's own site`() {
+        assertEquals("youtube.com", WebSignInActivity.siteOf("music.youtube.com"))
+        assertTrue(WebSignInActivity.onServiceSite("https://music.youtube.com/", flow))
+        assertTrue(WebSignInActivity.onServiceSite("https://accounts.youtube.com/accounts/SetSID?ssdc=1", flow))
+        assertTrue(WebSignInActivity.onServiceSite("https://www.youtube.com/signin?next=%2F", flow))
+        // The sign-in page's own address names the service in its continue parameter: not there yet.
+        assertFalse(WebSignInActivity.onServiceSite(flow.startUrl, flow))
+        assertFalse(WebSignInActivity.onServiceSite("https://accounts.google.co.in/accounts/SetSID", flow))
+        assertFalse(WebSignInActivity.onServiceSite("http://music.youtube.com/", flow))
+        assertFalse(WebSignInActivity.onServiceSite("https://youtube.com.phishing.io/", flow))
+        assertFalse(WebSignInActivity.onServiceSite("https://notyoutube.com/", flow))
+    }
+
+    @Test
+    fun `a session is one carrying a cookie the source names, matched by exact name`() {
+        assertTrue(WebSignInActivity.hasSessionCookie("SID=a; __Secure-3PAPISID=b; HSID=c", flow.doneWhenCookies))
+        assertTrue(WebSignInActivity.hasSessionCookie("SAPISID=b", flow.doneWhenCookies))
+        assertFalse(WebSignInActivity.hasSessionCookie("SID=a; HSID=c; PREF=f6=40000000", flow.doneWhenCookies))
+        assertFalse(WebSignInActivity.hasSessionCookie("XSAPISID=b; SAPISIDX=c", flow.doneWhenCookies))
+        assertFalse(WebSignInActivity.hasSessionCookie("", flow.doneWhenCookies))
+    }
 }

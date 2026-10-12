@@ -194,15 +194,29 @@ internal class YouTubeMusicClient(
     }
 
     private suspend fun loadPageConfig(): PageConfig? {
-        val page = try {
-            transport.send("GET", "$ORIGIN/", mapOf("User-Agent" to userAgent(), "Accept-Language" to language), null)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (_: IOException) {
-            return null
+        var page = fetchPage(cookie = null) ?: return null
+        // Without cookies the page can answer with a redirect instead (in some regions, to a cookie
+        // consent page). The session already carries the choices made on the sign-in page, so ask
+        // once more with it rather than falling back to a client version that will age.
+        if (page.code !in 200..299) {
+            val signedIn = session() ?: return null
+            page = fetchPage(cookie = signedIn.cookieHeader) ?: return null
         }
         if (page.code !in 200..299) return null
         return PageConfigParser.parse(page.body.toString(Charsets.UTF_8))?.let { (version, visitor) -> PageConfig(version, visitor, now()) }
+    }
+
+    private suspend fun fetchPage(cookie: String?): HttpResponse? = try {
+        val headers = buildMap {
+            put("User-Agent", userAgent())
+            put("Accept-Language", language)
+            cookie?.let { put("Cookie", it) }
+        }
+        transport.send("GET", "$ORIGIN/", headers, null)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (_: IOException) {
+        null
     }
 
     companion object {

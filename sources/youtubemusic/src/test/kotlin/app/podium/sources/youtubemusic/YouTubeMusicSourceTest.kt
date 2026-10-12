@@ -18,6 +18,7 @@ import app.podium.core.model.TrackId
 import app.podium.sources.api.AuthState
 import app.podium.sources.api.Capability
 import app.podium.sources.api.CapabilityStatus
+import app.podium.sources.api.CredentialStore
 import app.podium.sources.api.FacetResolution
 import app.podium.sources.api.InMemoryCredentialStore
 import app.podium.sources.api.MissReason
@@ -28,8 +29,13 @@ import app.podium.sources.api.QualityRequest
 import app.podium.sources.api.RemoteContext
 import app.podium.sources.api.SearchKind
 import app.podium.sources.api.SearchQuery
+import app.podium.sources.api.SetupProblem
 import app.podium.sources.api.SignInResult
 import app.podium.sources.api.WebSignIn
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import java.io.IOException
 import java.net.UnknownHostException
@@ -303,6 +309,84 @@ class YouTubeMusicSourceTest {
         val before = service.sent.size
         assertIs<SignInResult.Refused>(source.auth!!.signIn(mapOf(WebSignIn.SESSION_KEY to "SID=abc")))
         assertEquals(before, service.sent.size)
+    }
+
+    @Test
+    fun `a sign-in the caller gives up on leaves the account as it was, never stuck signing in`() = runTest {
+        val stalled = object : HttpTransport {
+            override suspend fun send(method: String, url: String, headers: Map<String, String>, body: ByteArray?): HttpResponse {
+                if (method == "GET") return ok(Fixtures.PAGE_HTML)
+                awaitCancellation() // the account check never answers
+            }
+        }
+        val stalledSource = YouTubeMusicSource(credentials, stalled, { "TestBrowser/1.0" }, { "GB" }, { 1_700_000_000_000L })
+        val check = launch { stalledSource.auth!!.signIn(mapOf(WebSignIn.SESSION_KEY to session)) }
+        runCurrent()
+        assertEquals(AuthState.SigningIn, stalledSource.auth!!.state.value)
+        check.cancelAndJoin() // the sign-in screen closed
+        assertEquals(AuthState.SignedOut, stalledSource.auth!!.state.value)
+        assertNull(credentials.read(YouTubeMusicSource.SOURCE_ID))
+    }
+
+    @Test
+    fun `a failed sign-in while signed in keeps the account that was signed in`() = runTest {
+        credentials.write(YouTubeMusicSource.SOURCE_ID, mapOf("session" to session, "account-name" to "Listener Name"))
+        service.answer = { HttpResponse(503, ByteArray(0)) }
+        val before = assertIs<AuthState.SignedIn>(source.auth!!.state.value)
+        val result = assertIs<SignInResult.Refused>(source.auth!!.signIn(mapOf(WebSignIn.SESSION_KEY to "SAPISID=other-secret")))
+        assertEquals(SetupProblem.UNREACHABLE, result.problem)
+        assertEquals(before, source.auth!!.state.value)
+        assertEquals(session, credentials.read(YouTubeMusicSource.SOURCE_ID)!!["session"])
+    }
+
+    @Test
+    fun `a failed sign-in after the session expired still asks to sign in again`() = runTest {
+        credentials.write(YouTubeMusicSource.SOURCE_ID, mapOf("session" to session, "account-name" to "Listener Name"))
+        service.answer = { ok(Fixtures.signedOutAnswer) }
+        source.accountLibrary!!.likedSongs(0, 10)
+        assertEquals(AuthState.Expired, source.auth!!.state.value)
+        service.answer = { HttpResponse(503, ByteArray(0)) }
+        assertIs<SignInResult.Refused>(source.auth!!.signIn(mapOf(WebSignIn.SESSION_KEY to session)))
+        assertEquals(AuthState.Expired, source.auth!!.state.value)
+    }
+
+    @Test
+    fun `a session the phone can't seal is refused and nothing is kept`() = runTest {
+        val broken = object : CredentialStore {
+            override fun read(source: SourceId): Map<String, String>? = null
+            override fun write(source: SourceId, values: Map<String, String>) = throw java.security.KeyStoreException("no key")
+            override fun delete(source: SourceId) = Unit
+        }
+        service.answer = { s -> if (s.url.contains("account/account_menu")) ok(Fixtures.accountMenu) else HttpResponse(404, ByteArray(0)) }
+        val unsealable = YouTubeMusicSource(broken, service, { "TestBrowser/1.0" }, { "GB" }, { 1_700_000_000_000L })
+        val result = assertIs<SignInResult.Refused>(unsealable.auth!!.signIn(mapOf(WebSignIn.SESSION_KEY to session)))
+        assertEquals(SetupProblem.UNKNOWN, result.problem)
+        assertEquals(AuthState.SignedOut, unsealable.auth!!.state.value)
+        assertIs<PodiumError.AuthRequired>((unsealable.accountLibrary!!.likedSongs(0, 10) as Outcome.Failure).error)
+    }
+
+    @Test
+    fun `when the page redirects a request without cookies, its settings are read with the session`() = runTest {
+        val sent = mutableListOf<Pair<String, Map<String, String>>>()
+        val consenting = object : HttpTransport {
+            override suspend fun send(method: String, url: String, headers: Map<String, String>, body: ByteArray?): HttpResponse {
+                sent += url to headers
+                return when {
+                    method == "GET" && headers["Cookie"] == null -> HttpResponse(302, ByteArray(0)) // to a consent page
+                    method == "GET" -> ok(Fixtures.PAGE_HTML)
+                    url.contains("account/account_menu") -> ok(Fixtures.accountMenu)
+                    else -> HttpResponse(404, ByteArray(0))
+                }
+            }
+        }
+        val regional = YouTubeMusicSource(credentials, consenting, { "TestBrowser/1.0" }, { "DE" }, { 1_700_000_000_000L })
+        assertEquals(SignInResult.SignedIn, regional.auth!!.signIn(mapOf(WebSignIn.SESSION_KEY to session)))
+        val pages = sent.filter { it.first == "https://music.youtube.com/" }
+        assertEquals(2, pages.size)
+        assertNull(pages[0].second["Cookie"])
+        assertTrue(pages[1].second["Cookie"]!!.contains("SAPISID=sapi-secret/123"))
+        // The account check went out as the version the page reported, not the built-in fallback.
+        assertEquals("1.20261005.01.00", sent.last { it.first.contains("account/account_menu") }.second["X-Youtube-Client-Version"])
     }
 
     @Test

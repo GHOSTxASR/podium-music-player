@@ -7,8 +7,10 @@ import android.graphics.Bitmap
 import android.net.Uri
 import android.net.http.SslError
 import android.os.Bundle
+import android.util.Log
 import android.view.WindowManager
 import android.webkit.CookieManager
+import android.webkit.RenderProcessGoneDetail
 import android.webkit.SslErrorHandler
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
@@ -19,59 +21,62 @@ import android.webkit.WebViewClient
 import android.webkit.WebViewDatabase
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.viewModels
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewModelScope
 import app.podium.core.designsystem.theme.PodiumTheme
 import app.podium.core.designsystem.type.PodiumText
 import app.podium.core.model.SourceId
 import app.podium.sources.api.MusicSource
-import app.podium.sources.api.SetupProblem
-import app.podium.sources.api.SignInResult
 import app.podium.sources.api.WebSignIn
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
 
 /**
  * Signing in on the service's own web page (YOUTUBE_MUSIC_ARCHITECTURE.md §6). Generic: the source
  * describes the page ([WebSignIn]); this screen never knows which service it is.
  *
- * - The page is the service's: Podium never sees or stores the password; two-step checks and
- *   passkeys work as they do in a browser.
- * - The web view is locked down: https only, only the hosts the source names or regional Google auth hosts,
- *   no file or content access, no JavaScript bridge into Podium, no pop-up windows, Safe Browsing on, no cache.
- * - Multi-trigger session detection: onPageStarted, onPageFinished, doUpdateVisitedHistory,
- *   lifecycle-aware cookie polling, and an explicit "Check sign-in" action ensure session cookies
- *   are captured promptly without stalling indefinitely on heavy web applications.
- * - Session cookies are validated via [MusicSource.auth.signIn] and stored in the Keystore; web state
- *   is cleanly wiped upon completion.
+ * - The page is the service's: Podium never sees or stores the password; two-step checks work as
+ *   they do in a browser.
+ * - The web view is locked down: https only, only the hosts the source names or Google's regional
+ *   sign-in hosts, no file or content access, no JavaScript bridge into Podium, no pop-up windows,
+ *   Safe Browsing on, no cache, kept out of screenshots. A page it stops says so (D-73).
+ * - [WebSignInChecks] decides when the page has finished and hands its session to the source, which
+ *   seals it with the Keystore. It lives in a [WebSignInModel], so a check under way survives the
+ *   screen being recreated; turning the phone doesn't recreate it at all (the manifest).
+ * - Web state is wiped before a sign-in starts, before Start over, and when the screen closes.
  */
 class WebSignInActivity : ComponentActivity() {
 
+    private val model: WebSignInModel by viewModels()
     private var webView: WebView? = null
-    private var completing by mutableStateOf(false)
-    private var statusText by mutableStateOf<String?>(null)
-    private var userFeedback by mutableStateOf<String?>(null)
 
-    private val checkMutex = Mutex()
-    private var pollJob: Job? = null
+    /** The web view waits for the wipe of the last sign-in's cookies to finish. */
+    private var ready by mutableStateOf(false)
+
+    /** A new web view for each Start over. */
+    private var page by mutableIntStateOf(0)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -84,41 +89,49 @@ class WebSignInActivity : ComponentActivity() {
             finish()
             return
         }
+        val checks = model.checks(flow, source)
 
         if (savedInstanceState == null) {
-            // Start fresh only on a genuinely new sign-in flow, not on recreation across 2FA backgrounding
-            wipeWebState()
+            // Start from nothing: no session of anyone else's can carry over.
+            wipeWebState { ready = true }
         } else {
-            completing = savedInstanceState.getBoolean(KEY_COMPLETING, false)
+            // Recreated mid-sign-in (e.g. after the listener fetched a code from another app):
+            // keep what the page has done so far.
+            ready = true
         }
 
         setContent {
             PodiumTheme(darkTheme = true) {
                 val colors = PodiumTheme.colors
                 val type = PodiumTheme.type
+                val state by checks.state.collectAsStateWithLifecycle()
+
+                LaunchedEffect(state.step) {
+                    if (state.step == WebSignInChecks.Step.DONE) {
+                        wipeWebState()
+                        finish()
+                    }
+                }
+
                 Column(Modifier.fillMaxSize().background(colors.canvas).safeDrawingPadding()) {
                     Row(
                         Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
                         PodiumText(flow.title, type.row, colors.labelPrimary, modifier = Modifier.weight(1f))
-                        if (!completing) {
+                        if (state.step == WebSignInChecks.Step.ON_PAGE) {
                             PodiumText(
                                 "Check sign-in",
                                 type.row,
                                 colors.labelPrimary,
-                                modifier = Modifier
-                                    .clickable { requestCheck(flow, source, isManual = true) }
-                                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                                modifier = Modifier.clickable { checks.checkNow() }.padding(horizontal = 8.dp, vertical = 4.dp),
                             )
                         }
                         PodiumText(
                             "Cancel",
                             type.row,
                             colors.labelSecondary,
-                            modifier = Modifier
-                                .clickable { finish() }
-                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                            modifier = Modifier.clickable { finish() }.padding(horizontal = 8.dp, vertical = 4.dp),
                         )
                     }
                     PodiumText(
@@ -128,47 +141,83 @@ class WebSignInActivity : ComponentActivity() {
                         modifier = Modifier.padding(horizontal = 16.dp).padding(bottom = 8.dp),
                     )
 
-                    val feedback = userFeedback
-                    if (feedback != null) {
+                    val notice = state.notice
+                    if (notice != null && state.step == WebSignInChecks.Step.ON_PAGE) {
                         Row(
-                            Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            PodiumText(feedback, type.caption, colors.labelSecondary, modifier = Modifier.weight(1f))
+                            PodiumText(notice.text, type.caption, colors.labelSecondary, modifier = Modifier.weight(1f))
+                            if (notice.startOver) {
+                                PodiumText(
+                                    "Start over",
+                                    type.caption,
+                                    colors.labelPrimary,
+                                    modifier = Modifier.clickable { startOver(checks) }.padding(4.dp),
+                                )
+                            }
                             PodiumText(
                                 "Dismiss",
                                 type.caption,
                                 colors.labelPrimary,
-                                modifier = Modifier.clickable { userFeedback = null }.padding(4.dp)
+                                modifier = Modifier.clickable { checks.dismissNotice() }.padding(4.dp),
                             )
                         }
                     }
 
-                    val status = statusText
-                    if (status != null) {
-                        Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
-                            PodiumText(status, type.body, colors.labelPrimary)
+                    Box(Modifier.fillMaxSize()) {
+                        // One web view per sign-in attempt: a check covers it, never replaces it,
+                        // so a failure can't reload the page and start the check over by itself.
+                        if (ready) {
+                            key(page) {
+                                AndroidView(
+                                    factory = { context -> buildWebView(context, flow, checks) },
+                                    onRelease = { view -> release(view) },
+                                    modifier = Modifier.fillMaxSize(),
+                                )
+                            }
                         }
-                    } else {
-                        AndroidView(
-                            factory = { context -> buildWebView(context, flow, source) },
-                            modifier = Modifier.fillMaxSize()
-                        )
+                        when (state.step) {
+                            WebSignInChecks.Step.CHECKING, WebSignInChecks.Step.DONE -> Box(
+                                Modifier.fillMaxSize().background(colors.canvas).padding(24.dp),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                PodiumText("Checking your account…", type.body, colors.labelPrimary)
+                            }
+                            WebSignInChecks.Step.FAILED -> Column(
+                                Modifier.fillMaxSize().background(colors.canvas).padding(24.dp),
+                                verticalArrangement = Arrangement.Center,
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                            ) {
+                                PodiumText(state.failure.orEmpty(), type.body, colors.labelPrimary)
+                                Spacer(Modifier.height(16.dp))
+                                Row {
+                                    if (state.canRetry) {
+                                        PodiumText(
+                                            "Try again",
+                                            type.row,
+                                            colors.labelPrimary,
+                                            modifier = Modifier.clickable { checks.checkNow() }.padding(12.dp),
+                                        )
+                                    }
+                                    PodiumText(
+                                        "Start over",
+                                        type.row,
+                                        colors.labelPrimary,
+                                        modifier = Modifier.clickable { startOver(checks) }.padding(12.dp),
+                                    )
+                                }
+                            }
+                            WebSignInChecks.Step.ON_PAGE -> Unit
+                        }
                     }
                 }
             }
         }
     }
 
-    override fun onSaveInstanceState(outState: Bundle) {
-        super.onSaveInstanceState(outState)
-        outState.putBoolean(KEY_COMPLETING, completing)
-    }
-
     @SuppressLint("SetJavaScriptEnabled") // The service's sign-in page needs JavaScript; nothing of Podium's is exposed to it.
-    private fun buildWebView(context: Context, flow: WebSignIn, source: MusicSource): WebView = WebView(context).apply {
+    private fun buildWebView(context: Context, flow: WebSignIn, checks: WebSignInChecks): WebView = WebView(context).apply {
         val view = this
         webView = view
         settings.apply {
@@ -189,148 +238,75 @@ class WebSignInActivity : ComponentActivity() {
             setAcceptThirdPartyCookies(view, true)
         }
         webViewClient = object : WebViewClient() {
-            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean =
-                !allowed(request.url, flow)
+            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+                if (allowed(request.url, flow)) return false
+                if (request.isForMainFrame) {
+                    // Only where it tried to go, never the path or query (they can carry tokens).
+                    if (BuildConfig.DEBUG) Log.i(TAG, "Stopped the sign-in page at ${request.url.scheme}://${request.url.host}")
+                    checks.onBlocked()
+                }
+                return true
+            }
 
             override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
-                super.onPageStarted(view, url, favicon)
-                if (isRelevantUrl(url, flow)) {
-                    startPollingIfNeeded(flow, source)
-                    if (url.startsWith(flow.doneUrlPrefix)) {
-                        requestCheck(flow, source, isManual = false)
-                    }
-                }
+                checks.onNavigated(onServiceSite(url, flow))
             }
 
             override fun doUpdateVisitedHistory(view: WebView, url: String, isReload: Boolean) {
-                super.doUpdateVisitedHistory(view, url, isReload)
-                if (isRelevantUrl(url, flow)) {
-                    startPollingIfNeeded(flow, source)
-                    if (url.startsWith(flow.doneUrlPrefix)) {
-                        requestCheck(flow, source, isManual = false)
-                    }
-                }
+                checks.onNavigated(onServiceSite(url, flow))
             }
 
             override fun onPageFinished(view: WebView, url: String) {
-                super.onPageFinished(view, url)
-                if (isRelevantUrl(url, flow)) {
-                    requestCheck(flow, source, isManual = false)
-                }
+                checks.onNavigated(onServiceSite(url, flow))
             }
 
             @SuppressLint("WebViewClientOnReceivedSslError")
             override fun onReceivedSslError(view: WebView, handler: SslErrorHandler, error: SslError) {
                 handler.cancel() // never proceed past a certificate problem
-                userFeedback = "Security error encountered. Sign-in cancelled."
+                checks.onCertificateError()
             }
 
             override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
-                super.onReceivedError(view, request, error)
-                if (request.isForMainFrame) {
-                    userFeedback = "Page could not be loaded. Check your connection."
-                }
+                if (request.isForMainFrame) checks.onPageError()
+            }
+
+            override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
+                // The page is gone, not the app: its web view goes (it can't be used again), the
+                // listener is told, and Start over builds a new one.
+                ready = false
+                checks.onPageLost()
+                return true
             }
         }
         loadUrl(flow.startUrl)
     }
 
-    private fun isRelevantUrl(url: String, flow: WebSignIn): Boolean =
-        url.startsWith(flow.doneUrlPrefix) || url.contains("youtube.com")
-
-    private fun startPollingIfNeeded(flow: WebSignIn, source: MusicSource) {
-        if (pollJob != null || completing || isFinishing || isDestroyed) return
-        pollJob = lifecycleScope.launch {
-            var elapsed = 0L
-            val interval = 800L
-            val maxDuration = 60_000L
-            while (isActive && !completing && elapsed < maxDuration) {
-                delay(interval)
-                elapsed += interval
-                requestCheck(flow, source, isManual = false)
-            }
-            if (!completing && elapsed >= maxDuration) {
-                if (userFeedback == null && statusText == null) {
-                    userFeedback = "Sign-in taking longer than expected. Tap 'Check sign-in' if you've completed verification."
-                }
-            }
+    /** A new sign-in from the beginning: the old page goes, its web state is wiped, a new page loads. */
+    private fun startOver(checks: WebSignInChecks) {
+        webView?.apply {
+            webViewClient = WebViewClient() // nothing more from the old page
+            stopLoading()
+        }
+        ready = false
+        checks.startOver()
+        wipeWebState {
+            page++
+            ready = true
         }
     }
 
-    private fun stopPolling() {
-        pollJob?.cancel()
-        pollJob = null
+    /** Destroys a web view once, whichever comes first: leaving the screen's layout or the screen closing. */
+    private fun release(view: WebView) {
+        if (webView === view) webView = null
+        if (view.tag === RELEASED) return
+        view.tag = RELEASED
+        view.destroy()
     }
 
-    private fun extractCandidateCookies(flow: WebSignIn): String? {
-        val cm = CookieManager.getInstance()
-        val direct = cm.getCookie(flow.cookieOrigin)
-        if (hasAuthCookie(direct, flow.doneWhenCookies)) return direct
-
-        val rootOrigin = "https://youtube.com"
-        if (rootOrigin != flow.cookieOrigin) {
-            val root = cm.getCookie(rootOrigin)
-            if (hasAuthCookie(root, flow.doneWhenCookies)) return root
-        }
-        return direct
-    }
-
-    private fun hasAuthCookie(cookieHeader: String?, targetCookies: Set<String>): Boolean {
-        if (cookieHeader.isNullOrBlank()) return false
-        val names = cookieHeader.split(';').map { it.substringBefore('=').trim() }.toSet()
-        return names.any { it in targetCookies }
-    }
-
-    private fun requestCheck(flow: WebSignIn, source: MusicSource, isManual: Boolean = false) {
-        if (completing || isFinishing || isDestroyed) return
-        lifecycleScope.launch {
-            if (!checkMutex.tryLock()) return@launch
-            try {
-                if (completing || isFinishing || isDestroyed) return@launch
-                val cookies = extractCandidateCookies(flow)
-                if (!hasAuthCookie(cookies, flow.doneWhenCookies)) {
-                    if (isManual) {
-                        userFeedback = "Verification not detected yet. Please complete sign-in on the page."
-                    }
-                    return@launch
-                }
-
-                completing = true
-                stopPolling()
-                statusText = "Verifying account…"
-                userFeedback = null
-
-                val result = source.auth?.signIn(mapOf(WebSignIn.SESSION_KEY to cookies!!))
-                if (isFinishing || isDestroyed) return@launch
-
-                when (result) {
-                    SignInResult.SignedIn -> {
-                        statusText = "Signed in"
-                        wipeWebState()
-                        finish()
-                    }
-                    is SignInResult.Refused -> {
-                        completing = false
-                        statusText = null
-                        userFeedback = when (result.problem) {
-                            SetupProblem.UNREACHABLE -> "Couldn't reach the service. Check your connection and try again."
-                            else -> "That sign-in didn't work. Try again from Settings."
-                        }
-                    }
-                    null -> {
-                        wipeWebState()
-                        finish()
-                    }
-                }
-            } finally {
-                checkMutex.unlock()
-            }
-        }
-    }
-
-    private fun wipeWebState() {
+    /** Every cookie, storage and form the web view holds; [then] runs once the cookies are gone. */
+    private fun wipeWebState(then: (() -> Unit)? = null) {
         CookieManager.getInstance().apply {
-            removeAllCookies(null)
+            removeAllCookies { then?.invoke() }
             flush()
         }
         WebStorage.getInstance().deleteAllData()
@@ -343,21 +319,15 @@ class WebSignInActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
-        stopPolling()
-        if (isFinishing) {
-            wipeWebState()
-        }
-        webView?.apply {
-            stopLoading()
-            destroy()
-        }
-        webView = null
+        if (isFinishing) wipeWebState()
+        webView?.let(::release)
         super.onDestroy()
     }
 
     companion object {
         private const val EXTRA_SOURCE = "source"
-        private const val KEY_COMPLETING = "completing"
+        private const val TAG = "PodiumSignIn"
+        private val RELEASED = Any()
 
         fun intent(context: Context, source: SourceId): Intent =
             Intent(context, WebSignInActivity::class.java).putExtra(EXTRA_SOURCE, source.value)
@@ -367,7 +337,7 @@ class WebSignInActivity : ComponentActivity() {
          * Requires https, strict domain boundary matching, and rejects lookalikes like evil-google.com.
          */
         private val REGIONAL_GOOGLE_HOST = Regex(
-            """^([a-z0-9-]+\.)*google\.(co\.[a-z]{2}|com\.[a-z]{2}|[a-z]{2})$"""
+            """^([a-z0-9-]+\.)*google\.(co\.[a-z]{2}|com\.[a-z]{2}|[a-z]{2})$""",
         )
 
         internal fun isRegionalGoogleHost(host: String): Boolean =
@@ -380,5 +350,38 @@ class WebSignInActivity : ComponentActivity() {
             if (flow.allowedHostSuffixes.any { host == it || host.endsWith(".$it") }) return true
             return isRegionalGoogleHost(host)
         }
+
+        /**
+         * Whether [url] is on the service's own site — the site its session cookies belong to
+         * ([WebSignIn.cookieOrigin] without its first label: music.example.com → example.com). Only
+         * there can the page have left a session, so only there is it looked for.
+         */
+        internal fun onServiceSite(url: String, flow: WebSignIn): Boolean {
+            val uri = Uri.parse(url)
+            if (uri.scheme != "https") return false
+            val host = uri.host?.lowercase() ?: return false
+            val site = Uri.parse(flow.cookieOrigin).host?.lowercase()?.let(::siteOf) ?: return false
+            return host == site || host.endsWith(".$site")
+        }
+
+        internal fun siteOf(host: String): String = host.split('.').takeLast(2).joinToString(".")
+
+        /** The page's session for the service's origin, once it has one of the cookies the source names. */
+        internal fun sessionCookies(flow: WebSignIn): String? =
+            CookieManager.getInstance().getCookie(flow.cookieOrigin)?.takeIf { hasSessionCookie(it, flow.doneWhenCookies) }
+
+        internal fun hasSessionCookie(cookieHeader: String, names: Set<String>): Boolean =
+            cookieHeader.split(';').any { it.substringBefore('=').trim() in names }
     }
+}
+
+/** Holds the sign-in's checks across a recreated screen; a check under way ends only when the screen is closed. */
+internal class WebSignInModel : ViewModel() {
+    private var checks: WebSignInChecks? = null
+
+    fun checks(flow: WebSignIn, source: MusicSource): WebSignInChecks = checks ?: WebSignInChecks(
+        scope = viewModelScope,
+        readSession = { WebSignInActivity.sessionCookies(flow) },
+        signIn = { session -> source.auth?.signIn(mapOf(WebSignIn.SESSION_KEY to session)) },
+    ).also { checks = it }
 }
