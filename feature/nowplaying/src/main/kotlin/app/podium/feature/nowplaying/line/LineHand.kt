@@ -250,6 +250,11 @@ internal class FloatList(capacity: Int = 64) {
         data[size++] = y
     }
 
+    fun add(v: Float) {
+        if (size + 1 > data.size) data = data.copyOf(maxOf(data.size * 2, size + 1))
+        data[size++] = v
+    }
+
     fun clear() {
         size = 0
     }

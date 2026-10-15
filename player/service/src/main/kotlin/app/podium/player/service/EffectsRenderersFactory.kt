@@ -9,16 +9,20 @@ import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.DefaultAudioSink
 
-/** The default renderers, with Podium's own audio effects (the equaliser, D-76) in the audio path. */
+/**
+ * The default renderers, with Podium's own audio steps in the audio path: the equaliser (D-76), then
+ * the bass meter the lyrics move with (D-82), when there is one.
+ */
 internal class EffectsRenderersFactory(
     context: Context,
     private val equalizer: EqualizerProcessor,
+    private val meter: BassMeter? = null,
 ) : DefaultRenderersFactory(context) {
 
     override fun buildAudioSink(context: Context, enableFloatOutput: Boolean, enableAudioOutputPlaybackParams: Boolean): AudioSink =
         DefaultAudioSink.Builder(context)
             .setEnableFloatOutput(enableFloatOutput)
             .setEnableAudioOutputPlaybackParameters(enableAudioOutputPlaybackParams)
-            .setAudioProcessors(arrayOf(equalizer))
+            .setAudioProcessors(if (meter == null) arrayOf(equalizer) else arrayOf(equalizer, meter))
             .build()
 }

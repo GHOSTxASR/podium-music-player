@@ -77,27 +77,33 @@ class LinePerformanceTest {
         val frame = LineFrame()
         var maxCalls = 0
         var maxSegments = 0
+        var maxGlow = 0
         for (lines in listOf(12, 48, 160)) {
             val lyrics = song(lines)
             val duration = lyrics.lines.last().startMs + 20_000
             val c = LineComposition(LineScript.synced(lyrics, duration), 7L, 1.57f, ::glyphOrBox)
             var calls = 0
             var segments = 0
+            var glow = 0
             var samples = 0
             for (t in 0L..duration step 1_000) {
                 c.frameAt(c.cursorAt(t), false, frame)
                 painter.draw(canvas, 1013f, 1594f, c, frame, reduced = false)
                 calls = maxOf(calls, painter.lastLineCalls)
                 segments = maxOf(segments, painter.lastSegments)
+                glow = maxOf(glow, painter.lastGlowSegments)
                 samples++
             }
-            println("LINE DRAW: $lines lines over $samples frames: at most $calls line calls and $segments segments in a frame")
+            println("LINE DRAW: $lines lines over $samples frames: at most $calls line calls, $segments line segments and $glow glow segments (all layers) in a frame")
             maxCalls = maxOf(maxCalls, calls)
             maxSegments = maxOf(maxSegments, segments)
+            maxGlow = maxOf(maxGlow, glow)
         }
         // The busiest frame of a 160-line song costs no more than one of a 12-line song's would allow.
         assertTrue(maxCalls < 400, "line calls per frame: $maxCalls")
         assertTrue(maxSegments < 20_000, "segments per frame: $maxSegments")
+        // The glow (D-82): each of its layers draws well under half the line's segments.
+        assertTrue(maxGlow / LinePainter.GLOW_LAYERS < maxSegments / 2, "glow segments per frame: $maxGlow")
     }
 
     private companion object {

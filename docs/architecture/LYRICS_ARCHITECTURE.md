@@ -178,6 +178,11 @@ fades — the whole virtual display is the lyric.
 - **Plain lyrics** are moved through with the Wheel and are labelled "Not synced: turn the Wheel to
   read" in the details; they are never auto-advanced with invented timing.
 - **Accessibility:** the line is a polite live region with the full text as its description.
+- **The bass swell (D-82):** while the music plays, the line swells very slightly with the music's
+  bass hits, like a speaker cone (at most 1.8 % of its size, about its centre). It reads Podium's
+  bass meter by the playback position (§13) and follows a damped spring, so it never jumps. It's a
+  layer property set while drawing, so nothing is laid out again. Off with reduced motion, and still
+  when nothing is measured.
 
 ## 8. States and copy
 
@@ -223,6 +228,16 @@ fades — the whole virtual display is the lyric.
   `LinePerformanceTest` (2), `ContinuousLineScreenTest` (9 Robolectric screenshots, `line-*.png`);
   `WordTiming.end` in `LyricsTest`; the setting in `AppearanceLayoutTest.lyricsThemePicker` and
   `DeviceSettingsPersistenceTest`.
+- Motion and the bass (D-82, §13): `LyricClockTest` (5: even steps from an uneven position, seeks,
+  pause and resume, determinism, reset), `PulseFollowerTest` (5: each kick pushes and settles, no
+  jumps in position or speed, still for silence, a held note and no measurement, quiet and loud
+  masters alike, the same at 60, 90 and 120 Hz), `LineMotionTest` (6: words reached on time with a
+  smooth pace, positions between milliseconds, strokes covering the route once, the glow within
+  its tolerance and cheaper than the line, monotone slopes, the swell outside frame comparison),
+  `LyricsScreenTest` (2 more: the Classic line swells with kicks and stays still without a pulse),
+  and `BassMeterTest` in `player:service` (6: audio untouched, a kick found at its song position
+  and a cymbal not, nothing claimed where nothing was measured, a flush starting afresh, float
+  audio, unreadable audio passed by).
 
 ## 11. Not done / next
 
@@ -329,9 +344,19 @@ them, the latest one gold; they follow the pen, not the audio — **Podium does 
   moves from one phrase to the next, leaning onto the pen's route smoothed over 3 em through
   instrumental art, never letting the pen within 10 % of the display's edge. Earlier phrases dim
   and slide away up and to the left as the next one comes in from the lower right.
-- **Seeking, rewinding, reading with the Wheel:** `LinePlayhead` notices a jump (the position moving
-  unlike the clock by more than 0.6 s, the Wheel choosing another line, or the cursor moving more
-  than 0.35 sections at once) and takes the drawn cursor to the new one over 280–900 ms on an
+- **Time, frame by frame (D-82):** the drawing doesn't follow the player's position raw. Read on
+  the phone, it took uneven steps from frame to frame: read at a different moment after each
+  refresh, counted in whole milliseconds, and corrected every few seconds. That is what made the
+  pen stutter. `LyricClock` advances by the display's frame times while the music plays and leans
+  onto the reported position (time constant 400 ms, never more than 8 % faster or slower than real
+  time), and the cursor takes the fractional position. So every frame moves the pen the same
+  distance, and it stays within a few tens of milliseconds of the music.
+- **The pace inside a phrase** is a monotone cubic through its word keyframes (Fritsch–Carlson):
+  the pen still reaches every word exactly on its time and never runs back, but its speed changes
+  smoothly from word to word instead of switching at each one.
+- **Seeking, rewinding, reading with the Wheel:** `LinePlayhead` notices a jump (the frame clock
+  seeing the position move unlike time by more than 0.3 s, the Wheel choosing another line, or the
+  cursor moving more than 0.35 sections at once) and takes the drawn cursor to the new one over 280–900 ms on an
   ease-out — the pen retraces its own route and the camera its own diagonal, then lands exactly on
   the target. While the music plays the drawn cursor *is* the target.
 - **Pause/resume:** paused, the drawing doesn't move (the screen looks for a seek four times a
@@ -346,11 +371,32 @@ them, the latest one gold; they follow the pen, not the audio — **Podium does 
   point and small glow, the last 0.14 em of wet ink behind it, the brief light across a finished
   phrase's last word, motif glints and the latest beat dot. Quieter lines (earlier phrases,
   hairlines, instrumental line) are ivory mixed toward the paper, opaque, so overlaps never bead.
-- Strokes: 1.5 dp lettering, 1.15 dp instrumental line, 0.85 dp hairlines; pen 1.9 dp; glow 9 dp.
-- The glow is one radial gradient made once and positioned by a translate — **no blur, no
+- Strokes (D-82, a little bolder than D-81's): 2.3 dp lettering, 1.8 dp instrumental line,
+  1.3 dp hairlines; pen 2.7 dp; the pen's glow 12 dp.
+- **The line glows (D-82)**, softly, like a neon tube or a highlighter's ink: two wider strokes
+  under every line (4.4 and 2.2 times its width), the inner one brighter (5.5 % and 14 % of the way
+  from the paper to a warm ivory). They are opaque mixes, like the quieter inks, so crossings never
+  bead, and they are drawn before any line so no line is ever under another's glow. Written phrases
+  glow at 55 %. The glow is drawn from a simpler copy of each route (within 0.012 em, a pixel or
+  two): both layers together cost about two thirds of the line's segments. Four finer layers looked
+  softer close up but made frames late on the phone (§12.7).
+- The pen's glow is one radial gradient made once and positioned by a translate — **no blur, no
   `RenderEffect`, no shader**. Nothing is drawn that isn't written yet.
-- **Reduced motion:** no glow, no gold accents, no retracing (the drawing jumps to the position),
-  and the camera moves between phrases in a few cuts instead of following.
+- **With the bass (D-82, §13)** the drawing swells a little about the display's centre (at most
+  1.4 %), its glow brightens (up to 60 %) and the pen's light blooms (25 %).
+- **How it is drawn (D-82, measured, §12.7):** the line itself is drawn segment by segment with
+  `drawLines`, anti-aliased, as in D-81. The glow is drawn as platform paths **without
+  anti-aliasing**, which the GPU draws by itself. Its simpler route is cut into strokes of at most
+  48 segments, made into paths once off the main thread as the pen nears a section. A written
+  section's glow is one path per layer; the section being written keeps a growing path of its
+  finished glow strokes, and only the stroke under the pen is rebuilt each frame. The glow's steps
+  are dim and wide, so their edges show no aliasing (checked close up on the phone). Drawn
+  anti-aliased, the same paths were rasterised on the render thread as masks and uploaded every
+  frame (about 10 a frame, up to 667×625 px). Drawn segment by segment, the glow made the line
+  about 7,500 small shapes a frame. Both kept the render thread over its frame.
+- **Reduced motion:** no swell, no pen glow, no gold accents, no retracing (the drawing jumps to the
+  position); the line keeps only its innermost glow; the camera moves between phrases in a few cuts
+  instead of following.
 
 ### 12.7 Cost
 
@@ -360,16 +406,58 @@ route. Each section's route (points, kinds, pen-time, and the segments as `drawL
 rebuilt from its plan when drawn; eight are kept, and the next two are prepared off the main thread
 as the pen enters a section — memory doesn't grow with the song.
 
-Each frame: read the position, map it to a cursor (binary searches), find the pen on the prepared
-route, and draw the revealed prefix of the visible sections' segments — one `drawLines` call per
-run of one kind, plus a few small circles and lines for the pen and accents. Nothing is laid out,
-shaped, parsed or built per frame; nothing is read from disk or the network.
+Each frame: read the position, move the frame clock, map it to a cursor (binary searches), find
+the pen on the prepared route, look up the bass, and draw the visible sections: a few prepared
+paths each, the growing path of the section being written and the one stroke under the pen, plus a
+few small circles and lines for the pen and accents. Nothing is laid out, shaped, parsed or built
+per frame beyond that one stroke; nothing is read from disk or the network.
 
 Measured on the build container's JVM (not the phone; `LinePerformanceTest`, printed in its test
 report): a 48-line song prepares in about 10 ms, a section rebuilds in about 0.04 ms, mapping a
 frame takes about 0.8 µs and allocates nothing over 600 frames; the busiest frame of a 12-, 48- or
-160-line song is at most 82 line-drawing calls and about 3,200 segments. **Frame times on the
-Nothing Phone (3a) have not been measured** (UI_DEVICE_ACCEPTANCE.md §3a.16).
+160-line song is at most 82 line-drawing calls and about 3,200 segments. With D-82 a frame is at
+most about 95 drawing calls: the line's 3,100 segments as before, and the glow's 2,200 simplified
+segments (both layers) in a few GPU paths.
+
+**Measured on the Nothing Phone (3a), 2026-10-15 (D-82)**, with the generated test tones and
+invented lyrics, the Glass finish, the display at 90 Hz (11.1 ms a frame):
+
+| | Raw position | `LyricClock` |
+|---|---|---|
+| Mean step error per frame | 0.4–3.1 ms | 0.02–0.47 ms |
+| Worst step error in 5 s | 7–270 ms | 0.3–1.8 ms |
+| Frames off by more than a quarter of a frame, per 5 s | 1–144 | 0 |
+
+How the line was drawn, and how the frames went (each run about 20 s of the same song stretch):
+
+| Drawing | Render thread issuing commands, p50 / p90 | Janky frames |
+|---|---|---|
+| Two glow layers, all `drawLines` (one early run) | | 0.22 % |
+| Four glow layers, all `drawLines` | 12.0 / 13.3 ms | 4.3 % |
+| Four layers, everything as anti-aliased paths | 5.6 / 8.5 ms | 0.6–2.7 % (6 runs) |
+| … glow paths without anti-aliasing, line as anti-aliased paths | | 1.1–3.0 % (2 runs) |
+| Glow paths without anti-aliasing, line as `drawLines` | | 0.10–0.25 % (3 runs) |
+| … the same, later in the session: four glow layers | | 0.77–3.34 % (2 runs) |
+| … no glow at all | | 0.15–0.35 % (2 runs) |
+| **… two glow layers (shipped)** | | **0.30–0.36 % (2 runs)** |
+
+Rows measured interleaved in one session compare fairly; across sessions the same build varied
+(the phone was charging and had been running tests for over an hour), and single runs say little.
+Two glow layers ran as smoothly as none, four did not, so the line ships with two. The final build,
+measured twice at the end of the session, gave 1.0 % and 2.9 % janky frames; the drawing is the
+same as the 0.30–0.36 % runs, so this is the session's variation, not a regression, and judging the
+smoothness by eye on the listener's own music is still open (UI_DEVICE_ACCEPTANCE.md §3a.18).
+
+Late frames of the line were real hitches: the app's own work stayed small (UI thread under 1 ms,
+render thread 5–11 ms), and the time went after the frame was handed to the GPU. Classic's swell
+renders in bursts after each hit. Most of Classic's late frames (65 of 76 in one sample) were the
+first frame of a burst after idle, finishing in about 14 ms against a one-frame deadline. A swell
+starting from rest one frame late doesn't show, so gfxinfo's "janky" percentage overstates
+Classic's (9–19 % by that count, about 1.3 % late in the middle of motion). A trace of the
+anti-aliased paths showed the cost: about 10 path masks rasterised and uploaded every frame,
+about 3 ms of render-thread time, because the swell and the camera change the drawing's transform
+from frame to frame. The UI thread takes about 1 ms a frame (p90 1.4 ms) in every case; much of the
+GPU's time (13–18 ms a frame) is the Glass shell's.
 
 ### 12.8 Limits
 
@@ -379,5 +467,47 @@ Nothing Phone (3a) have not been measured** (UI_DEVICE_ACCEPTANCE.md §3a.16).
 - Word pacing inside line-timed lyrics is an estimate (§5.1); beat dots are not beats.
 - Very long phrases set below 0.42 may run off the display; the camera follows the pen, so the
   words being written stay visible, but not the whole phrase at once.
-- The glyph and motif tables are tuned by eye on Robolectric screenshots at one phone size; device
-  acceptance (§3a of the device plan), including frame times, is still open.
+- The glyph and motif tables are tuned by eye on Robolectric screenshots at one phone size.
+  Frame times were measured on the phone with test tones only (§12.7); the rest of the device
+  acceptance (§3a of the device plan) is still open.
+- The glow is four opaque steps, not a true blur: up close its edge is a fine staircase.
+- The swell moves only with music Podium's own player plays (§13); songs played by another app
+  leave the words still.
+
+## 13. The bass the lyrics move with (D-82)
+
+`BassMeter` (`player:service`) is a pass-through step in Podium's own audio path, after the
+equaliser, so it hears what the listener hears. It changes no sample (tested byte for byte) and
+needs no permission: it reads the decoded audio, not the microphone or the system's output.
+
+- The audio is mixed to mono, low-passed at 120 Hz (a second-order Butterworth: kick drums and
+  bass lines, not voices or cymbals) and measured as RMS over 10 ms blocks.
+- **Each block is filed under the song position its audio belongs to.** Media3 tells every flush
+  of the audio path where the stream starts (`StreamMetadata.positionOffsetUs`, read from
+  `DefaultAudioSink` in 1.11.1), and the blocks count on from there. The player decodes a few
+  hundred milliseconds ahead of what is heard, so the UI asks by the playback position
+  (`AudioPulse.bassAt`), never for "now". On the phone the sink flushed at every song change
+  ("stream starts at 0 ms") as well as on seeks. Every 5 s window of lyrics frames found its bass,
+  across song changes too, except the first after a song was started by the debug command, where
+  about a third of the lookups found nothing yet.
+- Five seconds of blocks are kept in a ring, written on the playback thread and read on the main
+  thread without locks. A flush starts afresh, so a reading never mixes two streams. Positions not
+  yet decoded, before the stream, or from audio it can't read (not 16-bit or float) answer "not
+  measured".
+- `AppGraph.audioPulse` gives the lyrics the meter only while Podium's own player has the music.
+  While another app plays it, the answer is "not measured", so an earlier song's record never moves
+  another song's words. Crossfade's second player isn't measured: the position the lyrics read is
+  the first player's.
+- **The swell** (`PulseFollower`, `feature:nowplaying`) moves with the bass's hits, not its level:
+  how far the bass rises above its own last 220 ms. A kick pushes; a held bass note pushes once,
+  then lets the words settle. Each hit is judged against the song's recent strongest (rising in
+  60 ms, falling over 3 s), so quiet and loud masters move alike, and below 35 % of that nothing
+  moves. The push eases in over 20 ms and a critically damped spring follows it (out at 6 Hz, back
+  at 2.4 Hz). Position and speed never jump, at any frame rate. The bass is read 50 ms ahead, so
+  the swell lands on the kick rather than after it.
+- Classic: `rememberLyricSwell` runs while the music plays and settles after it stops. While
+  nothing is measured it looks four times a second instead of every frame; without a pulse it never
+  runs. Continuous line: the same follower inside its own frame loop. Reduced motion: no swell.
+- Diagnostics (device testing): `adb shell setprop log.tag.PodiumLyricsClock DEBUG` logs, every 5 s,
+  how evenly the drawing moved (raw position against the clock) and how often the bass was found;
+  `log.tag.PodiumBass DEBUG` logs each flush's starting position. Numbers only.

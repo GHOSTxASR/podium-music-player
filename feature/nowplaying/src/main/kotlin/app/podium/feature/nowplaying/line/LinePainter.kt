@@ -2,6 +2,7 @@ package app.podium.feature.nowplaying.line
 
 import android.graphics.Canvas
 import android.graphics.Paint
+import android.graphics.Path
 import android.graphics.RadialGradient
 import android.graphics.Shader
 import androidx.compose.ui.graphics.Color
@@ -28,13 +29,33 @@ internal object LineInk {
 
     /** Gold as it catches the ivory line (the shimmer), never pure. */
     val Glint = lerp(Ivory, Gold, 0.82f)
+
+    /** The light around the line (D-82): ivory warmed a little toward the gold, like a neon tube's glow. */
+    val Halo = lerp(Ivory, Gold, 0.35f)
 }
 
 /**
  * Draws a [LineFrame] of a [LineComposition] onto a canvas: only sections near the pen and inside
  * the display, each as the revealed prefix of its prepared segments — a handful of `drawLines`
- * calls on arrays built before — plus the pen. Paints and the glow's gradient are made once; no
- * allocation per frame. The camera is a canvas transform; everything is clipped to the display.
+ * calls on arrays built before — plus the pen. The camera is a canvas transform; everything is
+ * clipped to the display. Paints, paths and the glow's gradient are made once; no allocation per
+ * frame.
+ *
+ * The line glows (D-82), softly, like a neon tube or a highlighter's ink: [GLOW_LAYERS] wider, dim
+ * strokes under every line, the inner one narrower and brighter so the light falls off, drawn first
+ * so they never cover a line. They are opaque mixes toward the paper, not
+ * transparency or blur, so crossings and joins never bead and nothing is blurred per frame. With the
+ * bass the drawing swells a little about the display's centre and the glow brightens
+ * ([LineFrame.swell]).
+ *
+ * The glow is drawn as platform paths without anti-aliasing, from each route's simpler copy
+ * ([InkPath.glowStrokes]), which the GPU draws by itself. Measured on the phone (D-82), the same
+ * strokes anti-aliased were rasterised on the render thread as masks and uploaded, about ten a
+ * frame. Drawn segment by segment they were thousands of small shapes a frame. Either way the
+ * render thread overran its frame. The glow's strokes are dim and wide, so their edges don't show
+ * aliasing. A written section's glow is one path made once ([prepare], off the main thread ahead of
+ * the pen). For the section being written, finished glow strokes join a growing path, and only the
+ * stroke under the pen (at most [InkPath.STROKE_SEGMENTS] segments) is rebuilt each frame.
  */
 internal class LinePainter(private val density: Float) {
 
@@ -44,9 +65,16 @@ internal class LinePainter(private val density: Float) {
         strokeJoin = Paint.Join.ROUND
     }
     private val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+
+    // Not anti-aliased: drawn by the GPU, never rasterised on the render thread (see above).
+    private val glowPaint = Paint().apply {
+        style = Paint.Style.STROKE
+        strokeCap = Paint.Cap.ROUND
+        strokeJoin = Paint.Join.ROUND
+    }
     private val glow = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
-        // The glow: one small radial gradient, positioned by translating the canvas.
+        // The pen's glow: one small radial gradient, positioned by translating the canvas.
         shader = RadialGradient(
             0f, 0f, GLOW_DP * density,
             intArrayOf(LineInk.Gold.copy(alpha = 0.46f).toArgb(), LineInk.Gold.copy(alpha = 0.14f).toArgb(), 0),
@@ -63,22 +91,111 @@ internal class LinePainter(private val density: Float) {
     private val settledFlourish = LineInk.SettledFlourish.toArgb()
     private val glint = LineInk.Glint.toArgb()
     private val gold = LineInk.Gold.toArgb()
+    private val paper = LineInk.Paper.toArgb()
+    private val halo = LineInk.Halo.toArgb()
 
     /** Draw counters for tests and diagnostics (the last frame). */
     var lastLineCalls = 0
         private set
     var lastSegments = 0
         private set
+    var lastGlowSegments = 0
+        private set
+
+    /** One route's glow as platform paths: each glow stroke, and all of them together. */
+    private class GlowPaths(val strokes: Array<Path>, val all: Path, val segments: Int)
+
+    // A few routes' glow paths, least recently used out first (the composition keeps eight routes).
+    private val glows = object : LinkedHashMap<InkPath, GlowPaths>(16, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<InkPath, GlowPaths>?): Boolean = size > MAX_ROUTES
+    }
+
+    // The section being written: its finished glow strokes so far, and the one under the pen.
+    private var growingOf: InkPath? = null
+    private var growingStrokes = 0
+    private var growingSegments = 0
+    private val growing = Path()
+    private val underPen = Path()
+    private var underPenOn = false
+
+    /** Makes [path]'s glow paths ahead of drawing it; any thread. */
+    fun prepare(path: InkPath) {
+        if (synchronized(glows) { glows.containsKey(path) }) return
+        val built = build(path)
+        synchronized(glows) { if (!glows.containsKey(path)) glows[path] = built }
+    }
+
+    private fun glowOf(path: InkPath): GlowPaths =
+        synchronized(glows) { glows[path] } ?: build(path).also { synchronized(glows) { glows[path] = it } }
+
+    private fun build(p: InkPath): GlowPaths {
+        val gs = p.glowStrokes
+        var segments = 0
+        val strokes = Array(gs.size / 3) { k ->
+            segments += gs[k * 3 + 1] - gs[k * 3]
+            Path().apply {
+                moveTo(p.glowXs[gs[k * 3]], p.glowYs[gs[k * 3]])
+                for (i in gs[k * 3] + 1..gs[k * 3 + 1]) lineTo(p.glowXs[i], p.glowYs[i])
+            }
+        }
+        val all = Path()
+        for (g in strokes) all.addPath(g)
+        return GlowPaths(strokes, all, segments)
+    }
+
+    /**
+     * Brings the glow of the section being written up to [reveal]: finished glow strokes join the
+     * growing path (all of them again after a step back), and the one under the pen is rebuilt.
+     */
+    private fun advance(path: InkPath, reveal: Float) {
+        val glow = glowOf(path)
+        val gs = path.glowStrokes
+        val gt = path.glowTau
+        if (growingOf !== path || (growingStrokes > 0 && gt[gs[(growingStrokes - 1) * 3 + 1]] > reveal)) {
+            growingOf = path
+            growingStrokes = 0
+            growingSegments = 0
+            growing.rewind()
+        }
+        val n = gs.size / 3
+        while (growingStrokes < n && gt[gs[growingStrokes * 3 + 1]] <= reveal) {
+            growing.addPath(glow.strokes[growingStrokes])
+            growingSegments += gs[growingStrokes * 3 + 1] - gs[growingStrokes * 3]
+            growingStrokes++
+        }
+        underPenOn = false
+        if (growingStrokes < n) {
+            val a = gs[growingStrokes * 3]
+            val b = gs[growingStrokes * 3 + 1]
+            if (gt[a] < reveal) {
+                underPen.rewind()
+                underPen.moveTo(path.glowXs[a], path.glowYs[a])
+                var i = a + 1
+                while (i <= b && gt[i] <= reveal) {
+                    underPen.lineTo(path.glowXs[i], path.glowYs[i])
+                    i++
+                }
+                underPen.lineTo(path.xAt(reveal), path.yAt(reveal))
+                underPenOn = true
+            }
+        }
+    }
 
     fun draw(canvas: Canvas, widthPx: Float, heightPx: Float, composition: LineComposition, frame: LineFrame, reduced: Boolean) {
         lastLineCalls = 0
         lastSegments = 0
+        lastGlowSegments = 0
         val scale = widthPx / composition.viewWidth
         val viewH = heightPx / scale
         val left = frame.cameraX - composition.viewWidth / 2f
         val top = frame.cameraY - viewH / 2f
+        val swell = if (reduced) 0f else frame.swell.coerceIn(0f, 1f)
         canvas.save()
         canvas.clipRect(0f, 0f, widthPx, heightPx)
+        if (swell > 0f) {
+            val grow = 1f + SWELL_SCALE * swell
+            canvas.scale(grow, grow, widthPx / 2f, heightPx / 2f)
+        }
         canvas.scale(scale, scale)
         canvas.translate(-left, -top)
         val px = 1f / scale // one pixel in em
@@ -93,13 +210,31 @@ internal class LinePainter(private val density: Float) {
         val right = left + composition.viewWidth
         val bottom = top + viewH
         val margin = 0.2f
-        for (i in maxOf(0, s - LOOKBACK)..s) {
+        val first = maxOf(0, s - LOOKBACK)
+        // Which sections are in view: one bit per section, counting back from the pen's.
+        var visible = 0
+        for (i in first..s) {
             val section = sections[i]
             if (section.maxX < left - margin || section.minX > right + margin || section.maxY < top - margin || section.minY > bottom + margin) continue
+            visible = visible or (1 shl (s - i))
+        }
+        // The section being written, up to the pen (whether or not it is in view: it is where the pen is).
+        advance(composition.geometry(s).path, frame.tau)
+        // The glow first, outer then inner, so no line is ever under another's glow.
+        val boost = 1f + GLOW_SWELL * swell
+        for (layer in (if (reduced) GLOW_LAYERS - 1 else 0) until GLOW_LAYERS) {
+            for (i in first..s) {
+                if (visible and (1 shl (s - i)) == 0) continue
+                val phrase = sections[i].kind == SectionKind.PHRASE
+                drawGlow(canvas, composition.geometry(i).path, i == s, phrase, if (phrase) i == currentPhrase else i >= s - 1, layer, boost, px)
+            }
+        }
+        for (i in first..s) {
+            if (visible and (1 shl (s - i)) == 0) continue
             val geometry = composition.geometry(i)
             val reveal = if (i < s) Float.MAX_VALUE else frame.tau
             drawPath(canvas, geometry.path, reveal, i == currentPhrase, i >= s - 1, px)
-            if (i == s || i == s - 1) drawBeads(canvas, geometry, if (i < s) Float.MAX_VALUE else frame.tau, px)
+            if (i == s || i == s - 1) drawBeads(canvas, geometry, reveal, px)
         }
         val section = sections[s]
         val geometry = composition.geometry(s)
@@ -110,8 +245,35 @@ internal class LinePainter(private val density: Float) {
                 drawShimmer(canvas, composition.geometry(s - 1), frame.tau / SHIMMER_SPAN, px)
             }
         }
-        if (frame.penDown || (frame.tau > 0f && frame.tau < section.length)) drawPen(canvas, geometry.path, frame, reduced, px)
+        if (frame.penDown || (frame.tau > 0f && frame.tau < section.length)) drawPen(canvas, geometry.path, frame, reduced, swell, px)
         canvas.restore()
+    }
+
+    /**
+     * One glow [layer] (0 the outermost) of [path], brightened by [boost]: a written section's whole
+     * glow in one path; the section being written ([writing]), its finished glow strokes and the one
+     * under the pen.
+     */
+    private fun drawGlow(canvas: Canvas, path: InkPath, writing: Boolean, phrase: Boolean, lit: Boolean, layer: Int, boost: Float, px: Float) {
+        if (path.glowStrokes.isEmpty()) return
+        glowPaint.strokeWidth = (if (phrase) LETTER_DP else FLOURISH_DP) * density * px * GLOW_WIDTHS[layer]
+        glowPaint.color = mix(paper, halo, GLOW_LIGHT[layer] * boost * (if (lit) 1f else SETTLED_GLOW) * (if (phrase) 1f else FLOURISH_GLOW))
+        if (!writing) {
+            val glow = glowOf(path)
+            canvas.drawPath(glow.all, glowPaint)
+            lastLineCalls++
+            lastGlowSegments += glow.segments
+            return
+        }
+        if (!growing.isEmpty) {
+            canvas.drawPath(growing, glowPaint)
+            lastLineCalls++
+            lastGlowSegments += growingSegments
+        }
+        if (underPenOn) {
+            canvas.drawPath(underPen, glowPaint)
+            lastLineCalls++
+        }
     }
 
     private fun drawPath(canvas: Canvas, path: InkPath, reveal: Float, current: Boolean, recent: Boolean, px: Float) {
@@ -201,13 +363,14 @@ internal class LinePainter(private val density: Float) {
         drawWindow(canvas, path, head - SHIMMER_WINDOW, head, glint, LETTER_DP * density * px, Ink.LETTER)
     }
 
-    private fun drawPen(canvas: Canvas, path: InkPath, frame: LineFrame, reduced: Boolean, px: Float) {
+    private fun drawPen(canvas: Canvas, path: InkPath, frame: LineFrame, reduced: Boolean, swell: Float, px: Float) {
         // The last of the ink behind the pen still catches the light: a gold wet edge.
         if (!reduced && frame.penDown) drawWindow(canvas, path, frame.tau - WET_SPAN, frame.tau, glint, FLOURISH_DP * density * px, null)
         if (!reduced) {
             canvas.save()
             canvas.translate(frame.penX, frame.penY)
-            canvas.scale(px, px)
+            val bloom = 1f + PEN_SWELL * swell
+            canvas.scale(px * bloom, px * bloom)
             canvas.drawCircle(0f, 0f, GLOW_DP * density, glow)
             canvas.restore()
         }
@@ -245,13 +408,35 @@ internal class LinePainter(private val density: Float) {
         /** Sections before the pen's that may still be in view. */
         const val LOOKBACK = 4
 
-        const val LETTER_DP = 1.5f
-        const val FLOURISH_DP = 1.15f
-        const val HAIR_DP = 0.85f
-        const val PEN_DP = 1.9f
-        const val GLOW_DP = 9f
-        const val BEAD_DP = 1.5f
-        const val GLINT_DP = 4.5f
+        /** Routes whose glow paths are kept: the composition's eight, and some room. */
+        private const val MAX_ROUTES = 12
+
+        // The line, a little bolder than a fine pen's (D-82).
+        const val LETTER_DP = 2.3f
+        const val FLOURISH_DP = 1.8f
+        const val HAIR_DP = 1.3f
+        const val PEN_DP = 2.7f
+        const val GLOW_DP = 12f
+        const val BEAD_DP = 2f
+        const val GLINT_DP = 5f
+
+        /**
+         * The glow around the line: its strokes' widths (times the line's), outermost first, and their
+         * light. Two layers, measured on the phone (D-82): as smooth as no glow, where four made
+         * frames late.
+         */
+        const val GLOW_LAYERS = 2
+        private val GLOW_WIDTHS = floatArrayOf(4.4f, 2.2f)
+        private val GLOW_LIGHT = floatArrayOf(0.055f, 0.14f)
+
+        /** Written phrases glow this much of the phrase being written; the instrumental line this much of the words. */
+        const val SETTLED_GLOW = 0.55f
+        const val FLOURISH_GLOW = 0.9f
+
+        /** With a strong bass hit: how much the drawing swells, the glow brightens and the pen blooms. */
+        const val SWELL_SCALE = 0.014f
+        const val GLOW_SWELL = 0.6f
+        const val PEN_SWELL = 0.25f
 
         /** Pen-time spans (em) of the gold accents. */
         const val WET_SPAN = 0.14f
@@ -260,4 +445,19 @@ internal class LinePainter(private val density: Float) {
         const val SHIMMER_SPAN = 1.1f
         const val SHIMMER_WINDOW = 0.35f
     }
+}
+
+/** [from] mixed toward [to] by [k] (0–1), opaque, without allocating. */
+internal fun mix(from: Int, to: Int, k: Float): Int {
+    val t = k.coerceIn(0f, 1f)
+    val r = mixChannel(from shr 16, to shr 16, t)
+    val g = mixChannel(from shr 8, to shr 8, t)
+    val b = mixChannel(from, to, t)
+    return (0xFF shl 24) or (r shl 16) or (g shl 8) or b
+}
+
+private fun mixChannel(from: Int, to: Int, t: Float): Int {
+    val a = from and 0xFF
+    val b = to and 0xFF
+    return (a + (b - a) * t + 0.5f).toInt().coerceIn(0, 255)
 }

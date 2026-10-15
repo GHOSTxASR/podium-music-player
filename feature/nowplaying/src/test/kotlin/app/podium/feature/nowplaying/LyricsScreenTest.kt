@@ -33,6 +33,7 @@ import app.podium.core.lyrics.LyricsRequest
 import app.podium.core.lyrics.LyricsResult
 import app.podium.core.model.QueueUid
 import app.podium.core.model.TrackId
+import app.podium.player.api.AudioPulse
 import app.podium.player.api.NowPlayingItem
 import app.podium.player.api.PlayIntent
 import app.podium.player.api.PlaybackController
@@ -47,6 +48,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.GraphicsMode
 import java.io.File
+import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
@@ -83,6 +85,61 @@ class LyricsScreenTest {
     @Test fun consent() = check("lyrics-consent", 0, PHONE, expectLight = true, answer = LyricsResult.NeedsConsent)
 
     @Test fun notFound() = check("lyrics-not-found", 0, SMALL, expectLight = true, answer = LyricsResult.NotFound)
+
+    /** Kicks twice a second over a quiet bass line, as the player's bass meter reports them (D-82). */
+    private val kicks = object : AudioPulse {
+        override fun bassAt(positionMs: Long): Float = 0.04f + 0.3f * kotlin.math.exp(-(positionMs % 500) / 90.0).toFloat()
+    }
+
+    @Test
+    fun `the words swell a little with the bass`() {
+        val moving = inkWidths(kicks)
+        val swing = (moving.max() - moving.min()).toFloat() / moving.min()
+        assertTrue(swing > 0.004f && swing < SWELL_LIMIT, "the line swells a little with the kicks: ${moving.joinToString()} (${"%.4f".format(swing)})")
+    }
+
+    @Test
+    fun `without a pulse the words stay still`() {
+        val still = inkWidths(AudioPulse.None)
+        assertEquals(1, still.toSet().size, "still: ${still.joinToString()}")
+    }
+
+    /** The lyric's ink width (px) in frames across a second of playback that moves with the clock. */
+    private fun inkWidths(pulse: AudioPulse): List<Int> {
+        RuntimeEnvironment.setQualifiers(PHONE)
+        val gateway = object : LyricsGateway {
+            override val attribution = LyricsAttribution("Lyrics Service", "https://example.com")
+            override suspend fun lyrics(request: LyricsRequest) = LyricsResult.Found(Lyrics.Synced(lines), attribution)
+            override fun allow() = Unit
+        }
+        compose.mainClock.autoAdvance = false
+        val start = compose.mainClock.currentTime
+        val controller = Controller { 10_000 + (compose.mainClock.currentTime - start) }
+        compose.setContent {
+            PodiumTheme(darkTheme = true, glassTier = GlassTier.Solid, displayTheme = DisplayTheme.CARBON) {
+                CompositionLocalProvider(LocalInputRouter provides InputRouter(), LocalOverlayHost provides OverlayHost()) {
+                    Box(Modifier.fillMaxSize()) { LyricsScreen(controller, gateway, pulse) }
+                }
+            }
+        }
+        // Let all the first line's words in (and the spring learn the song), then sample a second of it.
+        compose.mainClock.advanceTimeBy(2_500)
+        return List(12) {
+            compose.mainClock.advanceTimeBy(83)
+            val bitmap = compose.onRoot().captureToImage().asAndroidBitmap()
+            var min = Int.MAX_VALUE
+            var max = -1
+            for (y in 0 until bitmap.height step 2) for (x in 0 until bitmap.width) {
+                val c = bitmap.getPixel(x, y)
+                val lum = ((c shr 16 and 0xFF) + (c shr 8 and 0xFF) + (c and 0xFF)) / 3
+                if (lum < 90) {
+                    min = minOf(min, x)
+                    max = maxOf(max, x)
+                }
+            }
+            max - min
+        }
+    }
 
     private fun check(name: String, position: Long, qualifiers: String, expectLight: Boolean, answer: LyricsResult? = null) {
         RuntimeEnvironment.setQualifiers(qualifiers)
@@ -140,7 +197,9 @@ class LyricsScreenTest {
         return listOf(16, 8, 0).all { kotlin.math.abs(ch(a, it) - ch(b, it)) <= 6 }
     }
 
-    private class Controller(private val position: Long) : PlaybackController {
+    private class Controller(private val position: () -> Long) : PlaybackController {
+        constructor(position: Long) : this({ position })
+
         override val snapshot = MutableStateFlow(
             PlaybackSnapshot(
                 status = PlaybackStatus.Playing,
@@ -149,7 +208,7 @@ class LyricsScreenTest {
             ),
         )
         override val queue = MutableStateFlow(QueueView())
-        override fun positionMs() = position
+        override fun positionMs() = position()
         override fun play() = Unit
         override fun pause() = Unit
         override fun togglePlayPause() = Unit
@@ -168,6 +227,8 @@ class LyricsScreenTest {
     }
 
     private companion object {
+        /** Under two percent, as designed (the swell's scale). */
+        const val SWELL_LIMIT = 0.02f
         const val PHONE = "w411dp-h891dp-port-420dpi"
         const val SMALL = "w320dp-h568dp-port-xhdpi"
     }

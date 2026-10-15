@@ -97,9 +97,48 @@ internal fun handleDebugIntent(intent: Intent?, graph: AppGraph) {
         // Podium's space without the pinch (adb can't pinch): --es podium.debug space-enter / space-leave
         "space-enter" -> graph.debugSpace.value = true
         "space-leave" -> graph.debugSpace.value = false
+        // Invented synced lyrics for the generated test tones only (device tests of the lyric screen):
+        // lines through each tone with an instrumental gap; "lyrics-demo-off" goes back to the service.
+        "lyrics-demo" -> graph.debugLyrics.value = { request ->
+            if (!request.key.startsWith("test|")) null else {
+                val length = request.durationMs ?: 30_000L
+                val lines = DEMO_LINES.mapIndexed { i, text ->
+                    // Two thirds of the lines, a gap (the line draws on its own), then the rest.
+                    val share = if (i < 3) 0.06 + i * 0.12 else 0.62 + (i - 3) * 0.11
+                    app.podium.core.lyrics.LyricsLine((length * share).toLong(), text)
+                }
+                app.podium.core.lyrics.LyricsResult.Found(app.podium.core.lyrics.Lyrics.Synced(lines), app.podium.core.lyrics.LyricsAttribution("Podium test lyrics", "https://example.invalid"))
+            }
+        }
+        "lyrics-demo-off" -> graph.debugLyrics.value = null
+        // Open a screen without the Wheel: --es podium.place lyrics | now-playing | home
+        "open" -> graph.debugOpen.value = intent.getStringExtra("podium.place")
+        // The finish and display theme, as Settings sets them (device tests of each look's cost):
+        // --es podium.finish GLASS | CARBON | ... --es podium.display GLASS | CARBON | BONE | CUSTOM
+        "appearance" -> {
+            val current = graph.deviceSettings.appearance.value
+            val finish = app.podium.core.designsystem.shell.FinishPreset.entries.firstOrNull { it.name == intent.getStringExtra("podium.finish") } ?: current.preset
+            val display = app.podium.core.designsystem.theme.DisplayTheme.entries.firstOrNull { it.name == intent.getStringExtra("podium.display") } ?: current.display
+            graph.deviceSettings.setAppearance(current.copy(preset = finish, display = display))
+        }
+        // The lyrics theme, as Settings sets it: --es podium.theme CLASSIC | CONTINUOUS_LINE
+        "lyrics-theme" -> app.podium.core.designsystem.theme.LyricsTheme.entries.firstOrNull { it.name == intent.getStringExtra("podium.theme") }?.let { theme ->
+            val current = graph.deviceSettings.appearance.value
+            graph.deviceSettings.setAppearance(current.copy(screen = current.screen.copy(lyricsTheme = theme)))
+        }
         "pause" -> graph.playbackController.pause()
         "play" -> if (graph.playbackController.snapshot.value.intent != PlayIntent.PLAY) graph.playbackController.play()
         "next" -> graph.playbackController.next()
         "previous" -> graph.playbackController.previous()
     }
 }
+
+/** Invented words for the test tones (no song's lyrics are ever bundled). */
+private val DEMO_LINES = listOf(
+    "Quiet lights along the water",
+    "every window keeps a song",
+    "carry me across the evening",
+    "Slow and steady goes the night",
+    "hold the line and let it run",
+    "till the morning finds us home",
+)

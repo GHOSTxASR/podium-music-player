@@ -26,6 +26,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -62,8 +63,10 @@ import app.podium.core.lyrics.WordTiming
 import app.podium.feature.nowplaying.line.ContinuousLine
 import app.podium.feature.nowplaying.line.LineInk
 import app.podium.feature.nowplaying.line.LineScript
+import app.podium.player.api.AudioPulse
 import app.podium.player.api.PlayIntent
 import app.podium.player.api.PlaybackController
+import app.podium.player.api.PlaybackStatus
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 
@@ -94,9 +97,11 @@ interface LyricsGateway {
  * - The Continuous line theme (D-81, [LyricsTheme.CONTINUOUS_LINE]) draws the same lyrics as one
  *   line writing by hand on black ([ContinuousLine]); everything else here — finding the words,
  *   consent, the Wheel, the details — is shared.
+ * - In both themes the words swell very slightly with the music's bass ([pulse], D-82), like a
+ *   speaker cone: smoothly, and only while the music plays and motion isn't reduced.
  */
 @Composable
-fun LyricsScreen(controller: PlaybackController, gateway: LyricsGateway) {
+fun LyricsScreen(controller: PlaybackController, gateway: LyricsGateway, pulse: AudioPulse = AudioPulse.None) {
     val snapshot by controller.snapshot.collectAsStateWithLifecycle()
     val item = snapshot.item
     val haptics = rememberPodiumHaptics()
@@ -123,6 +128,8 @@ fun LyricsScreen(controller: PlaybackController, gateway: LyricsGateway) {
     var lastTurn by remember { mutableLongStateOf(0L) }
     var details by remember { mutableStateOf(false) }
     val playing = snapshot.intent == PlayIntent.PLAY
+    // The music actually moving (not just asked to): what the drawing's clock follows (D-82).
+    val advancing = snapshot.status == PlaybackStatus.Playing
 
     // Follow playback efficiently: wake when the next word or line is due (or twice a second to
     // notice a seek), and change state only when it changes — the screen redraws once per word.
@@ -270,7 +277,8 @@ fun LyricsScreen(controller: PlaybackController, gateway: LyricsGateway) {
                     // Synced words follow the music unless the Wheel is reading; a song without words always does.
                     following = !words || (lyrics is Lyrics.Synced && following),
                     readingLine = if (lyrics is Lyrics.Synced && following) -1 else index,
-                    playing = playing,
+                    advancing = advancing,
+                    pulse = pulse,
                     description = if (words) lines.getOrElse(index) { "" } else "Instrumental. This song has no words.",
                 )
                 if (!words) {
@@ -278,7 +286,10 @@ fun LyricsScreen(controller: PlaybackController, gateway: LyricsGateway) {
                 }
             }
             lyrics == Lyrics.Instrumental -> Message("Instrumental", "This song has no words.", ink, quiet)
-            else -> Lyric(lines.getOrElse(index) { "" }, ink, quiet, if (lyrics is Lyrics.Synced) shown else Int.MAX_VALUE)
+            else -> {
+                val swell = rememberLyricSwell(controller, pulse, advancing, enabled = !reduced)
+                Lyric(lines.getOrElse(index) { "" }, ink, quiet, if (lyrics is Lyrics.Synced) shown else Int.MAX_VALUE, swell::floatValue)
+            }
         }
         if (details && item != null) {
             Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
@@ -307,7 +318,7 @@ fun LyricsScreen(controller: PlaybackController, gateway: LyricsGateway) {
  * (only before the song's first line), a quiet ellipsis waits.
  */
 @Composable
-private fun Lyric(text: String, color: Color, quiet: Color, shown: Int) {
+private fun Lyric(text: String, color: Color, quiet: Color, shown: Int, swell: () -> Float = { 0f }) {
     val measurer = rememberTextMeasurer(cacheSize = 64)
     val base = PodiumTheme.type.title
     val typeface = LocalLyricsTypeface.current
@@ -318,6 +329,12 @@ private fun Lyric(text: String, color: Color, quiet: Color, shown: Int) {
     BoxWithConstraints(
         Modifier
             .fillMaxSize()
+            // The bass swell (D-82): a layer property read while drawing, so the words are never re-laid.
+            .graphicsLayer {
+                val s = 1f + SWELL_SCALE * swell()
+                scaleX = s
+                scaleY = s
+            }
             .semantics {
                 contentDescription = text
                 liveRegion = LiveRegionMode.Polite
@@ -396,3 +413,6 @@ private const val RESUME_FOLLOW_MS = 5_000L
 private const val DETAILS_MS = 4_000L
 private const val INVERT_MS = 90
 private const val WORD_FADE_MS = 140
+
+/** How much a strong bass hit swells the lyric (D-82): under two percent, felt more than seen. */
+private const val SWELL_SCALE = 0.018f

@@ -115,7 +115,7 @@ class PodiumPlaybackEngine(
     val player: ExoPlayer = playerFactory?.invoke(context, mediaSourceFactory) ?: buildPlayer(context)
 
     private fun buildPlayer(context: Context): ExoPlayer {
-        return ExoPlayer.Builder(context, EffectsRenderersFactory(context, equalizer))
+        return ExoPlayer.Builder(context, EffectsRenderersFactory(context, equalizer, deps.bassMeter))
             .setMediaSourceFactory(mediaSourceFactory)
             .setAudioAttributes(
                 AudioAttributes.Builder()

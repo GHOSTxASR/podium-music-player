@@ -223,9 +223,16 @@ class AppGraph(val context: Context) {
         consent = { deviceSettings.onlineLyrics.value },
     )
 
+    /**
+     * Debug builds: lyrics answered on the device instead of by the service (device tests of the lyric
+     * screen with the generated test tones and invented words, never the listener's own songs).
+     */
+    val debugLyrics = MutableStateFlow<((app.podium.core.lyrics.LyricsRequest) -> app.podium.core.lyrics.LyricsResult?)?>(null)
+
     val lyricsGateway = object : app.podium.feature.nowplaying.LyricsGateway {
         override val attribution get() = lyrics.attribution
-        override suspend fun lyrics(request: app.podium.core.lyrics.LyricsRequest) = this@AppGraph.lyrics.lyrics(request)
+        override suspend fun lyrics(request: app.podium.core.lyrics.LyricsRequest) =
+            debugLyrics.value?.invoke(request) ?: this@AppGraph.lyrics.lyrics(request)
         override fun allow() = deviceSettings.setOnlineLyrics(true)
     }
 
@@ -242,6 +249,18 @@ class AppGraph(val context: Context) {
      */
     val playbackController by lazy { OwnerAwarePlaybackController(localPlayback, remotePlayback, catalog, registry, appScope) }
     val volume by lazy { SystemVolumeController(context) }
+
+    /** The bass of what Podium's own player plays, measured in its audio path (D-82). */
+    val bassMeter = app.podium.player.service.BassMeter()
+
+    /**
+     * What the lyrics move with (D-82): the bass meter while Podium's own player has the music; nothing
+     * while another app plays it, so its record of an earlier song never moves another song's words.
+     */
+    val audioPulse = object : app.podium.player.api.AudioPulse {
+        override fun bassAt(positionMs: Long): Float =
+            if (playbackController.owner.value == OwnerAwarePlaybackController.Owner.REMOTE) -1f else bassMeter.bassAt(positionMs)
+    }
 
     /** Debug builds: open (true) or close (false) Podium's space from adb (device tests, D-54). */
     val debugSpace = MutableStateFlow<Boolean?>(null)
@@ -260,6 +279,9 @@ class AppGraph(val context: Context) {
 
     /** Debug builds: start the hands-on guide (true) as on a first launch. */
     val debugGuide = MutableStateFlow(false)
+
+    /** Debug builds: open a screen ("lyrics", "now-playing", "home") from adb. */
+    val debugOpen = MutableStateFlow<String?>(null)
 
     /** Debug builds: open the space and arrange stickers. */
     val debugArrange = MutableStateFlow(false)
@@ -301,6 +323,7 @@ class AppGraph(val context: Context) {
         override val autoplay = this@AppGraph.autoplaySettings
         override val effects = this@AppGraph.deviceSettings.effects
         override val sleepTimer = this@AppGraph.sleepTimer
+        override val bassMeter = this@AppGraph.bassMeter
         override val recommendations = this@AppGraph.recommendations
         override val equivalence = this@AppGraph.equivalence
         override suspend fun playedSince(sinceMillis: Long) = onlineStore.playedSince(sinceMillis)

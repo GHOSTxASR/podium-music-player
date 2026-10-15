@@ -785,3 +785,55 @@ Every significant decision, newest at the bottom. Major ones have an ADR in `adr
   160-line songs. Theme switching issues no player command.
 - **Not verified:** anything on the phone, including frame times on the Nothing Phone (3a)
   (UI_DEVICE_ACCEPTANCE.md §3a).
+
+### D-82 · Lyrics that move with the music: an even pen, a glowing line, a swell with the bass
+- **Context:** user report (2026-10-15, on the phone, the D-81 build): the Continuous line looks
+  good but stutters slightly. The user wants the line a bit thicker with a very subtle glow, like a
+  highlighter or a neon sign. All lyrics should react very slightly to the music, like a
+  subwoofer, smoothly, never with a sudden jerk.
+- **Cause of the stutter (measured on the phone):** the drawing followed the player's position
+  raw. Per frame that position moved unevenly: read at a different moment after each refresh, in
+  whole milliseconds, and corrected every few seconds. Worst steps were 7–270 ms off a frame, and
+  1–144 frames per 5 s were off by more than a quarter of a frame. Inside a phrase the pen's speed
+  also switched abruptly at every word.
+- **Decision (time):** `LyricClock` drives the drawing from the display's frame times, leaning
+  onto the reported position (time constant 400 ms, at most 8 % faster or slower than real time)
+  and snapping on a seek, pause or stall. The cursor takes the fractional position. Inside a phrase
+  the pace is a monotone cubic through the word keyframes: every word is still reached exactly on
+  time, but the speed changes smoothly. On the phone: 0 uneven frames in every window, worst step
+  ≤ 1.8 ms.
+- **Decision (the line):** strokes about 50 % bolder (lettering 2.3 dp). A soft glow from two
+  wider, dim strokes under every line: opaque steps toward a warm ivory, drawn from a simpler copy
+  of each route. No blur, `RenderEffect` or shader, so the glass rule holds. Four finer steps
+  looked softer close up but made frames late on the phone; two ran as smoothly as no glow.
+- **Decision (drawing cost), from measurements on the phone:** the line stays `drawLines`,
+  anti-aliased, as in D-81. The glow is drawn as GPU paths **without anti-aliasing**: strokes of at
+  most 48 segments, made once off the main thread, one path per layer for a written section, a
+  growing path for the one being written. Only the stroke under the pen is rebuilt each frame.
+  - Drawing the glow with `drawLines` kept the render thread over its 11.1 ms frame (p50 12.0 ms,
+    4.3 % janky).
+  - Anti-aliased paths were rasterised on the render thread as masks and uploaded, about 10 a
+    frame (0.6–2.7 % janky).
+  - Glow paths without anti-aliasing and the line as `drawLines` measured 0.10–0.25 % janky over
+    three runs, interleaved with the others in one session. With two glow layers it measured
+    0.30–0.36 %, as smooth as no glow (0.15–0.35 %).
+  - The glow's dim, wide steps show no aliasing.
+- **Decision (the bass):** `BassMeter`, a pass-through `AudioProcessor` after the equaliser in
+  Podium's own player. It measures the low end (120 Hz low-pass, 10 ms RMS) and files each reading
+  under the song position its audio belongs to, from Media3's `StreamMetadata.positionOffsetUs`.
+  It needs no microphone permission and changes no sample. The UI asks by playback position
+  (`AudioPulse`, `player:api`), so readings line up with what is heard although the player decodes
+  ahead.
+  `PulseFollower` turns the bass's hits (rises above its own recent average, judged against the
+  song's recent strongest) into a swell through an eased push and a critically damped spring.
+  Position and speed never jump, at any frame rate. Classic: the line scales by at most 1.8 %.
+  Continuous line: the drawing by 1.4 %, the glow brightens, the pen blooms. Nothing while another
+  app plays the music, nothing with reduced motion.
+- **Debug builds:** `lyrics-demo` (invented lyrics for the test tones only), `open`,
+  `lyrics-theme` and `appearance`, so the screen can be tested on the phone without the listener's
+  library, real lyrics, the Wheel or Settings. The motion probe is off unless `log.tag.PodiumLyricsClock` is set to DEBUG.
+- **Verified:** unit and Robolectric tests (LYRICS_ARCHITECTURE.md §10). On the phone with test
+  tones: the clock's evenness, the meter's flushes at seeks and song changes, frame times
+  (§12.7).
+- **Not verified:** the look and the swell on the listener's own music (UI_DEVICE_ACCEPTANCE.md
+  §3a.18–3a.22); 120 Hz (the phone ran the lyrics at 90 Hz).

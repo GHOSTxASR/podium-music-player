@@ -369,6 +369,20 @@ fun PodiumApp(graph: AppGraph, onSourceAction: (CapabilityAction) -> Unit, onTur
 
         val backStack = rememberSaveable(saver = BackStackSaver) { mutableStateListOf<Dest>(Dest.Home) }
         val navigator = remember(backStack) { Navigator(backStack) }
+        // Debug builds: open a screen from adb (device tests that must not turn the Wheel).
+        LaunchedEffect(navigator) {
+            graph.debugOpen.collect { place ->
+                when (place) {
+                    "now-playing" -> navigator.push(Dest.NowPlaying)
+                    "lyrics" -> {
+                        navigator.push(Dest.NowPlaying)
+                        navigator.push(Dest.Lyrics)
+                    }
+                    "home" -> while (navigator.pop()) Unit
+                }
+                if (place != null) graph.debugOpen.value = null
+            }
+        }
         val router = remember { InputRouter() }
         val overlay = remember { OverlayHost() }
         // Typing (D-45): fields open the Podium keyboard where the Wheel is, or the phone's.
@@ -921,7 +935,7 @@ private fun ScreenContent(
                 }
             },
         )
-        Dest.Lyrics -> LyricsScreen(controller, graph.lyricsGateway)
+        Dest.Lyrics -> LyricsScreen(controller, graph.lyricsGateway, graph.audioPulse)
         is Dest.Online -> OnlineScreen(
             place = screen.place,
             repository = graph.online,

@@ -36,7 +36,8 @@ internal class SectionGeometry(val path: InkPath, val wordTaus: FloatArray, val 
 
 /**
  * One stretch of the composition, with the time it covers ([startMs] to [endMs]) and how its
- * pen-time is spent over that time ([keyTimes] → [keyFractions] of [length]). [fromX]/[fromY] and
+ * pen-time is spent over that time ([keyTimes] → [keyFractions] of [length], with the pace at each
+ * key in [keySlopes] so the pen's speed changes smoothly between keys). [fromX]/[fromY] and
  * [toX]/[toY] are where the camera looks as the section begins and ends (the same point for a
  * phrase); [camera] is the pen's route smoothed, which the camera leans toward in between.
  */
@@ -61,7 +62,44 @@ internal class Section(
     val camera: FloatArray,
     val hasMotifs: Boolean,
     internal val recipe: () -> SectionGeometry,
-)
+) {
+    /** The pace (fraction a millisecond) at each key: monotone, so the pen never runs backwards. */
+    val keySlopes: FloatArray = monotoneSlopes(keyTimes, keyFractions)
+}
+
+/**
+ * Tangents for a monotone cubic through ([times], [fractions]) (Fritsch–Carlson): the curve passes
+ * through every key, never overshoots it and never runs backwards, and its slope is continuous, so a
+ * pen paced by words changes speed smoothly between them instead of lurching at each word.
+ */
+internal fun monotoneSlopes(times: LongArray, fractions: FloatArray): FloatArray {
+    val n = times.size
+    val m = FloatArray(n)
+    if (n < 2) return m
+    val d = FloatArray(n - 1) { i ->
+        val span = times[i + 1] - times[i]
+        if (span <= 0) 0f else (fractions[i + 1] - fractions[i]) / span
+    }
+    m[0] = d[0]
+    m[n - 1] = d[n - 2]
+    for (i in 1 until n - 1) m[i] = if (d[i - 1] <= 0f || d[i] <= 0f) 0f else (d[i - 1] + d[i]) / 2f
+    for (i in 0 until n - 1) {
+        if (d[i] <= 0f) {
+            m[i] = 0f
+            m[i + 1] = 0f
+            continue
+        }
+        val a = m[i] / d[i]
+        val b = m[i + 1] / d[i]
+        val h = a * a + b * b
+        if (h > 9f) {
+            val t = 3f / kotlin.math.sqrt(h)
+            m[i] = t * a * d[i]
+            m[i + 1] = t * b * d[i]
+        }
+    }
+    return m
+}
 
 /** The state of the drawing at one cursor position ([LineComposition.frameAt]); reused between frames. */
 internal class LineFrame {
@@ -73,6 +111,12 @@ internal class LineFrame {
     var cameraX = 0f
     var cameraY = 0f
 
+    /**
+     * How far the drawing swells with the bass, 0–1 (D-82). Set by the screen after [LineComposition.frameAt]
+     * — it follows the music's sound, not the position — so it takes no part in comparing frames.
+     */
+    var swell = 0f
+
     fun copyFrom(other: LineFrame) {
         section = other.section
         tau = other.tau
@@ -81,6 +125,7 @@ internal class LineFrame {
         penDown = other.penDown
         cameraX = other.cameraX
         cameraY = other.cameraY
+        swell = other.swell
     }
 
     override fun equals(other: Any?): Boolean = other is LineFrame && section == other.section && tau == other.tau &&
@@ -193,7 +238,10 @@ internal class LineComposition(
     fun sectionOfPhrase(phrase: Int): Int = phraseSections[phrase]
 
     /** The cursor at [timeMs] of playback: section index plus the fraction of its pen-time drawn. */
-    fun cursorAt(timeMs: Long): Double {
+    fun cursorAt(timeMs: Long): Double = cursorAt(timeMs.toDouble())
+
+    /** As [cursorAt], for a position between milliseconds (the screen's frame clock, D-82). */
+    fun cursorAt(timeMs: Double): Double {
         if (sections.isEmpty() || timeMs <= sections[0].startMs) return 0.0
         var lo = 0
         var hi = sections.size - 1
@@ -222,16 +270,23 @@ internal class LineComposition(
         return -1
     }
 
-    private fun fraction(section: Section, timeMs: Long): Float {
+    /** The share of [section]'s pen-time drawn at [timeMs]: a monotone cubic through its keys. */
+    private fun fraction(section: Section, timeMs: Double): Float {
         val times = section.keyTimes
         val fractions = section.keyFractions
         if (timeMs <= times[0]) return fractions[0]
         if (timeMs >= times[times.size - 1]) return fractions[fractions.size - 1]
         var i = 0
         while (i < times.size - 2 && times[i + 1] <= timeMs) i++
-        val span = times[i + 1] - times[i]
-        val f = if (span <= 0) 1f else (timeMs - times[i]).toFloat() / span
-        return fractions[i] + (fractions[i + 1] - fractions[i]) * f
+        val span = (times[i + 1] - times[i]).toFloat()
+        if (span <= 0f) return fractions[i + 1]
+        val t = ((timeMs - times[i]) / span).toFloat()
+        val slopes = section.keySlopes
+        val t2 = t * t
+        val t3 = t2 * t
+        val f = (2 * t3 - 3 * t2 + 1) * fractions[i] + (t3 - 2 * t2 + t) * span * slopes[i] +
+            (-2 * t3 + 3 * t2) * fractions[i + 1] + (t3 - t2) * span * slopes[i + 1]
+        return f.coerceIn(fractions[i], fractions[i + 1])
     }
 
     /** [section]'s drawing: rebuilt from its plan when needed, a few kept. */

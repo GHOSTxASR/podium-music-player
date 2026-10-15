@@ -124,8 +124,20 @@ On the device:
 | 3a.13 | Accents (é, ñ, ü) and another script (Cyrillic, Japanese) | accents written by the hand; other scripts traced in outline by the same line |
 | 3a.14 | Reduced motion (animator scale 0) | no glow, no shimmer, no retracing; the camera moves in cuts; the words still follow the music |
 | 3a.15 | Leave the lyrics, come back repeatedly; switch themes back and forth | no stutter in the music or the Wheel; Classic looks exactly as before |
-| 3a.16 | Profile: `adb shell dumpsys gfxinfo app.podium.debug` over a minute of lyrics | record frame times p50/p90/p99 here; nothing measured yet |
+| 3a.16 | Profile: `adb shell dumpsys gfxinfo app.podium.debug` over a minute of lyrics | record frame times p50/p90/p99 here. Test tones only so far: LYRICS_ARCHITECTURE.md §12.7 (2026-10-15) |
 | 3a.17 | TalkBack | each line announced politely; a song without words is announced as instrumental |
+| 3a.18 | Watch the pen through a whole verse at 90 and 120 Hz (D-82) | it moves at an even pace, without hitches; word to word its speed changes gradually |
+| 3a.19 | `adb shell setprop log.tag.PodiumLyricsClock DEBUG`, reopen Lyrics, `adb logcat -s PodiumLyricsClock` | "clock … uneven=0" in every 5 s window while the song plays |
+| 3a.20 | The line close up | a little bolder than before, with a soft warm glow around it like a neon sign, no hard outline; written phrases glow less |
+| 3a.21 | A song with a clear kick drum, in both lyrics themes | the words swell very slightly on each kick and settle back softly; never a jerk; a held bass note doesn't keep them swollen |
+| 3a.22 | A quiet song and a loud one; then a song another app plays; then reduced motion | the swell is alike for quiet and loud; still with another app's playback; no swell with reduced motion |
+
+Device notes, 2026-10-15 (D-82), test tones and invented lyrics only (`lyrics-demo`): 3a.19 met
+(uneven=0 in every window; the raw position had 1–144 uneven frames per window). The probe showed
+the swell responding (up to 0.67 as a tone began); it wasn't judged by eye, since steady test tones
+have no kicks. Frame times, and the drawing method chosen from them, are in LYRICS_ARCHITECTURE.md
+§12.7. The glow was checked close up on a screenshot: soft, with no visible aliasing. Not yet seen on the
+listener's own music: 3a.18, 3a.20–3a.22.
 
 ## 4. The Podium keyboard (D-45)
 

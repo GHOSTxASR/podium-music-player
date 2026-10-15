@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **Continuous line lyrics theme (D-81):** an optional look for Now Playing ▸ Lyrics. A single ivory line writes the words by hand on a black sheet, flows from each phrase into the next and draws loops, spirals and notes through instrumental passages, with a touch of champagne gold at the pen. It follows the music; seeking or rewinding brings back the same drawing. In Settings ▸ Appearance ▸ Virtual display ▸ Lyrics theme. Classic stays the default.
+- **Lyrics move with the bass (D-82):** in both lyrics themes the words swell very slightly with the music's kick drums, like a speaker cone, smoothly and only while Podium's own player plays. Not with reduced motion.
+
+### Changed
+- **Continuous line (D-82):** the pen moves at an even pace instead of stuttering, and changes speed smoothly from word to word. The line is a little bolder and glows softly, like a neon sign.
 
 ## [0.1.2] - 2026-10-12
 
