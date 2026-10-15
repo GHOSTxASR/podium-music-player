@@ -837,3 +837,36 @@ Every significant decision, newest at the bottom. Major ones have an ADR in `adr
   (§12.7).
 - **Not verified:** the look and the swell on the listener's own music (UI_DEVICE_ACCEPTANCE.md
   §3a.18–3a.22); 120 Hz (the phone ran the lyrics at 90 Hz).
+
+### D-83 · The orb: long instrumentals in the non-line lyrics themes
+- **Context:** user request (2026-10-15): a playback-reactive orb in Podium's black, ivory and
+  gold, shown in long stretches without words. The camera pulls back from the lyrics to it and goes
+  back in through its hollow centre when the words return. It must react to the song playing, not
+  the microphone, never decode twice, ignore short gaps, and keep seeking and track changes safe. A
+  21st.dev WebGL component was shared for its look. Mid-task the user added: "should only apply to
+  the non-line lyrics themes, not the lines".
+- **Decision:**
+  - Classic only (any future non-line theme too). The Continuous line is unchanged.
+  - `OrbTimeline` decides from the lyrics' own times and the playback position alone. A gap needs
+    6 s and room for the whole move. The last line lingers 1.4 s (2.8 s after an estimated end),
+    the camera pulls back over 1.8 s, holds at least 0.8 s, and goes back in over 1.5 s, arriving
+    exactly on the next line. Never for Podium-paced lyrics or plain lyrics. No words at all, or
+    none found: the orb throughout, with a small caption.
+  - `OrbStage`: one geometric camera. The page recedes into the orb's hollow through a round window
+    and comes back out of it. Reduced motion cross-fades.
+  - `OrbRenderer` (`core:designsystem`): Podium's own AGSL shader (Android 13+), with a gradient
+    drawing before that. The visual idea follows the shared component; no code was taken, and no
+    microphone, WebGL or React.
+  - The audio: D-82's meter becomes `AudioMeter` with three bands (whole, below 120 Hz, above
+    2.5 kHz). It measures only while the lyrics screen listens (`AudioPulse.listen`). `OrbDrive`
+    smooths the bands into energy, swell, ripple and glint, judged against the song's own recent
+    loudest. Paused, everything settles and the orb's time stops.
+  - Debug builds: `lyrics-demo` gains `podium.kind instrumental | notfound`, and its gap is about a
+    third of the tone.
+- **Verified:** unit and Robolectric tests (LYRICS_ARCHITECTURE.md §10), including the real shader's
+  look. On the phone with test tones and invented lyrics: short gaps kept the words; the long gap
+  pulled back to the orb and went back in on the next line's time (screen recording read frame by
+  frame); 0 janky frames during the orb; the instrumental screen showed the orb with its caption.
+- **Not verified:** the orb with the listener's own music (how it moves with real kicks and hats),
+  the not-found screen on the phone (Robolectric only), the fallback drawing below Android 13, and
+  reduced motion on the phone (the phone's animation setting wasn't changed).

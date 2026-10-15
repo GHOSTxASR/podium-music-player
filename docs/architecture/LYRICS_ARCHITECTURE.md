@@ -180,9 +180,13 @@ fades — the whole virtual display is the lyric.
 - **Accessibility:** the line is a polite live region with the full text as its description.
 - **The bass swell (D-82):** while the music plays, the line swells very slightly with the music's
   bass hits, like a speaker cone (at most 1.8 % of its size, about its centre). It reads Podium's
-  bass meter by the playback position (§13) and follows a damped spring, so it never jumps. It's a
+  audio meter by the playback position (§13) and follows a damped spring, so it never jumps. It's a
   layer property set while drawing, so nothing is laid out again. Off with reduced motion, and still
   when nothing is measured.
+- **The orb (D-83, §14):** in long stretches without words the camera pulls back from the line into
+  a softly luminous orb, and goes back in through its hollow as the next line starts. A song without
+  words, or with none found, shows the orb throughout. Classic only: the Continuous line keeps its
+  own instrumental line art.
 
 ## 8. States and copy
 
@@ -191,11 +195,11 @@ fades — the whole virtual display is the lyric.
 | nothing playing | Nothing playing | Choose a song, then open its lyrics. |
 | loading | Finding lyrics | |
 | consent | Find lyrics online? | Podium sends the song title, artist, album and length to LRCLIB. Press Center to allow. Menu goes back. |
-| not found | No lyrics found | Lyrics for this song aren't available. |
+| not found | No lyrics found | Lyrics for this song aren't available. (Classic: the orb, with "No lyrics found" small at the top, D-83.) |
 | offline | Lyrics unavailable offline | Connect, then press Center to try again. |
 | rate limited | Too many requests | Wait a moment, then press Center to try again. |
 | failed | Couldn't load lyrics | Press Center to try again. |
-| instrumental | Instrumental | This song has no words. |
+| instrumental | Instrumental | This song has no words. (Classic: the orb, with "Instrumental" small at the top, D-83; Continuous line: its line art.) |
 
 ## 9. Attribution and licensing
 
@@ -235,9 +239,18 @@ fades — the whole virtual display is the lyric.
   smooth pace, positions between milliseconds, strokes covering the route once, the glow within
   its tolerance and cheaper than the line, monotone slopes, the swell outside frame comparison),
   `LyricsScreenTest` (2 more: the Classic line swells with kicks and stays still without a pulse),
-  and `BassMeterTest` in `player:service` (6: audio untouched, a kick found at its song position
+  and `AudioMeterTest` in `player:service` (8: audio untouched, a kick found at its song position
   and a cymbal not, nothing claimed where nothing was measured, a flush starting afresh, float
-  audio, unreadable audio passed by).
+  audio, unreadable audio passed by, the three bands apart, nothing measured while nobody listens).
+- The orb (D-83, §14): `OrbTimelineTest` (8: short gaps keep the words and a long one brings the
+  orb, the camera's move never jumps, the page shows the line to come, the same state at the same
+  moment whichever way it was reached, introductions and endings, a longer linger after an estimated
+  end, no orb for Podium's own pacing or a gap without room, and the orb throughout without words,
+  wake-ups for every change), `OrbDriveTest` (4: the music moves every value within bounds, no value
+  jumps, paused it stops and settles, nothing measured settles while it drifts), `OrbLookTest` (3,
+  the real shader on Robolectric: a dark hollow in a lit ring with its light kept to the orb,
+  brighter with the music, nothing drawn when gone; `orb-*.png`), and `LyricsScreenTest.notFound`
+  (Classic shows the orb on black).
 
 ## 11. Not done / next
 
@@ -476,12 +489,17 @@ GPU's time (13–18 ms a frame) is the Glass shell's.
 
 ## 13. The bass the lyrics move with (D-82)
 
-`BassMeter` (`player:service`) is a pass-through step in Podium's own audio path, after the
-equaliser, so it hears what the listener hears. It changes no sample (tested byte for byte) and
-needs no permission: it reads the decoded audio, not the microphone or the system's output.
+`AudioMeter` (`player:service`; `BassMeter` in D-82) is a pass-through step in Podium's own audio
+path, after the equaliser, so it hears what the listener hears. It changes no sample (tested byte for
+byte) and needs no permission: it reads the decoded audio, not the microphone or the system's
+output, and never decodes anything a second time.
 
-- The audio is mixed to mono, low-passed at 120 Hz (a second-order Butterworth: kick drums and
-  bass lines, not voices or cymbals) and measured as RMS over 10 ms blocks.
+- The audio is mixed to mono and measured as RMS over 10 ms blocks three ways (D-83): whole,
+  low-passed at 120 Hz (second-order Butterworth: kick drums and bass lines) and high-passed at
+  2.5 kHz (cymbals, breath, sparkle). `AudioPulse.bassAt` reads the low band; `levelsAt` all three.
+- It measures only while something listens (`AudioPulse.listen`, held by the lyrics screen while
+  it is resumed). Otherwise the audio passes straight through and only the song position is
+  counted, so listening can start mid-stream with readings still filed in the right place.
 - **Each block is filed under the song position its audio belongs to.** Media3 tells every flush
   of the audio path where the stream starts (`StreamMetadata.positionOffsetUs`, read from
   `DefaultAudioSink` in 1.11.1), and the blocks count on from there. The player decodes a few
@@ -510,4 +528,72 @@ needs no permission: it reads the decoded audio, not the microphone or the syste
   runs. Continuous line: the same follower inside its own frame loop. Reduced motion: no swell.
 - Diagnostics (device testing): `adb shell setprop log.tag.PodiumLyricsClock DEBUG` logs, every 5 s,
   how evenly the drawing moved (raw position against the clock) and how often the bass was found;
-  `log.tag.PodiumBass DEBUG` logs each flush's starting position. Numbers only.
+  `log.tag.PodiumAudioMeter DEBUG` logs each flush's starting position. Numbers only.
+
+## 14. The orb (D-83)
+
+For the lyrics themes that aren't a line (Classic today), long stretches without words bring the
+orb: a softly luminous ring of ivory and champagne gold around a dark hollow, on black, that moves
+with the music. The Continuous line theme keeps its own instrumental line art and never shows it.
+
+### 14.1 When (`OrbTimeline`, pure)
+
+- A stretch without words runs from where a line's words end (`WordTiming.end`) to the next line's
+  start; also from the song's start to its first line, and from its last line to the song's end.
+- It brings the orb only when it lasts at least **6 s** and has room for the whole move. The last
+  line lingers 1.4 s (2.8 s when its end is only Podium's estimate, in case a held note is still
+  sounding). The camera pulls back over 1.8 s, the orb holds at least 0.8 s, and the camera goes back
+  in over 1.5 s, **arriving exactly when the next line starts**. After the last line the orb stays
+  to the end. Shorter gaps keep the words on screen.
+- The states are named: lyrics, brief gap, sustained (lingering), entering, orb, exiting. The state
+  is a pure function of the playback position, so a seek, a rewind, a pause or a new song can never
+  leave the screen between two states. Seeking into a long gap lands at the orb; seeking into words
+  lands on the words.
+- Never for lyrics timed by Podium (paced plain lyrics, D-50: their gaps are guesses) or plain
+  lyrics, and not while the Wheel is reading. Loading, consent and errors keep their messages.
+- **No words at all** (the provider says instrumental) **or none found**: the orb throughout,
+  fading in once over 0.7 s, with "Instrumental" or "No lyrics found" small at the top.
+
+### 14.2 The camera (`OrbStage`)
+
+One camera, two places: the page (the lyric on its paper) and the orb behind it on black.
+Pulling back, the page shrinks toward the display's centre, seen through a round window that closes
+in to the orb's hollow, and fades inside it. The black comes in around it at once, and the orb's
+ring comes into view from beyond the edges. Going in reverses it: the ring passes out beyond the
+display, and the next line's page grows out of the hollow, its words starting on time. While the
+orb holds, the page already shows the line to come ("…"), so it emerges ready.
+
+The zoom is geometric (4.2× between the two places) and eased. Reduced motion: the two cross-fade
+and the orb holds still.
+
+### 14.3 The orb (`OrbRenderer`, `core:designsystem`)
+
+An AGSL shader (Android 13 and later), drawn over the orb's own square, never the whole display.
+The ring's radius drifts with smooth 3D value noise taken around the circle and through time. Inside
+the ring its light spreads wide and soft; outside it falls off quickly. A second, deeper ring drifts
+on its own for depth. Brightness moves slowly along the ring, a highlight travels around it, and the
+hollow goes dark. Before Android 13: a calmer drawing of gradients moved by the same values.
+
+The music, through `OrbDrive`: the whole signal brightens the ring and speeds its drift and turn a
+little; the bass swells it (the lyrics' own spring, at most 3.5 %); the top ripples its surface; a
+hit lights the highlight toward gold. Each is judged against the song's own recent loudest and
+smoothed with an attack and a release, so nothing jumps. The orb's own time advances only while the
+music plays. Paused, or with nothing measured, every value settles and the orb holds still.
+
+The visual idea follows the "voice-powered orb" (a 21st.dev component, WebGL/OGL) the listener
+shared: a noisy luminous ring with a dark centre and a travelling light. Podium's shader is its own
+code, written for this: no code or constants were taken from the component, and nothing of its
+microphone input, WebGL or React is used. Per CLAUDE.md, `RuntimeShader` stays in
+`core:designsystem`.
+
+### 14.4 Cost
+
+- One frame loop for the stage, inside the lyrics screen. It runs only while something moves: the
+  orb shows, the swell is moving, the music is measured, or the camera moves within 0.4 s.
+  Otherwise it waits for the next change. It stops when the screen goes.
+- The shader is made once. Per frame only its uniforms change, and it covers the orb's square.
+  No blur, no offscreen pass.
+- The meter measures only while the lyrics screen is resumed.
+- **Measured on the Nothing Phone (3a), 2026-10-15**, test tones with invented lyrics, Glass
+  finish, during the orb's hold: 376 frames in about 3.6 s, **0 janky frames**. UI thread 0.8 ms
+  and render thread 2.7 ms a frame (p50), GPU 12–14 ms, about the shell's own.

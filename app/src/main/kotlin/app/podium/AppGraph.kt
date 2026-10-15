@@ -250,16 +250,19 @@ class AppGraph(val context: Context) {
     val playbackController by lazy { OwnerAwarePlaybackController(localPlayback, remotePlayback, catalog, registry, appScope) }
     val volume by lazy { SystemVolumeController(context) }
 
-    /** The bass of what Podium's own player plays, measured in its audio path (D-82). */
-    val bassMeter = app.podium.player.service.BassMeter()
+    /** How what Podium's own player plays sounds, measured in its audio path (D-82, D-83). */
+    val audioMeter = app.podium.player.service.AudioMeter()
 
     /**
-     * What the lyrics move with (D-82): the bass meter while Podium's own player has the music; nothing
-     * while another app plays it, so its record of an earlier song never moves another song's words.
+     * What the lyrics move with (D-82, D-83): the meter while Podium's own player has the music;
+     * nothing while another app plays it, so its record of an earlier song never moves another song's
+     * words or orb.
      */
     val audioPulse = object : app.podium.player.api.AudioPulse {
-        override fun bassAt(positionMs: Long): Float =
-            if (playbackController.owner.value == OwnerAwarePlaybackController.Owner.REMOTE) -1f else bassMeter.bassAt(positionMs)
+        private val remote get() = playbackController.owner.value == OwnerAwarePlaybackController.Owner.REMOTE
+        override fun bassAt(positionMs: Long): Float = if (remote) -1f else audioMeter.bassAt(positionMs)
+        override fun levelsAt(positionMs: Long, out: FloatArray): Boolean = !remote && audioMeter.levelsAt(positionMs, out)
+        override fun listen(): AutoCloseable = audioMeter.listen()
     }
 
     /** Debug builds: open (true) or close (false) Podium's space from adb (device tests, D-54). */
@@ -323,7 +326,7 @@ class AppGraph(val context: Context) {
         override val autoplay = this@AppGraph.autoplaySettings
         override val effects = this@AppGraph.deviceSettings.effects
         override val sleepTimer = this@AppGraph.sleepTimer
-        override val bassMeter = this@AppGraph.bassMeter
+        override val audioMeter = this@AppGraph.audioMeter
         override val recommendations = this@AppGraph.recommendations
         override val equivalence = this@AppGraph.equivalence
         override suspend fun playedSince(sinceMillis: Long) = onlineStore.playedSince(sinceMillis)

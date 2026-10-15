@@ -139,6 +139,31 @@ have no kicks. Frame times, and the drawing method chosen from them, are in LYRI
 §12.7. The glow was checked close up on a screenshot: soft, with no visible aliasing. Not yet seen on the
 listener's own music: 3a.18, 3a.20–3a.22.
 
+### 3b. The orb in Classic lyrics (D-83)
+
+Automated: `OrbTimelineTest`, `OrbDriveTest`, `OrbLookTest`, `AudioMeterTest`,
+`LyricsScreenTest.notFound` (LYRICS_ARCHITECTURE.md §10).
+
+On the device:
+
+| # | Step | Expect |
+|---|---|---|
+| 3b.1 | Classic lyrics on a synced song with a long instrumental break (10 s or more) | after the last line lingers, the page recedes into a ring's dark hollow; the orb holds, moving gently with the music |
+| 3b.2 | Keep watching as the next line comes | the camera goes in through the hollow; the ring passes out beyond the display; the next line's page fills it as its first word starts |
+| 3b.3 | Gaps of 1–5 s between lines | the words stay; no orb |
+| 3b.4 | Seek into the middle of a long break; seek back into the words | the orb at once; the words at once; never stuck between |
+| 3b.5 | Pause during the orb; resume | it settles and holds still; it carries on |
+| 3b.6 | A song with a clear kick and hats | the ring breathes a little with the kicks, ripples with the hats, the highlight warms to gold on hits; no jumps, no flashing |
+| 3b.7 | A song LRCLIB marks instrumental; a song with no lyrics found | the orb throughout with "Instrumental" / "No lyrics found" small at the top |
+| 3b.8 | The Continuous line theme on the same songs | no orb; its line art as before |
+| 3b.9 | Leave the lyrics and come back during an orb | the orb again, in place |
+| 3b.10 | Profile during the orb (`dumpsys gfxinfo`) | record frame times here |
+
+Device notes, 2026-10-15, test tones and invented lyrics only: 3b.1–3b.3 met (screen recording
+read frame by frame). 3b.7: the instrumental screen met (the not-found screen on Robolectric only).
+3b.10: 0 janky frames during the hold (LYRICS_ARCHITECTURE.md §14.4). Not yet seen: 3b.4–3b.6,
+3b.8, 3b.9 on the phone, and the listener's own music.
+
 ## 4. The Podium keyboard (D-45)
 
 Automated (`KeyboardEditorTest`, `WheelKeyboardTest`): typing, shift and caps lock, delete, hex

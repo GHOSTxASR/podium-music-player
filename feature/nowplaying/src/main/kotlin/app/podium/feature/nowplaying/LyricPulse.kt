@@ -1,15 +1,5 @@
 package app.podium.feature.nowplaying
 
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.FloatState
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.withFrameNanos
-import app.podium.player.api.AudioPulse
-import app.podium.player.api.PlaybackController
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
 import kotlin.math.exp
 
 /**
@@ -118,42 +108,3 @@ internal class PulseFollower {
         private const val TWO_PI = (2 * Math.PI).toFloat()
     }
 }
-
-/**
- * The swell of the lyric for the Classic theme (D-82), read in the draw phase: while the music plays
- * (and motion isn't reduced) each frame looks up the bass at the playback position and moves the
- * spring on. When the music stops, the swell settles before the frames stop. While nothing is
- * measured (another app plays the music) it looks a few times a second instead of every frame.
- * Without a [pulse] at all, nothing runs. Nothing is recomposed.
- */
-@Composable
-internal fun rememberLyricSwell(controller: PlaybackController, pulse: AudioPulse, advancing: Boolean, enabled: Boolean): FloatState {
-    val swell = remember { mutableFloatStateOf(0f) }
-    val follower = remember { PulseFollower() }
-    val clock = remember { LyricClock() }
-    LaunchedEffect(advancing, enabled, pulse) {
-        if (!enabled || pulse === AudioPulse.None) {
-            follower.reset()
-            swell.floatValue = 0f
-            return@LaunchedEffect
-        }
-        clock.reset()
-        var last = -1L
-        while (isActive && (advancing || !follower.atRest)) {
-            val now = withFrameNanos { it }
-            val position = clock.update(now, controller.positionMs(), advancing)
-            val dt = if (last < 0) 0f else (now - last) / 1e6f
-            last = now
-            val level = if (advancing) pulse.bassAt(position.toLong() + PulseFollower.LEAD_MS) else -1f
-            swell.floatValue = follower.update(level, dt)
-            if (level < 0f && follower.atRest) {
-                delay(UNMEASURED_POLL_MS)
-                last = -1L
-            }
-        }
-        if (!advancing && follower.atRest) swell.floatValue = 0f
-    }
-    return swell
-}
-
-private const val UNMEASURED_POLL_MS = 250L

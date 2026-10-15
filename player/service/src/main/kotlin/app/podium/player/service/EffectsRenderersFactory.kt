@@ -16,7 +16,7 @@ import androidx.media3.exoplayer.audio.DefaultAudioSink
 internal class EffectsRenderersFactory(
     context: Context,
     private val equalizer: EqualizerProcessor,
-    private val meter: BassMeter? = null,
+    private val meter: AudioMeter? = null,
 ) : DefaultRenderersFactory(context) {
 
     override fun buildAudioSink(context: Context, enableFloatOutput: Boolean, enableAudioOutputPlaybackParams: Boolean): AudioSink =

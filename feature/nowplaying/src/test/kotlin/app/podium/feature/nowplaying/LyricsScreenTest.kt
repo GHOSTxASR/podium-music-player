@@ -14,6 +14,7 @@ import app.podium.core.designsystem.component.LocalOverlayHost
 import app.podium.core.designsystem.component.OverlayHost
 import app.podium.core.designsystem.component.PodWheel
 import app.podium.core.designsystem.glass.GlassTier
+import app.podium.core.designsystem.orb.OrbRenderer
 import app.podium.core.designsystem.shell.DeviceAppearance
 import app.podium.core.designsystem.shell.DeviceBody
 import app.podium.core.designsystem.shell.DeviceLayout
@@ -84,7 +85,8 @@ class LyricsScreenTest {
 
     @Test fun consent() = check("lyrics-consent", 0, PHONE, expectLight = true, answer = LyricsResult.NeedsConsent)
 
-    @Test fun notFound() = check("lyrics-not-found", 0, SMALL, expectLight = true, answer = LyricsResult.NotFound)
+    // Classic with no lyrics found: the orb shows the music, on black (D-83).
+    @Test fun notFound() = check("lyrics-not-found", 0, SMALL, expectLight = false, answer = LyricsResult.NotFound, dark = OrbRenderer.Black)
 
     /** Kicks twice a second over a quiet bass line, as the player's bass meter reports them (D-82). */
     private val kicks = object : AudioPulse {
@@ -141,8 +143,10 @@ class LyricsScreenTest {
         }
     }
 
-    private fun check(name: String, position: Long, qualifiers: String, expectLight: Boolean, answer: LyricsResult? = null) {
+    private fun check(name: String, position: Long, qualifiers: String, expectLight: Boolean, answer: LyricsResult? = null, dark: androidx.compose.ui.graphics.Color = CarbonColors.canvas) {
         RuntimeEnvironment.setQualifiers(qualifiers)
+        // The orb animates for as long as it shows: the clock is moved by hand.
+        compose.mainClock.autoAdvance = false
         val gateway = object : LyricsGateway {
             override val attribution = LyricsAttribution("Lyrics Service", "https://example.com")
             override suspend fun lyrics(request: LyricsRequest) = answer ?: LyricsResult.Found(Lyrics.Synced(lines), attribution)
@@ -165,14 +169,12 @@ class LyricsScreenTest {
             }
         }
         compose.mainClock.advanceTimeBy(1_000)
-        compose.waitForIdle()
         val bitmap = compose.onRoot().captureToImage().asAndroidBitmap()
         File(File("build/screenshots").apply { mkdirs() }, "$name.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
         // Sample the display's paper near its top-left corner (inside the screen, away from the words).
         val paper = dominantNear(bitmap)
         val light = BoneColors.canvas.toArgbInt()
-        val dark = CarbonColors.canvas.toArgbInt()
-        val expected = if (expectLight) light else dark
+        val expected = if (expectLight) light else dark.toArgbInt()
         assertTrue(close(paper, expected), "the display should be ${if (expectLight) "light" else "dark"} ($name): ${Integer.toHexString(paper)}")
     }
 

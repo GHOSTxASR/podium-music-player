@@ -98,16 +98,26 @@ internal fun handleDebugIntent(intent: Intent?, graph: AppGraph) {
         "space-enter" -> graph.debugSpace.value = true
         "space-leave" -> graph.debugSpace.value = false
         // Invented synced lyrics for the generated test tones only (device tests of the lyric screen):
-        // lines through each tone with an instrumental gap; "lyrics-demo-off" goes back to the service.
-        "lyrics-demo" -> graph.debugLyrics.value = { request ->
-            if (!request.key.startsWith("test|")) null else {
-                val length = request.durationMs ?: 30_000L
-                val lines = DEMO_LINES.mapIndexed { i, text ->
-                    // Two thirds of the lines, a gap (the line draws on its own), then the rest.
-                    val share = if (i < 3) 0.06 + i * 0.12 else 0.62 + (i - 3) * 0.11
-                    app.podium.core.lyrics.LyricsLine((length * share).toLong(), text)
+        // lines through each tone with a long instrumental gap (about a third of the tone);
+        // --es podium.kind instrumental | notfound answers that instead. "lyrics-demo-off" goes back
+        // to the service.
+        "lyrics-demo" -> {
+            val kind = intent.getStringExtra("podium.kind")
+            val credit = app.podium.core.lyrics.LyricsAttribution("Podium test lyrics", "https://example.invalid")
+            graph.debugLyrics.value = { request ->
+                if (!request.key.startsWith("test|")) null else when (kind) {
+                    "instrumental" -> app.podium.core.lyrics.LyricsResult.Found(app.podium.core.lyrics.Lyrics.Instrumental, credit)
+                    "notfound" -> app.podium.core.lyrics.LyricsResult.NotFound
+                    else -> {
+                        val length = request.durationMs ?: 30_000L
+                        val lines = DEMO_LINES.mapIndexed { i, text ->
+                            // Half the lines, a long gap (the orb, or the line drawing on its own), then the rest.
+                            val share = if (i < 3) 0.06 + i * 0.12 else 0.75 + (i - 3) * 0.08
+                            app.podium.core.lyrics.LyricsLine((length * share).toLong(), text)
+                        }
+                        app.podium.core.lyrics.LyricsResult.Found(app.podium.core.lyrics.Lyrics.Synced(lines), credit)
+                    }
                 }
-                app.podium.core.lyrics.LyricsResult.Found(app.podium.core.lyrics.Lyrics.Synced(lines), app.podium.core.lyrics.LyricsAttribution("Podium test lyrics", "https://example.invalid"))
             }
         }
         "lyrics-demo-off" -> graph.debugLyrics.value = null

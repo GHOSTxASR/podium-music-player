@@ -40,10 +40,10 @@ interface PlaybackDependencies {
     val effects: StateFlow<AudioEffects> get() = DefaultEffects
 
     /**
-     * Measures the bass of what the player plays, for the lyrics to move with (D-82); null: not
+     * Measures how what the player plays sounds, for the lyrics to move with (D-82, D-83); null: not
      * measured. Only the main player is measured (crossfade's helper carries no position the UI reads).
      */
-    val bassMeter: BassMeter? get() = null
+    val audioMeter: AudioMeter? get() = null
 
     /** The sleep timer the listener sets (D-75); null: none. */
     val sleepTimer: SleepTimer? get() = null

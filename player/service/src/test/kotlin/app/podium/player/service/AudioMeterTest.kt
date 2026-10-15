@@ -3,6 +3,7 @@ package app.podium.player.service
 import androidx.media3.common.C
 import androidx.media3.common.audio.AudioProcessor
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import app.podium.player.api.AudioPulse
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.nio.ByteBuffer
@@ -14,12 +15,12 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
- * The bass meter the lyrics move with (D-82), on synthetic audio through the processor itself: it
- * changes nothing, hears the low end and not the top, and files each reading under the song position
- * its audio belongs to — across seeks.
+ * The audio meter the lyrics move with (D-82, D-83), on synthetic audio through the processor itself:
+ * it changes nothing, hears the low end, the top and the whole apart, files each reading under the
+ * song position its audio belongs to — across seeks — and measures only while something listens.
  */
 @RunWith(AndroidJUnit4::class)
-class BassMeterTest {
+class AudioMeterTest {
 
     private val rate = 44_100
 
@@ -36,13 +37,16 @@ class BassMeterTest {
         return b
     }
 
-    private fun meter(offsetUs: Long = 0, encoding: Int = C.ENCODING_PCM_16BIT): BassMeter = BassMeter().also {
+    private fun meter(offsetUs: Long = 0, encoding: Int = C.ENCODING_PCM_16BIT, listening: Boolean = true): AudioMeter = AudioMeter().also {
         it.configure(AudioProcessor.AudioFormat(rate, 2, encoding))
         it.flush(AudioProcessor.StreamMetadata(offsetUs))
+        if (listening) it.listen()
     }
 
+    private fun levels(m: AudioMeter, positionMs: Long): FloatArray? = FloatArray(3).takeIf { m.levelsAt(positionMs, it) }
+
     /** Feeds [input] in chunks the size the sink sends, draining the output each time. */
-    private fun feed(m: BassMeter, input: ByteBuffer): ByteArray {
+    private fun feed(m: AudioMeter, input: ByteBuffer): ByteArray {
         val out = java.io.ByteArrayOutputStream()
         val chunk = 4096
         while (input.hasRemaining()) {
@@ -115,10 +119,47 @@ class BassMeterTest {
 
     @Test
     fun `audio it can't read passes by unmeasured`() {
-        val m = BassMeter()
+        val m = AudioMeter()
         val format = m.configure(AudioProcessor.AudioFormat(rate, 2, C.ENCODING_PCM_24BIT))
         assertEquals(AudioProcessor.AudioFormat.NOT_SET, format)
         assertTrue(!m.isActive)
         assertEquals(-1f, m.bassAt(0))
+    }
+
+    @Test
+    fun `the low end, the top and the whole are measured apart`() {
+        val bass = meter()
+        feed(bass, tone(1.0, 55.0, 0.5))
+        val b = levels(bass, 500)!!
+        assertTrue(b[AudioPulse.LOW] > 0.3f && b[AudioPulse.WHOLE] > 0.3f, "a bass note: ${b.toList()}")
+        assertTrue(b[AudioPulse.HIGH] < 0.01f, "no top in a bass note: ${b.toList()}")
+        val top = meter()
+        feed(top, tone(1.0, 6_000.0, 0.5))
+        val t = levels(top, 500)!!
+        assertTrue(t[AudioPulse.HIGH] > 0.3f && t[AudioPulse.WHOLE] > 0.3f, "a cymbal-like tone: ${t.toList()}")
+        assertTrue(t[AudioPulse.LOW] < 0.01f, "no low end in it: ${t.toList()}")
+        // A middle tone (a voice's body) is in the whole, in neither band.
+        val mid = meter()
+        feed(mid, tone(1.0, 600.0, 0.5))
+        val m = levels(mid, 500)!!
+        assertTrue(m[AudioPulse.WHOLE] > 0.3f && m[AudioPulse.LOW] < 0.08f && m[AudioPulse.HIGH] < 0.08f, "a middle tone: ${m.toList()}")
+    }
+
+    @Test
+    fun `nothing is measured while nobody listens, and positions stay right when listening starts`() {
+        val m = meter(offsetUs = 20_000_000, listening = false)
+        val input = tone(2.0, 55.0, 0.5)
+        val first = input.duplicate().apply { limit(position() + rate * 4) } // the first second (stereo 16-bit)
+        feed(m, first)
+        assertEquals(-1f, m.bassAt(20_500), "not listening: nothing kept")
+        val handle = m.listen()
+        input.position(input.position() + rate * 4)
+        feed(m, input)
+        assertTrue(m.bassAt(21_500) > 0.3f, "listening: the second second, filed at its own place")
+        assertEquals(-1f, m.bassAt(20_500))
+        handle.close()
+        handle.close() // closing twice counts once
+        feed(m, tone(0.5, 55.0, 0.5))
+        assertEquals(-1f, m.bassAt(22_200), "stopped again")
     }
 }

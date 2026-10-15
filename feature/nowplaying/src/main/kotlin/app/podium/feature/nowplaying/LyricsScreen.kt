@@ -99,6 +99,10 @@ interface LyricsGateway {
  *   consent, the Wheel, the details — is shared.
  * - In both themes the words swell very slightly with the music's bass ([pulse], D-82), like a
  *   speaker cone: smoothly, and only while the music plays and motion isn't reduced.
+ * - In the themes that aren't a line (Classic), long stretches without words bring the orb (D-83,
+ *   [OrbStage]): the camera pulls back from the words into the orb, and goes in through its hollow
+ *   as the next line starts. A song without words, or none found, shows the orb throughout. The
+ *   Continuous line keeps its own instrumental line art.
  */
 @Composable
 fun LyricsScreen(controller: PlaybackController, gateway: LyricsGateway, pulse: AudioPulse = AudioPulse.None) {
@@ -142,10 +146,26 @@ fun LyricsScreen(controller: PlaybackController, gateway: LyricsGateway, pulse: 
         onPauseOrDispose { }
     }
     val status = snapshot.status
+    // The music's sound is measured for this screen only while it shows (D-83).
+    LifecycleResumeEffect(pulse) {
+        val listening = pulse.listen()
+        onPauseOrDispose { listening.close() }
+    }
+    val continuous = LocalLyricsTheme.current == LyricsTheme.CONTINUOUS_LINE
+    // When the orb comes (D-83): Classic only, from the lyrics' own times.
+    val orb = remember(lyrics, result, item?.durationMs, continuous) {
+        when {
+            continuous -> OrbTimeline.NEVER
+            lyrics is Lyrics.Synced -> OrbTimeline.of(lyrics, item?.durationMs)
+            lyrics == Lyrics.Instrumental || result == LyricsResult.NotFound -> OrbTimeline.ALWAYS
+            else -> OrbTimeline.NEVER
+        }
+    }
     if (lyrics is Lyrics.Synced) {
         val starts = remember(lyrics) { HashMap<Int, List<Long>>() }
         fun startsOf(i: Int) = starts.getOrPut(i) { WordTiming.starts(lyrics.lines[i], lyrics.lines.getOrNull(i + 1)?.startMs) }
-        LaunchedEffect(lyrics, following, playing, resumes, status) {
+        val orbState = remember(orb) { OrbTimeline.State() }
+        LaunchedEffect(lyrics, following, playing, resumes, status, orb) {
             if (!following) shown = Int.MAX_VALUE
             var lastPosition = -1L
             var lastClock = 0L
@@ -160,11 +180,13 @@ fun LyricsScreen(controller: PlaybackController, gateway: LyricsGateway, pulse: 
                 }
                 lastPosition = position
                 lastClock = clock
-                val i = LyricsTiming.displayIndex(lyrics.lines, position)
+                // While the orb holds and the camera goes back in, the page shows the line to come.
+                orb.at(position.toDouble(), orbState)
+                val i = if (orbState.showsNext) upcomingLine(lyrics, position) else LyricsTiming.displayIndex(lyrics.lines, position)
                 val words = startsOf(i)
                 index = i
                 shown = WordTiming.shown(words, position)
-                val next = listOfNotNull(LyricsTiming.nextChangeMs(lyrics.lines, position), WordTiming.nextWordMs(words, position)).minOrNull()
+                val next = listOfNotNull(LyricsTiming.nextChangeMs(lyrics.lines, position), WordTiming.nextWordMs(words, position), orb.nextChangeMs(position)).minOrNull()
                 delay(if (playing && next != null) (next - position).coerceIn(MIN_WAIT_MS, MAX_WAIT_MS) else MAX_WAIT_MS)
             }
         }
@@ -227,7 +249,6 @@ fun LyricsScreen(controller: PlaybackController, gateway: LyricsGateway, pulse: 
 
     // Classic: the two states of the display, Bone's paper and Carbon's black, never anything else.
     // Continuous line: one matte black sheet with ivory ink (D-81).
-    val continuous = LocalLyricsTheme.current == LyricsTheme.CONTINUOUS_LINE
     val inverted = !continuous && lines.isNotEmpty() && index % 2 == 1
     val reduced = PodiumTheme.motion.reduced
     val spec = if (reduced || continuous) snap<Color>() else tween<Color>(INVERT_MS)
@@ -263,6 +284,8 @@ fun LyricsScreen(controller: PlaybackController, gateway: LyricsGateway, pulse: 
                 ink,
                 quiet,
             )
+            // Classic: no words to show, so the orb shows the music (D-83).
+            result == LyricsResult.NotFound && orb.always -> OrbStage(controller, pulse, orb, advancing, following = true, paper, "No lyrics found", page = {})
             result == LyricsResult.NotFound -> Message("No lyrics found", "Lyrics for this song aren't available.", ink, quiet)
             result == LyricsResult.Offline -> Message("Lyrics unavailable offline", "Connect, then press Center to try again.", ink, quiet)
             result == LyricsResult.RateLimited -> Message("Too many requests", "Wait a moment, then press Center to try again.", ink, quiet)
@@ -285,10 +308,10 @@ fun LyricsScreen(controller: PlaybackController, gateway: LyricsGateway, pulse: 
                     PodiumText("Instrumental", PodiumTheme.type.footnote, quiet, textAlign = TextAlign.Center, modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth().padding(top = 14.dp))
                 }
             }
+            lyrics == Lyrics.Instrumental && orb.always -> OrbStage(controller, pulse, orb, advancing, following = true, paper, "Instrumental", page = {})
             lyrics == Lyrics.Instrumental -> Message("Instrumental", "This song has no words.", ink, quiet)
-            else -> {
-                val swell = rememberLyricSwell(controller, pulse, advancing, enabled = !reduced)
-                Lyric(lines.getOrElse(index) { "" }, ink, quiet, if (lyrics is Lyrics.Synced) shown else Int.MAX_VALUE, swell::floatValue)
+            else -> OrbStage(controller, pulse, orb, advancing, following = lyrics is Lyrics.Synced && following, paper, caption = null) { swell ->
+                Lyric(lines.getOrElse(index) { "" }, ink, quiet, if (lyrics is Lyrics.Synced) shown else Int.MAX_VALUE, swell)
             }
         }
         if (details && item != null) {
@@ -416,3 +439,10 @@ private const val WORD_FADE_MS = 140
 
 /** How much a strong bass hit swells the lyric (D-82): under two percent, felt more than seen. */
 private const val SWELL_SCALE = 0.018f
+
+/** The next line with words that hasn't started at [positionMs] (the one the orb leads into), or the last line. */
+private fun upcomingLine(lyrics: Lyrics.Synced, positionMs: Long): Int {
+    val lines = lyrics.lines
+    for (i in lines.indices) if (lines[i].startMs > positionMs && WordTiming.words(lines[i]).isNotEmpty()) return i
+    return lines.lastIndex
+}

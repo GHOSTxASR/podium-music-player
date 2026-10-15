@@ -320,6 +320,12 @@ ONLINE uses the same paper, themes and Wheel — no new paradigm. Menus are pape
 
 **Quality label wording:** `<Codec> <bitDepth>-bit/<sampleRate> kHz` for lossless (`FLAC 24-bit/96 kHz`), `<Codec> <bitrate> kbps` for lossy (`AAC 256 kbps`). Sample rates print as 44.1, 48, 88.2, 96, 176.4, 192. Never "Lossless"/"Hi-Res" unless `audio-architecture.md` §5.1 holds. No all-caps, no middle dots. Unknown → no label.
 
+### 6.10.1 `OrbRenderer` (D-83)
+The lyrics' orb: a luminous ivory ring with a touch of champagne gold around a dark hollow, on black,
+moved by an `OrbFrame` (time, turn, energy, swell, ripple, glint, alpha). An AGSL shader from
+Android 13 (the only `RuntimeShader` in the app, kept here per the glass rule), gradients before.
+Content inside the display, never glass, never on rows or text.
+
 ### 6.11 State components
 - `LoadingScreen` (D-43): nothing for 150 ms; then Podium's pinwheel, twelve spokes with the lit one stepping round about 12 times a second and a fading tail, in the display's ink (30 dp), above one footnote word ("Loading", "Reading your music"), centred in the readable region. It stands still with reduced motion. `LoadingRow` is the same as one list row (18 dp, secondary ink), e.g. "Searching". No placeholder rows, no shimmer.
 - `EmptyState`: glyph 48dp tertiary · title (17/22 600) · one-sentence message (15/22 secondary) · one action (focusable; lens lands on it).
