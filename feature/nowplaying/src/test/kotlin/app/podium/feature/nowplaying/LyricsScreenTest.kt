@@ -30,6 +30,7 @@ import app.podium.core.interaction.LocalInputRouter
 import app.podium.core.lyrics.Lyrics
 import app.podium.core.lyrics.LyricsAttribution
 import app.podium.core.lyrics.LyricsLine
+import app.podium.core.lyrics.LyricsWord
 import app.podium.core.lyrics.LyricsRequest
 import app.podium.core.lyrics.LyricsResult
 import app.podium.core.model.QueueUid
@@ -104,6 +105,49 @@ class LyricsScreenTest {
     fun `without a pulse the words stay still`() {
         val still = inkWidths(AudioPulse.None)
         assertEquals(1, still.toSet().size, "still: ${still.joinToString()}")
+    }
+
+    @Test
+    fun `the page recedes into the orb as a soft circle, not a cut rectangle`() {
+        RuntimeEnvironment.setQualifiers(PHONE)
+        // A 20 s introduction: at 2.12 s the camera is 40 % through pulling back from the waiting "…".
+        val intro = listOf(LyricsLine(20_000, "over the water", endMs = 22_000, words = listOf(LyricsWord(20_000, "over"), LyricsWord(20_600, "the"), LyricsWord(21_000, "water"))))
+        val gateway = object : LyricsGateway {
+            override val attribution = LyricsAttribution("Lyrics Service", "https://example.com")
+            override suspend fun lyrics(request: LyricsRequest) = LyricsResult.Found(Lyrics.Synced(intro), attribution)
+            override fun allow() = Unit
+        }
+        compose.mainClock.autoAdvance = false
+        compose.setContent {
+            PodiumTheme(darkTheme = true, glassTier = GlassTier.Solid, displayTheme = DisplayTheme.CARBON) {
+                CompositionLocalProvider(LocalInputRouter provides InputRouter(), LocalOverlayHost provides OverlayHost()) {
+                    Box(Modifier.fillMaxSize()) { LyricsScreen(Controller(OrbTimeline.LINGER_MS + 720L), gateway) }
+                }
+            }
+        }
+        compose.mainClock.advanceTimeBy(500)
+        val b = compose.onRoot().captureToImage().asAndroidBitmap()
+        File(File("build/screenshots").apply { mkdirs() }, "lyrics-orb-receding.png").outputStream().use { b.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        fun lum(x: Int, y: Int): Double = b.getPixel(x, y).let { ((it shr 16 and 0xFF) + (it shr 8 and 0xFF) + (it and 0xFF)) / 765.0 }
+        val cx = b.width / 2
+        val cy = b.height / 2
+        // The page's own corners are gone: black there.
+        for ((x, y) in listOf(b.width / 20 to b.height / 20, b.width * 19 / 20 to b.height / 20, b.width / 20 to b.height * 19 / 20, b.width * 19 / 20 to b.height * 19 / 20)) {
+            assertTrue(lum(x, y) < 0.1, "corner ($x, $y) is dark: ${lum(x, y)}")
+        }
+        // Where the light paper ends, going right and going down from the centre (past the "…").
+        fun edge(dx: Int, dy: Int): Int {
+            var d = 60
+            while (cx + dx * d in 0 until b.width && cy + dy * d in 0 until b.height && lum(cx + dx * d, cy + dy * d) > 0.45) d++
+            return d
+        }
+        val right = edge(1, 0)
+        val down = edge(0, 1)
+        assertTrue(lum(cx + 60, cy) > 0.7, "paper in the middle: ${lum(cx + 60, cy)}")
+        assertTrue(kotlin.math.abs(right - down) < right * 0.12, "a circle, not the page's tall rectangle: $right across, $down down")
+        // A soft edge: the light fades over many pixels, not at one.
+        val soft = (right - 10 until right + 80).count { x -> cx + x < b.width && lum(cx + x, cy) in 0.08..0.6 }
+        assertTrue(soft > 14, "the edge fades over $soft px")
     }
 
     /** The lyric's ink width (px) in frames across a second of playback that moves with the clock. */

@@ -527,7 +527,8 @@ output, and never decodes anything a second time.
   nothing is measured it looks four times a second instead of every frame; without a pulse it never
   runs. Continuous line: the same follower inside its own frame loop. Reduced motion: no swell.
 - Diagnostics (device testing): `adb shell setprop log.tag.PodiumLyricsClock DEBUG` logs, every 5 s,
-  how evenly the drawing moved (raw position against the clock) and how often the bass was found;
+  how evenly the drawing moved (raw position against the clock) and how often the bass was found,
+  and each time the orb's camera target jumps between frames (with where the capped camera went);
   `log.tag.PodiumAudioMeter DEBUG` logs each flush's starting position. Numbers only.
 
 ## 14. The orb (D-83)
@@ -558,13 +559,22 @@ with the music. The Continuous line theme keeps its own instrumental line art an
 
 One camera, two places: the page (the lyric on its paper) and the orb behind it on black.
 Pulling back, the page shrinks toward the display's centre, seen through a round window that closes
-in to the orb's hollow, and fades inside it. The black comes in around it at once, and the orb's
+in from beyond its corners to a circle (92 % of the page's width) with a softly feathered edge (the
+outer third of its radius fades into the dark), and fades inside the hollow. It is never the page's
+own edges or cut corners (a listener report, 2026-10-15). The black comes in around it at once, and the orb's
 ring comes into view from beyond the edges. Going in reverses it: the ring passes out beyond the
 display, and the next line's page grows out of the hollow, its words starting on time. While the
 orb holds, the page already shows the line to come ("…"), so it emerges ready.
 
 The zoom is geometric (4.2× between the two places) and eased. Reduced motion: the two cross-fade
 and the orb holds still.
+
+**The camera never moves faster than a whole move in 0.4 s** (`OrbTimeline.follow`). The
+timeline's own moves are slower, so they pass unchanged and still arrive on the line's time. A
+starting song's position often blips backward for a frame or two; uncapped, a blip across the
+moment the camera starts moving put the words back on screen for a frame (a listener report,
+2026-10-15). Capped, it moves the camera a few percent at most, and a real seek still lands within
+0.4 s. Opening the screen mid-orb places the camera at once.
 
 ### 14.3 The orb (`OrbRenderer`, `core:designsystem`)
 

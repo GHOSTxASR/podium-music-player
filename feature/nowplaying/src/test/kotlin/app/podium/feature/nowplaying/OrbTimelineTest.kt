@@ -135,4 +135,34 @@ class OrbTimelineTest {
         assertEquals(enter + OrbTimeline.ENTER_MS, t.nextChangeMs(enter))
         assertEquals(40_000 - OrbTimeline.EXIT_MS, t.nextChangeMs(enter + OrbTimeline.ENTER_MS))
     }
+
+    @Test
+    fun `the camera follows its moves exactly, shrugs off a blip and still answers a seek`() {
+        val t = OrbTimeline.of(song, 60_000)
+        val frame = 1000f / 90
+        // Through a whole pull-back and the way back in: the capped camera is the timeline's own.
+        var shown = at(t, 19_000).amount
+        var ms = 19_000.0
+        var worst = 0f
+        while (ms < 40_200) {
+            ms += frame
+            val target = OrbTimeline.State().also { t.at(ms, it) }.amount
+            shown = OrbTimeline.follow(shown, target, frame)
+            worst = maxOf(worst, kotlin.math.abs(shown - target))
+        }
+        assertTrue(worst < 1e-4f, "its own moves pass unchanged: $worst")
+        // At the orb, the position blips back into the words for two frames (a starting song's report).
+        var held = 1f
+        repeat(2) { held = OrbTimeline.follow(held, 0f, frame) }
+        repeat(3) { held = OrbTimeline.follow(held, 1f, frame) }
+        assertTrue(held > 0.94f, "a two-frame blip barely moves it: $held")
+        // A real seek back into the words: there within 0.4 s.
+        var seek = 1f
+        var elapsed = 0f
+        while (seek > 0f) {
+            seek = OrbTimeline.follow(seek, 0f, frame)
+            elapsed += frame
+        }
+        assertTrue(elapsed <= 400f + frame, "a seek lands in ${elapsed} ms")
+    }
 }

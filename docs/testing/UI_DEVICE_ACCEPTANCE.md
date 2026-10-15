@@ -150,6 +150,8 @@ On the device:
 |---|---|---|
 | 3b.1 | Classic lyrics on a synced song with a long instrumental break (10 s or more) | after the last line lingers, the page recedes into a ring's dark hollow; the orb holds, moving gently with the music |
 | 3b.2 | Keep watching as the next line comes | the camera goes in through the hollow; the ring passes out beyond the display; the next line's page fills it as its first word starts |
+| 3b.2a | The receding page, close up | a circle with a soft, feathered edge inside the hollow; never the page's straight sides or cut corners |
+| 3b.2b | Start songs with a long introduction several times | the "…" recedes into the orb without the words ever flashing back mid-move; with `log.tag.PodiumLyricsClock DEBUG`, any "orb target jumped" line shows the camera barely moving |
 | 3b.3 | Gaps of 1–5 s between lines | the words stay; no orb |
 | 3b.4 | Seek into the middle of a long break; seek back into the words | the orb at once; the words at once; never stuck between |
 | 3b.5 | Pause during the orb; resume | it settles and holds still; it carries on |

@@ -867,6 +867,14 @@ Every significant decision, newest at the bottom. Major ones have an ADR in `adr
   look. On the phone with test tones and invented lyrics: short gaps kept the words; the long gap
   pulled back to the orb and went back in on the next line's time (screen recording read frame by
   frame); 0 janky frames during the orb; the instrumental screen showed the orb with its caption.
+- **After a listener report (2026-10-15):** once, at a song's start, the words reappeared for a
+  moment mid-move; and the receding page showed its straight sides and cut corners. Now the camera
+  moves no faster than a whole move in 0.4 s, so a position blip can't snap the words back (its own
+  moves pass unchanged). The page recedes as a circle with a feathered edge (an alpha mask in its
+  own layer, only while it moves; no blur). Tested (`OrbTimelineTest`, `LyricsScreenTest`); not yet
+  on the phone, which disconnected. The cause of the blip is inferred, not captured: start-of-song
+  positions were seen jumping by up to 270 ms. Debug builds log the camera's target jumps, and
+  `lyrics-demo` gains `podium.kind intro`.
 - **Not verified:** the orb with the listener's own music (how it moves with real kicks and hats),
   the not-found screen on the phone (Robolectric only), the fallback drawing below Android 13, and
   reduced motion on the phone (the phone's animation setting wasn't changed).

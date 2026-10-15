@@ -202,6 +202,21 @@ internal class OrbTimeline private constructor(
             return OrbTimeline(starts.toLongArray(), ends.toLongArray(), enters.toLongArray(), exits.toLongArray(), qualifies.toBooleanArray(), always = false)
         }
 
+        /**
+         * The fastest the camera may move, in its 0–1 range per millisecond: a whole move in 400 ms.
+         * The timeline's own moves are slower (at most about 1 per second at their steepest), so they
+         * pass through unchanged and still arrive on the line's time; a position that blips backward
+         * for a frame or two (as a starting song's often does) can only nudge the camera a few
+         * percent instead of snapping the words back on screen; a real seek gets there in 0.4 s.
+         */
+        const val MAX_RATE_PER_MS = 1f / 400f
+
+        /** The camera's [current] amount moved toward [target] by at most [MAX_RATE_PER_MS] over [dtMs]. */
+        fun follow(current: Float, target: Float, dtMs: Float): Float {
+            val step = MAX_RATE_PER_MS * dtMs.coerceAtLeast(0f)
+            return if (target > current) minOf(target, current + step) else maxOf(target, current - step)
+        }
+
         /** Smoothstep: the camera starts and ends its move gently. */
         fun ease(t: Float): Float {
             val x = t.coerceIn(0f, 1f)

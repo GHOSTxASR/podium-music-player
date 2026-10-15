@@ -19,10 +19,10 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -46,7 +46,8 @@ import kotlin.math.pow
  * orb behind it on black.
  *
  * One camera moves between them. Pulling back, the page recedes into the orb's dark hollow, seen
- * through a round window, and the orb comes into view around it; going in, the camera travels
+ * through a round window whose edge is softly feathered into the dark, and the orb comes into view
+ * around it; going in, the camera travels
  * through the hollow, the orb's ring passing out beyond the display, and the next line's page fills
  * the display as it starts. How far out the camera is comes from [OrbTimeline] at the playback
  * position, so seeking and pausing land in the right place. With reduced motion the two cross-fade
@@ -76,10 +77,14 @@ internal fun OrbStage(
     val clock = remember { LyricClock() }
     val state = remember { OrbTimeline.State() }
     val levels = remember { FloatArray(3) }
+    val probe = remember { LyricMotionProbe() }
     val amount = remember { mutableFloatStateOf(if (timeline.always) 1f else 0f) }
     val swell = remember { mutableFloatStateOf(0f) }
     val tick = remember { mutableLongStateOf(0L) }
     val isFollowing by rememberUpdatedState(following)
+    // The first frame takes the camera's place outright (opening the screen mid-orb shows the orb);
+    // after that it moves no faster than OrbTimeline.MAX_RATE_PER_MS.
+    val placed = remember { booleanArrayOf(false) }
     // A song without words: the orb fades in once, then stays.
     val appear = remember(timeline) { Animatable(if (timeline.always && !reduced) 0f else 1f) }
     LaunchedEffect(timeline) { if (timeline.always) appear.animateTo(1f, tween(APPEAR_MS)) }
@@ -97,9 +102,12 @@ internal fun OrbStage(
             val nanos = withFrameNanos { it }
             val position = clock.update(nanos, controller.positionMs(), advancing)
             timeline.at(position, state)
-            amount.floatValue = if (timeline.always || isFollowing) state.amount else 0f
+            val target = if (timeline.always || isFollowing) state.amount else 0f
             val dt = if (last < 0) 0f else (nanos - last) / 1e6f
             last = nanos
+            amount.floatValue = if (placed[0]) OrbTimeline.follow(amount.floatValue, target, dt) else target
+            placed[0] = true
+            probe.target(target, position, amount.floatValue)
             val measured = advancing && pulse.levelsAt(position.toLong() + PulseFollower.LEAD_MS, levels)
             if (reduced) {
                 swell.floatValue = 0f
@@ -114,7 +122,7 @@ internal fun OrbStage(
             val settled = reduced || drive.atRest
             val next = timeline.nextChangeMs(position.toLong())
             val untilNext = if (next == null) Long.MAX_VALUE else next - position.toLong()
-            val needsFrames = !settled || (advancing && (amount.floatValue > 0f || (measured && !reduced) || untilNext < SOON_MS))
+            val needsFrames = !settled || amount.floatValue != target || (advancing && (amount.floatValue > 0f || (measured && !reduced) || untilNext < SOON_MS))
             if (!needsFrames) {
                 delay(minOf(STILL_POLL_MS, (untilNext - SOON_MS).coerceAtLeast(MIN_WAIT_MS)))
                 last = -1L
@@ -122,7 +130,6 @@ internal fun OrbStage(
         }
     }
 
-    val hollow = remember { Path() }
     Box(Modifier.fillMaxSize()) {
         // The orb's world: black, and the orb, behind the page.
         Canvas(Modifier.fillMaxSize()) {
@@ -152,20 +159,28 @@ internal fun OrbStage(
                         scaleX = s
                         scaleY = s
                         alpha = if (reduced) 1f - t else 1f - smooth(0.45f, 0.9f, t)
+                        // Masked while it moves (below), so drawn on its own: the mask must not touch the orb.
+                        compositingStrategy = if (!reduced && t > 0f) CompositingStrategy.Offscreen else CompositingStrategy.Auto
                     }
                     .drawWithContent {
+                        drawContent()
                         val t = amount.floatValue
-                        if (reduced || t <= 0f) {
-                            drawContent()
-                            return@drawWithContent
-                        }
-                        // Seen through the hollow: a round window that closes in as the page recedes.
-                        val corner = hypot(size.width / 2f, size.height / 2f) * 1.02f
-                        val window = min(size.width, size.height) * ORB_SIZE * HOLLOW * ZOOM_IN
-                        val r = corner + (window - corner) * smooth(0f, 0.35f, t)
-                        hollow.rewind()
-                        hollow.addOval(Rect(center, r))
-                        clipPath(hollow) { this@drawWithContent.drawContent() }
+                        if (reduced || t <= 0f) return@drawWithContent
+                        // Seen through the hollow: a round window, its edge softly feathered into the dark,
+                        // closing in from beyond the corners to a circle well inside the page's width.
+                        val corner = hypot(size.width / 2f, size.height / 2f) / (1f - WINDOW_FEATHER) * 1.02f
+                        val window = min(size.width, size.height) / 2f * WINDOW_SIZE
+                        val r = corner + (window - corner) * smooth(0f, 0.4f, t)
+                        drawRect(
+                            Brush.radialGradient(
+                                0f to Color.Black,
+                                (1f - WINDOW_FEATHER) to Color.Black,
+                                1f to Color.Transparent,
+                                center = center,
+                                radius = r,
+                            ),
+                            blendMode = BlendMode.DstIn,
+                        )
                     }
                     .background(paper),
             ) {
@@ -201,8 +216,11 @@ private const val ZOOM_IN = 4.2f
 /** The orb's outer radius at rest, as a share of the display's shorter side. */
 private const val ORB_SIZE = 0.42f
 
-/** The hollow's radius (where it is fully dark), as a share of the orb's (matches the shader's 0.30–0.60 fade). */
-private const val HOLLOW = 0.42f
+/** The window's radius at the orb, as a share of half the page's shorter side: a circle, not the page's edges. */
+private const val WINDOW_SIZE = 0.92f
+
+/** How much of the window's radius its soft edge takes. */
+private const val WINDOW_FEATHER = 0.32f
 private const val APPEAR_MS = 700
 private const val STILL_POLL_MS = 250L
 private const val MIN_WAIT_MS = 16L

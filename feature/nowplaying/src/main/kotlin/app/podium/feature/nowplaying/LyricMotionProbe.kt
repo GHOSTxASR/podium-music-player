@@ -66,6 +66,20 @@ internal class LyricMotionProbe {
         }
     }
 
+    private var lastTarget = Float.NaN
+
+    /**
+     * The orb's camera (D-83): logs when its target jumps between frames (a seek, or the position
+     * blipping), with where the capped camera actually went.
+     */
+    fun target(target: Float, positionMs: Double, shown: Float) {
+        if (!enabled) return
+        if (!lastTarget.isNaN() && abs(target - lastTarget) > 0.1f) {
+            Log.d(TAG, "orb target jumped %.2f → %.2f at %.0f ms; camera at %.2f".format(lastTarget, target, positionMs, shown))
+        }
+        lastTarget = target
+    }
+
     private companion object {
         const val TAG = "PodiumLyricsClock"
         const val WINDOW_NANOS = 5_000_000_000L

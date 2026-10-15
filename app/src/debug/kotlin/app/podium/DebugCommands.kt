@@ -99,7 +99,7 @@ internal fun handleDebugIntent(intent: Intent?, graph: AppGraph) {
         "space-leave" -> graph.debugSpace.value = false
         // Invented synced lyrics for the generated test tones only (device tests of the lyric screen):
         // lines through each tone with a long instrumental gap (about a third of the tone);
-        // --es podium.kind instrumental | notfound answers that instead. "lyrics-demo-off" goes back
+        // --es podium.kind instrumental | notfound answers that instead; intro starts the words late. "lyrics-demo-off" goes back
         // to the service.
         "lyrics-demo" -> {
             val kind = intent.getStringExtra("podium.kind")
@@ -111,8 +111,9 @@ internal fun handleDebugIntent(intent: Intent?, graph: AppGraph) {
                     else -> {
                         val length = request.durationMs ?: 30_000L
                         val lines = DEMO_LINES.mapIndexed { i, text ->
-                            // Half the lines, a long gap (the orb, or the line drawing on its own), then the rest.
-                            val share = if (i < 3) 0.06 + i * 0.12 else 0.75 + (i - 3) * 0.08
+                            // Half the lines, a long gap (the orb, or the line drawing on its own), then the
+                            // rest; "intro": a long introduction first, then the lines close together.
+                            val share = if (kind == "intro") 0.40 + i * 0.1 else if (i < 3) 0.06 + i * 0.12 else 0.75 + (i - 3) * 0.08
                             app.podium.core.lyrics.LyricsLine((length * share).toLong(), text)
                         }
                         app.podium.core.lyrics.LyricsResult.Found(app.podium.core.lyrics.Lyrics.Synced(lines), credit)
