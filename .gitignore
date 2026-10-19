@@ -32,6 +32,7 @@ Thumbs.db
 
 # Promotional video renders (one uses a commercial track; never commit)
 artifacts/ad/
+/*.mp4
 
 # Tooling scratch
 .kotlin/
