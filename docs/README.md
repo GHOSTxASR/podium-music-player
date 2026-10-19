@@ -10,6 +10,7 @@ Foundation written 2026-10-02 (Phases 0–2 and source research S0). Read in thi
    - [architecture/PLAYBACK_TARGETS.md](architecture/PLAYBACK_TARGETS.md) — direct streams vs remote providers vs embedded players (updated for D-48)
    - [architecture/SOURCE_CAPABILITY_MATRIX.md](architecture/SOURCE_CAPABILITY_MATRIX.md) — provider capability matrix and D-48 positions
    - [architecture/YOUTUBE_MUSIC_ARCHITECTURE.md](architecture/YOUTUBE_MUSIC_ARCHITECTURE.md) — Authoritative YouTube Music specification (D-48): sole online provider, direct Media3 streaming, BitChord reference
+   - [architecture/CUSTOM_SOURCES.md](architecture/CUSTOM_SOURCES.md) — custom sources (D-91): user-added BitChord-protocol stream sources, asked first for an EXACT copy; YouTube Music the default and fallback
    - [architecture/YOUTUBE_MUSIC_TRANSITION.md](architecture/YOUTUBE_MUSIC_TRANSITION.md) — architectural transition roadmap (historical context)
    - [research/YOUTUBE_MUSIC_IMPLEMENTATION_NOTES.md](research/YOUTUBE_MUSIC_IMPLEMENTATION_NOTES.md) — what was observed live, what is assumed, what needs the phone
    - [testing/YOUTUBE_MUSIC_DEVICE_ACCEPTANCE.md](testing/YOUTUBE_MUSIC_DEVICE_ACCEPTANCE.md) — device acceptance plan

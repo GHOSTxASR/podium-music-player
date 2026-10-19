@@ -5,7 +5,12 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.longOrNull
@@ -143,6 +148,33 @@ internal object AddonProtocol {
         val label = o["label"].text() ?: o["title"].text() ?: o["name"].text()?.takeIf { it != key } ?: humanize(key)
         return AddonSetting(key, label.take(MAX_NAME), type, o["default"].text(), options)
     }
+
+    /** A manifest written back in the protocol's own shape (what [manifest] reads). */
+    fun write(m: AddonManifest): String = buildJsonObject {
+        put("id", m.id)
+        put("name", m.name)
+        m.version?.let { put("version", it) }
+        m.description?.let { put("description", it) }
+        putJsonArray("resources") { m.resources.sorted().forEach { add(it) } }
+        put("allowDownloads", m.allowsDownloads)
+        putJsonArray("settings") {
+            m.settings.forEach { s ->
+                addJsonObject {
+                    put("key", s.key)
+                    put("label", s.label)
+                    put("type", when (s.type) {
+                        AddonSetting.Type.SELECT -> "select"
+                        AddonSetting.Type.TOGGLE -> "boolean"
+                        AddonSetting.Type.TEXT -> "text"
+                    })
+                    s.default?.let { put("default", it) }
+                    putJsonArray("options") {
+                        s.options.forEach { o -> addJsonObject { put("label", o.label); put("value", o.value) } }
+                    }
+                }
+            }
+        }
+    }.toString()
 
     /** "audio_quality" → "Audio quality". */
     private fun humanize(key: String): String =

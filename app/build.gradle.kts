@@ -80,6 +80,9 @@ dependencies {
     implementation(project(":feature:library"))
     implementation(project(":feature:online"))
     implementation(project(":sources:youtubemusic"))
+    // Custom sources (D-91): addons the listener adds for their streams.
+    implementation(project(":sources:addon"))
+    implementation(libs.kotlinx.serialization.json)
     implementation(project(":feature:nowplaying"))
     implementation(project(":feature:settings"))
     // Deterministic generated test tones: debug builds only, never shipped.

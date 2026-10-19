@@ -100,3 +100,13 @@ Scope: `sources:youtubemusic`, `player:remote`, the sign-in WebView, the online 
 | Repository | no API keys, tokens, cookies, signing keys, local paths with secrets, personal data or databases in the tree or history; test values are invented (`sapi-secret/123`) | OK |
 | Remaining risks | the unofficial basis (D-19) can change without notice; a WebView session grants Podium the account's YouTube Music session (necessary for the library — documented to the listener: "You sign in on the service's own page. Podium never sees your password."); debug builds accept debug intents from any app on the device | Accepted |
 
+## 10. Custom sources (D-91, 2026-10-19)
+
+- **What the listener adds is theirs.** A custom source is an address the listener types or pastes. Podium doesn't vet sources or what they serve; it asks them for streams of songs the listener chose, and nothing else.
+- **Sealed at rest.** Addresses (which can carry a token), manifests and settings are kept in the Keystore-backed `CredentialStore`. A source's id is a hash of its address; Settings shows only the host.
+- **Nothing leaks.** No address appears in an error, a log, an attempt record or the UI. HTTP errors become Podium's own classified errors.
+- **The network policy (D-09) holds on every hop.** https anywhere; http only on the listener's own network, after they agree. Redirects are followed by hand (at most three) and each hop is checked; so is every stream address an addon hands over, and the engine checks it again before opening it.
+- **Bounded input.** Answers are capped at 2 MB and parsed leniently without throwing. Ids, names, settings and headers are capped; a header with a bad name, or a value with a line break, is dropped. Only settings the addon declared are sent, with values it declared.
+- **Open media only.** A stream marked encrypted or DRM-protected is refused. Podium never works around protection.
+- **Identity rules unchanged.** EXACT only, the same edition, never mid-track, never across environments (CLAUDE.md, D-17, D-18, D-36).
+

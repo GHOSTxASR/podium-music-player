@@ -248,6 +248,12 @@ sealed interface Dest {
 
     /** Settings ▸ the online music service ▸ Channel (D-86). */
     data object OnlineChannel : Dest
+
+    /** Settings ▸ Custom sources (D-91), adding one, one source, and one of its text settings. */
+    data object CustomSources : Dest
+    data object AddCustomSource : Dest
+    data class CustomSource(val id: String) : Dest
+    data class CustomSourceOption(val id: String, val key: String) : Dest
     data class Album(val id: AlbumId) : Dest
     data class Artist(val id: ArtistId) : Dest
 
@@ -266,6 +272,7 @@ private val fixedDests = listOf(
     Dest.Home, Dest.Music, Dest.CoverFlow, Dest.Albums, Dest.Artists, Dest.Songs, Dest.Favorites, Dest.NowPlaying,
     Dest.UpNext, Dest.Lyrics, Dest.Settings, Dest.Appearance, Dest.DeviceBody, Dest.VirtualDisplay, Dest.Theme, Dest.Font,
     Dest.LyricsFont, Dest.LyricsTheme, Dest.Background, Dest.Finish, Dest.CustomColor, Dest.DisplayColor, Dest.OnlineSources, Dest.OnlineChannel, Dest.Equalizer,
+    Dest.CustomSources, Dest.AddCustomSource,
 ).associateBy { it.toString() }
 
 private fun Dest.encode(): String = when (this) {
@@ -275,6 +282,8 @@ private fun Dest.encode(): String = when (this) {
     is Dest.Online -> "Online:" + OnlinePlace.encode(place)
     is Dest.Level -> "Level:${level.name}"
     is Dest.EqualizerBand -> "EqualizerBand:$band"
+    is Dest.CustomSource -> "CustomSource:$id"
+    is Dest.CustomSourceOption -> "CustomSourceOption:$id\u0000$key"
     else -> toString()
 }
 
@@ -286,6 +295,9 @@ private fun decodeDest(text: String): Dest? = when {
     text.startsWith("Level:") -> AppearanceLevel.entries.firstOrNull { it.name == text.removePrefix("Level:") }?.let(Dest::Level)
     text.startsWith("EqualizerBand:") -> text.removePrefix("EqualizerBand:").toIntOrNull()
         ?.takeIf { it in app.podium.player.api.EqualizerSettings.BANDS_HZ.indices }?.let(Dest::EqualizerBand)
+    text.startsWith("CustomSource:") -> Dest.CustomSource(text.removePrefix("CustomSource:"))
+    text.startsWith("CustomSourceOption:") -> text.removePrefix("CustomSourceOption:").split('\u0000').takeIf { it.size == 2 }
+        ?.let { (id, key) -> Dest.CustomSourceOption(id, key) }
     else -> fixedDests[text]
 }
 
@@ -326,6 +338,11 @@ private fun titleOf(dest: Dest, graph: AppGraph): String = when (dest) {
     is Dest.EqualizerBand -> app.podium.feature.settings.bandLabel(dest.band)
     Dest.OnlineSources -> graph.onlineService.state.collectAsStateWithLifecycle().value?.name ?: "Online music"
     Dest.OnlineChannel -> "Channel"
+    Dest.CustomSources -> "Custom sources"
+    Dest.AddCustomSource -> "Add a source"
+    is Dest.CustomSource -> graph.customSources.sources.collectAsStateWithLifecycle().value.firstOrNull { it.id == dest.id }?.name ?: "Source"
+    is Dest.CustomSourceOption -> graph.customSources.sources.collectAsStateWithLifecycle().value
+        .firstOrNull { it.id == dest.id }?.options?.firstOrNull { it.key == dest.key }?.label ?: "Setting"
     is Dest.Album -> {
         val album by remember(dest) { graph.library.album(dest.id) }.collectAsStateWithLifecycle(initialValue = null)
         album?.album?.title ?: "Album"
@@ -824,6 +841,9 @@ private fun PreviousColumn(previous: Dest, current: Dest, graph: AppGraph, navig
         is Dest.Level -> current.level.name
         Dest.Equalizer -> "Equalizer"
         is Dest.EqualizerBand -> "Band(index=${current.band})"
+        Dest.CustomSources -> "CustomSources"
+        is Dest.CustomSource -> current.id
+        is Dest.CustomSourceOption -> "Option:${current.key}"
         else -> titleOf(current, graph)
     }
     val backLabel = "Back to ${titleOf(previous, graph)}"
@@ -966,11 +986,28 @@ private fun ScreenContent(
             onEqualizer = { navigator.push(Dest.Equalizer) },
             sleepTimer = graph.sleepTimer,
             onSleepTimer = { overlay.show(sleepTimerMenu(graph.sleepTimer)) },
+            customSources = graph.customSources,
+            onCustomSources = { navigator.push(Dest.CustomSources) },
         )
         Dest.Equalizer -> app.podium.feature.settings.EqualizerScreen(settings, onBand = { navigator.push(Dest.EqualizerBand(it)) })
         is Dest.EqualizerBand -> app.podium.feature.settings.EqualizerBandScreen(settings, screen.band, onDone = { navigator.pop() })
         Dest.OnlineSources -> OnlineServiceScreen(graph.onlineService, onChannels = { navigator.push(Dest.OnlineChannel) })
         Dest.OnlineChannel -> app.podium.feature.settings.ServiceChannelScreen(graph.onlineService)
+        Dest.CustomSources -> app.podium.feature.settings.CustomSourcesScreen(
+            graph.customSources,
+            onAdd = { navigator.push(Dest.AddCustomSource) },
+            onOpen = { navigator.push(Dest.CustomSource(it)) },
+        )
+        Dest.AddCustomSource -> app.podium.feature.settings.AddCustomSourceScreen(graph.customSources, onAdded = { navigator.pop() })
+        is Dest.CustomSource -> app.podium.feature.settings.CustomSourceScreen(
+            graph.customSources,
+            screen.id,
+            onEditText = { navigator.push(Dest.CustomSourceOption(screen.id, it)) },
+            onRemoved = { navigator.pop() },
+        )
+        is Dest.CustomSourceOption -> app.podium.feature.settings.CustomSourceTextOptionScreen(
+            graph.customSources, screen.id, screen.key, onDone = { navigator.pop() },
+        )
         is Dest.MusicFolders -> MusicFoldersScreen(graph.musicFolders, screen.path, onOpen = { navigator.push(Dest.MusicFolders(it)) })
         Dest.Appearance -> AppearanceScreen(
             settings,

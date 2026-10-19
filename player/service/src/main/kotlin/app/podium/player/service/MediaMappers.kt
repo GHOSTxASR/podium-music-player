@@ -21,16 +21,53 @@ import app.podium.core.model.Codec
 import app.podium.core.model.QueueUid
 import app.podium.player.api.QueueItem
 import app.podium.sources.api.HealthOutcome
+import app.podium.sources.api.PlayableMedia
+
+/**
+ * How the player must open a queue item's stream (D-91): a file, or a DASH or HLS manifest. The
+ * player picks the kind of source when an item is added, before its stream is known, so an item whose
+ * stream turns out to be a manifest is rebuilt for it ([QueueMediaItems.withKind]) before it opens.
+ */
+enum class StreamKind(internal val query: String?, val mimeType: String?) {
+    FILE(null, null),
+    DASH("dash", MimeTypes.APPLICATION_MPD),
+    HLS("hls", MimeTypes.APPLICATION_M3U8);
+
+    companion object {
+        fun of(media: PlayableMedia?): StreamKind {
+            val mime = media?.mimeType?.lowercase() ?: return FILE
+            return when {
+                mime == MimeTypes.APPLICATION_MPD -> DASH
+                mime.endsWith("mpegurl") -> HLS
+                else -> FILE
+            }
+        }
+    }
+}
 
 /** The URI ExoPlayer sees for a queue item; resolved to real media just before it is opened. */
 object QueueMediaItems {
     private const val SCHEME = "podium"
     private const val HOST = "queue"
+    private const val KIND = "as"
 
-    fun uriFor(uid: QueueUid): Uri = Uri.Builder().scheme(SCHEME).authority(HOST).appendPath(uid.value).build()
+    fun uriFor(uid: QueueUid, kind: StreamKind = StreamKind.FILE): Uri = Uri.Builder().scheme(SCHEME).authority(HOST).appendPath(uid.value)
+        .apply { kind.query?.let { appendQueryParameter(KIND, it) } }
+        .build()
 
     fun uidOf(uri: Uri): QueueUid? =
         if (uri.scheme == SCHEME && uri.authority == HOST) uri.lastPathSegment?.let(::QueueUid) else null
+
+    /** The kind of stream the item at [uri] was built to open. */
+    fun kindOf(uri: Uri): StreamKind = when (uri.getQueryParameter(KIND)) {
+        StreamKind.DASH.query -> StreamKind.DASH
+        StreamKind.HLS.query -> StreamKind.HLS
+        else -> StreamKind.FILE
+    }
+
+    /** [mediaItem] (one of the queue's, as the player holds it) rebuilt to open a [kind] stream. */
+    fun withKind(mediaItem: MediaItem, kind: StreamKind): MediaItem =
+        mediaItem.buildUpon().setUri(uriFor(QueueUid(mediaItem.mediaId), kind)).setMimeType(kind.mimeType).build()
 
     fun toMediaItem(item: QueueItem): MediaItem {
         val track = item.track
@@ -53,15 +90,19 @@ object QueueMediaItems {
             .setMediaType(if (track.kind == MediaKind.LIVE) MediaMetadata.MEDIA_TYPE_RADIO_STATION else MediaMetadata.MEDIA_TYPE_MUSIC)
             .setExtras(extras)
             .build()
+        // An item already resolved to a manifest (a custom source's DASH, D-91) is built for it.
+        val kind = if (track.kind == MediaKind.LIVE) StreamKind.FILE else StreamKind.of(item.selection?.media)
         return MediaItem.Builder()
             .setMediaId(item.uid.value)
-            .setUri(uriFor(item.uid))
+            .setUri(uriFor(item.uid, kind))
             .setMediaMetadata(metadata)
             .apply {
                 // A live station (D-90) is a live HLS playlist: the player must know before it loads.
                 if (track.kind == MediaKind.LIVE) {
                     setMimeType(MimeTypes.APPLICATION_M3U8)
                     setLiveConfiguration(MediaItem.LiveConfiguration.Builder().build())
+                } else {
+                    kind.mimeType?.let(::setMimeType)
                 }
             }
             .build()
@@ -123,6 +164,13 @@ object AudioQualityMapper {
 /** Raised by the data-source resolver when a queue item couldn't be resolved before opening. */
 class PodiumResolveException(val healthOutcome: HealthOutcome?, message: String) : java.io.IOException(message)
 
+/**
+ * Raised by the data-source resolver when an item built for one kind of stream resolved to another
+ * (a file's source handed a DASH manifest, D-91). Not a failure: the engine rebuilds the item for
+ * [kind] and it plays. Never let a source misread a stream it can't open.
+ */
+class PodiumReopenException(val uid: QueueUid, val kind: StreamKind) : java.io.IOException("reopen as $kind")
+
 /** Maps player errors to Podium's classified errors — raw exception text never reaches the UI. */
 object PlaybackErrors {
     /**
@@ -158,6 +206,16 @@ object PlaybackErrors {
         "NotPlayable" -> PodiumError.NotPlayable("stream")
         "Unexpected" -> PodiumError.Unexpected()
         else -> null
+    }
+
+    /** The item that has to be rebuilt for another kind of stream, when that's all [error] is. */
+    fun reopenOf(error: PlaybackException): PodiumReopenException? {
+        var cause: Throwable? = error.cause
+        while (cause != null) {
+            if (cause is PodiumReopenException) return cause
+            cause = cause.cause
+        }
+        return null
     }
 
     fun classify(error: PlaybackException): PodiumError {

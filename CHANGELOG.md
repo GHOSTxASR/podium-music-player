@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Custom sources (D-91):** add your own stream sources in Settings ▸ Custom sources: addons that speak the BitChord addon protocol (type or paste its https address, like `https://addon.example.com`). When one of them has the exact same recording of an online song, the song plays from it, lossless if that's what it serves; otherwise it plays from YouTube Music as before. Sources are asked in your order. You can turn each one on or off, change its settings (its quality, say), check it and remove it. Songs marked explicit only play from a source that says its copy is explicit too. Addresses are kept sealed on the phone, and only the host is shown.
+
 ## [0.1.3] - 2026-10-19
 
 Release notes: [docs/releases/v0.1.3.md](docs/releases/v0.1.3.md).

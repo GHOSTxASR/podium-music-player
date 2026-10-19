@@ -203,6 +203,7 @@ class PodiumPlaybackEngine(
                 if (playbackState == Player.STATE_READY) {
                     consecutiveErrors = 0
                     refreshedAfterError.clear()
+                    reopened.clear()
                     if (recovery != null) {
                         recovery = null
                         publishExtras()
@@ -300,8 +301,10 @@ class PodiumPlaybackEngine(
      */
     private fun forgetStreamsOfSourcesThatStop() {
         scope.launch {
-            deps.registry.connectedSources
-                .map { all -> all.filter { it.enabled && it.authenticationState.serves() }.mapTo(HashSet()) { it.sourceId } }
+            combine(
+                deps.registry.connectedSources.map { all -> all.filter { it.enabled && it.authenticationState.serves() }.map { it.sourceId } },
+                deps.streamProviders.serving,
+            ) { registered, custom -> registered.toHashSet() + custom }
                 .distinctUntilChanged()
                 .collect { serving ->
                     val state = queue.state.value
@@ -505,6 +508,8 @@ class PodiumPlaybackEngine(
                 .getOrElse { ResolveOutcome.Failed(app.podium.sources.api.HealthOutcome.UNKNOWN, it.message, emptyList()) }
             if (outcome is ResolveOutcome.Resolved) {
                 Log.d(TAG, "resolved $uid via ${outcome.selection.path} from ${outcome.selection.servedBy}")
+                // Before the loader waiting on this hears of it: its item may need rebuilding first.
+                matchStreamKind(uid, outcome.selection)
             } else {
                 Log.w(TAG, "could not resolve $uid: $outcome")
             }
@@ -533,12 +538,37 @@ class PodiumPlaybackEngine(
         }
     }
 
+    /**
+     * The player opens a manifest with a different kind of source than a file (D-91): when [uid]'s
+     * stream is another kind than its item was built for, the item is rebuilt for it. Live stations
+     * are built as live HLS from the start (D-90) and never change. A song already playing resumes
+     * where it was.
+     */
+    private fun matchStreamKind(uid: QueueUid, selection: Selection) {
+        if (queue.item(uid)?.track?.kind == app.podium.core.model.MediaKind.LIVE) return
+        val index = (0 until player.mediaItemCount).firstOrNull { player.getMediaItemAt(it).mediaId == uid.value } ?: return
+        val held = player.getMediaItemAt(index)
+        val kind = StreamKind.of(selection.media)
+        if (QueueMediaItems.kindOf(held.localConfiguration?.uri ?: return) == kind) return
+        val playing = index == player.currentMediaItemIndex
+        val position = if (playing) player.currentPosition else 0L
+        Log.d(TAG, "rebuilding $uid to open a $kind stream")
+        player.replaceMediaItem(index, QueueMediaItems.withKind(held, kind))
+        if (playing && position > 0) player.seekTo(index, position)
+    }
+
     private inner class QueueDataSpecResolver : ResolvingDataSource.Resolver {
         override fun resolveDataSpec(dataSpec: DataSpec): DataSpec {
             val uid = QueueMediaItems.uidOf(dataSpec.uri) ?: return dataSpec
             val selection = resolveForLoader(uid)
             val target = selection.target as? PlaybackTarget.DirectStream
                 ?: throw PodiumResolveException(null, "Route ${selection.target::class.simpleName} needs another engine")
+            // A manifest read as a file (or the other way round) would fail as bad media: the item is
+            // rebuilt for its stream instead (D-91). Live stations are always built as live HLS (D-90).
+            val kind = StreamKind.of(target.media)
+            if (kind != QueueMediaItems.kindOf(dataSpec.uri) && queue.item(uid)?.track?.kind != app.podium.core.model.MediaKind.LIVE) {
+                throw PodiumReopenException(uid, kind)
+            }
             // The platform allows cleartext only so the listener's own server can be reached; every
             // source is held to that here, whatever it hands over (D-09). A per-item refusal.
             if (!NetworkPolicy.permits(target.media.uri)) {
@@ -555,6 +585,18 @@ class PodiumPlaybackEngine(
      * pause (SkipAfter). Three consecutive failures halt instead of skipping through the whole queue.
      */
     private fun handleError(error: PlaybackException) {
+        // Not a failure: the item was built for another kind of stream than it resolved to (D-91).
+        // Rebuilt for its stream (if that hasn't happened already), it plays from where it was.
+        // Twice at most per song: a stream that keeps changing kind is a failure like any other.
+        PlaybackErrors.reopenOf(error)?.let { reopen ->
+            val times = (reopened[reopen.uid] ?: 0) + 1
+            reopened[reopen.uid] = times
+            if (times <= MAX_REOPENS) {
+                queue.item(reopen.uid)?.selection?.let { matchStreamKind(reopen.uid, it) }
+                if (player.playerError != null) player.prepare()
+                return
+            }
+        }
         val current = queue.state.value.current
         val refused = PlaybackErrors.isRefusedStream(error) && current?.selection?.media != null
         // A stream URL that's refused (expired after a long pause, revoked) is asked for afresh from
@@ -593,6 +635,9 @@ class PodiumPlaybackEngine(
     /** Items whose refused stream was asked for afresh; cleared once playback is going again. */
     private val refreshedAfterError = HashSet<QueueUid>()
 
+    /** How often each item was rebuilt for another kind of stream (D-91); cleared once playback is going again. */
+    private val reopened = HashMap<QueueUid, Int>()
+
     /** What the engine is doing about the current song's problem, for the session (and Now Playing). */
     private var recovery: app.podium.player.api.Recovery? = null
 
@@ -622,7 +667,7 @@ class PodiumPlaybackEngine(
         val claimed = selection?.media?.claimedQuality
         val extras = Bundle().apply {
             putString(PodiumExtras.CURRENT_UID, current?.uid?.value)
-            putString(PodiumExtras.SERVED_BY, selection?.servedBy?.let { deps.registry.get(it)?.descriptor?.displayName })
+            putString(PodiumExtras.SERVED_BY, selection?.servedBy?.let { (deps.registry.get(it) ?: deps.streamProviders.get(it))?.descriptor?.displayName })
             putString(PodiumExtras.SERVED_BY_ID, selection?.servedBy?.value)
             putString(PodiumExtras.RESOLUTION_PATH, selection?.path?.name)
             putString(PodiumExtras.CLAIMED_CODEC, claimed?.codec?.name)
@@ -653,6 +698,9 @@ class PodiumPlaybackEngine(
         private const val RESOLVE_TIMEOUT_MS = 25_000L
         private const val SKIP_AFTER_MS = 1_500L
         private const val MAX_CONSECUTIVE_ERRORS = 3
+
+        /** Rebuilds of one item for another kind of stream before its error counts (D-91). */
+        private const val MAX_REOPENS = 2
         private const val SAVE_DEBOUNCE_MS = 750L
         private const val POSITION_SAVE_INTERVAL_MS = 10_000L
         private const val RECENT_WINDOW_MS = 6 * 60 * 60 * 1000L

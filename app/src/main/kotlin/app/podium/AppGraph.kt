@@ -64,7 +64,16 @@ class AppGraph(val context: Context) {
      * searches and the listener's "not the same song", kept across restarts; used to play a twin.
      */
     val equivalence = DatabaseEquivalenceStore(database, appScope).also { store -> appScope.launch { store.load() } }
-    val resolver = StreamResolver(registry, health, matcher, clock, equivalence = equivalence)
+
+    /** Secrets for sources the listener signs in to (D-37): sealed with a Keystore key, never logged. */
+    val credentials = KeystoreCredentialStore(context)
+
+    /**
+     * Custom sources (D-91): addons the listener added for their streams. Asked first, in their order,
+     * for an EXACT copy of an online song; the song's own source is the fallback. Never in the registry.
+     */
+    val customSources = CustomSources(credentials, health, appScope, clock::nowMillis)
+    val resolver = StreamResolver(registry, health, matcher, clock, equivalence = equivalence, preferred = customSources)
 
     val libraryStore = LibraryStore(database)
     val catalog = TrackCatalog(registry) { id -> libraryStore.track(id) }
@@ -78,9 +87,6 @@ class AppGraph(val context: Context) {
 
     /** Which sources are on (D-35): stored, applied once every source is registered. */
     val sourceSettings = SourceSettings(registry, SharedPrefsSourcePreferences(context))
-
-    /** Secrets for sources the listener signs in to (D-37): sealed with a Keystore key, never logged. */
-    val credentials = KeystoreCredentialStore(context)
 
     /** Where Podium hands YouTube Music songs to play (YOUTUBE_MUSIC_ARCHITECTURE §8): the official app. */
     val remotePlayback = MediaSessionRemotePlayback(
@@ -329,6 +335,7 @@ class AppGraph(val context: Context) {
         override val audioMeter = this@AppGraph.audioMeter
         override val recommendations = this@AppGraph.recommendations
         override val equivalence = this@AppGraph.equivalence
+        override val streamProviders = this@AppGraph.customSources
         override suspend fun playedSince(sinceMillis: Long) = onlineStore.playedSince(sinceMillis)
 
         override fun sessionActivity(context: Context): PendingIntent = PendingIntent.getActivity(

@@ -70,7 +70,7 @@ import app.podium.core.interaction.WheelContext
 import app.podium.core.interaction.rememberFocusListState
 import app.podium.core.interaction.rememberPodiumHaptics
 
-private enum class SettingsRow { Appearance, PodiumSpace, FullScreen, TitleBarBattery, Keyboard, MusicFolders, OnlineSources, Autoplay, Recommendations, AvoidRepeats, Crossfade, Equalizer, SleepTimer, OnlineLyrics, LyricsCredit, Haptics, Clicks, StartupSound }
+private enum class SettingsRow { Appearance, PodiumSpace, FullScreen, TitleBarBattery, Keyboard, MusicFolders, OnlineSources, CustomSources, Autoplay, Recommendations, AvoidRepeats, Crossfade, Equalizer, SleepTimer, OnlineLyrics, LyricsCredit, Haptics, Clicks, StartupSound }
 
 /**
  * Settings (D-26, D-32, D-35): the device's look, which folders hold its music, which online sources it
@@ -91,6 +91,9 @@ fun SettingsScreen(
     /** The sleep timer (D-75): its row shows when the music stops; choosing opens its choices. */
     sleepTimer: SleepTimer? = null,
     onSleepTimer: () -> Unit = {},
+    /** Settings ▸ Custom sources (D-91): the listener's own stream sources; null in a build without online music. */
+    customSources: CustomSourcesSettings? = null,
+    onCustomSources: () -> Unit = {},
 ) {
     val appearance by repository.appearance.collectAsStateWithLifecycle()
     val startupSound by repository.startupSound.collectAsStateWithLifecycle()
@@ -107,6 +110,7 @@ fun SettingsScreen(
     val selection by folders.selection.collectAsStateWithLifecycle()
     val service by onlineService.state.collectAsStateWithLifecycle()
     val effects by repository.effects.collectAsStateWithLifecycle()
+    val customList by (customSources?.sources ?: remember { kotlinx.coroutines.flow.MutableStateFlow(emptyList<CustomSourceState>()) }).collectAsStateWithLifecycle()
     val overlay = app.podium.core.designsystem.component.LocalOverlayHost.current
     val sleepState by (sleepTimer?.state ?: remember { kotlinx.coroutines.flow.MutableStateFlow<SleepTimerState>(SleepTimerState.Off) }).collectAsStateWithLifecycle()
     val sleepSummary by androidx.compose.runtime.produceState(SleepTimerText.summary(sleepState, sleepTimer?.remainingMs()), sleepState) {
@@ -118,7 +122,11 @@ fun SettingsScreen(
     }
     val haptics = rememberPodiumHaptics()
     // Only a build with an online service has anything to choose there.
-    val rows = SettingsRow.entries.filter { (it != SettingsRow.OnlineSources || service != null) && (it != SettingsRow.SleepTimer || sleepTimer != null) }
+    val rows = SettingsRow.entries.filter {
+        (it != SettingsRow.OnlineSources || service != null) &&
+            (it != SettingsRow.CustomSources || (service != null && customSources != null)) &&
+            (it != SettingsRow.SleepTimer || sleepTimer != null)
+    }
     val focus = rememberFocusListState("settings")
     val activate: (Int) -> Unit = { index ->
         when (rows[index]) {
@@ -138,6 +146,7 @@ fun SettingsScreen(
             }
             SettingsRow.MusicFolders -> onMusicFolders()
             SettingsRow.OnlineSources -> onOnlineService()
+            SettingsRow.CustomSources -> onCustomSources()
             SettingsRow.Autoplay -> {
                 haptics.confirm()
                 repository.setAutoplay(!autoplayOn)
@@ -218,6 +227,7 @@ fun SettingsScreen(
                 },
             )
             SettingsRow.OnlineSources -> MenuRow(service?.name ?: "Online music", focused, value = onlineServiceSummary(service))
+            SettingsRow.CustomSources -> MenuRow("Custom sources", focused, value = customSourcesSummary(customList))
             SettingsRow.Autoplay -> MenuRow("Autoplay", focused, value = if (autoplayOn) "On" else "Off", showChevron = false)
             SettingsRow.Recommendations -> MenuRow("Online recommendations", focused, value = if (recommendationsOn) "On" else "Off", enabled = autoplayOn, showChevron = false)
             SettingsRow.AvoidRepeats -> MenuRow("Avoid repeats", focused, value = if (avoidRepeatsOn) "On" else "Off", enabled = autoplayOn, showChevron = false)

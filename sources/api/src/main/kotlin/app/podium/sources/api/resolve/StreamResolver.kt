@@ -170,7 +170,7 @@ class StreamResolver(
             val servedTrack = request.pinned?.servedTrack ?: track
             val path = request.pinned?.path ?: ResolutionPath.OWN_SOURCE
             // The pinned stream was refused: the source mustn't answer with the same one.
-            runCatching { registry.get(pinnedSource)?.playback?.forgetStream(servedTrack) }
+            runCatching { (registry.get(pinnedSource) ?: preferred.get(pinnedSource))?.playback?.forgetStream(servedTrack) }
             return resolveFrom(pinnedSource, servedTrack, request, path, null, attempts)
                 ?: lastFailure(attempts)
         }
@@ -259,8 +259,9 @@ class StreamResolver(
         match: MatchResult?,
         attempts: MutableList<ResolveAttempt>,
     ): ResolveOutcome? {
-        val source = registry.get(sourceId) ?: preferred.get(sourceId)
-        if (source == null || !(registry.isEnabled(sourceId) || preferred.get(sourceId) != null)) {
+        val registered = registry.get(sourceId)
+        val source = registered ?: preferred.get(sourceId)
+        if (source == null || (registered != null && !registry.isEnabled(sourceId))) {
             attempts += ResolveAttempt(path, sourceId, ResolveAttempt.Kind.SKIPPED, missReason = MissReason.SOURCE_UNAVAILABLE)
             return null
         }

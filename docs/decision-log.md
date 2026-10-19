@@ -1021,3 +1021,56 @@ Every significant decision, newest at the bottom. Major ones have an ADR in `adr
   resolved to their audio-only AAC-LC playlists, and ExoPlayer loaded one as live HLS with
   AAC-LC 44.1 kHz stereo (Robolectric, which has no AAC decoder to play it). Unit tests cover the
   search parser, the playlist choice, the source and the media item. Not yet on the phone.
+
+### D-91 · Custom sources: the listener's own stream sources, YouTube Music the default and fallback
+- **Context:** the owner wants multi-source playback like BitChord's custom addons. YouTube Music
+  stays the default, always present, and the fallback. Listeners add their own sources (for
+  lossless or any other quality) under a separate "Custom sources" option, each with its own menu.
+  The owner supplied an addon to test with. CLAUDE.md made YouTube Music the sole online provider.
+- **Decision:**
+  - **Catalogue vs streams.** YouTube Music remains the only online *catalogue*. A custom source is
+    a *stream* source only: never browsed, never searched by the listener, never in Online, the
+    library, autoplay or recommendations, and never in the `SourceRegistry`. A new provider-neutral
+    seam, `StreamProviders` (in `sources:api`), hands the resolver the listener's sources.
+    CLAUDE.md is amended accordingly.
+  - **Resolution.** For an online song (not for downloads, not with `FallbackPolicy.NONE`), the
+    resolver first asks the custom sources that are on, in the listener's order, after the pinned
+    and owned-copy steps and before the song's own source.
+    - Only an **EXACT** match plays, and only the **same edition**: where either side names explicit
+      or clean, the other must name the same one.
+    - All custom sources together get 8 s. After that, or when none has the song, YouTube Music plays
+      it. The path is `ResolutionPath.PREFERRED_SOURCE`.
+    - Health, pins and refresh after a refused stream work as for any source. One that is turned off
+      or removed takes its pinned streams with it, except the song playing (D-18).
+  - **Protocol.** The BitChord addon protocol: `manifest.json`, `search?q=`, `stream/{id}`, with the
+    listener's settings as query parameters. It is implemented independently in a new pure-JVM
+    `sources:addon` module, with lenient parsing, caps, no address in any error and the network
+    policy on every hop.
+    - DASH, HLS and file streams are played. Encrypted or DRM streams are refused.
+    - The addon's quality text is kept as a claim only. Labels come from the decoder.
+  - **Engine.** A queue item's placeholder URI carries the kind of stream it was built for. An item
+    whose stream turns out to be DASH or HLS is rebuilt for it before it opens. A mismatch the loader
+    still sees (`PodiumReopenException`) is a rebuild, never an error or a skip.
+    - Live stations, local music and YouTube Music items are unchanged.
+    - `media3-exoplayer-dash` is added.
+  - **App.** The sources are kept sealed in the Keystore `CredentialStore`. Settings ▸ Custom
+    sources has the list, **Add a source** (type or paste; the manifest is fetched first; http on
+    the own network asks first) and, per source: on or off, its declared settings, move up or down,
+    check now, its host and its problem, and Remove (confirmed).
+  - Details: [architecture/CUSTOM_SOURCES.md](architecture/CUSTOM_SOURCES.md).
+- **Consequences:**
+  - With an addon that doesn't mark explicit songs (the test addon doesn't), songs YouTube Music marks
+    explicit always play from YouTube Music.
+  - Album titles must agree where both sides give one, so a deluxe-edition copy doesn't count for the
+    standard album's song.
+  - Custom sources apply only to songs Podium plays itself, not to songs handed to another app.
+- **Verified:**
+  - The test addon's manifest, search and stream answers were read from this machine (metadata only,
+    no audio downloaded). Its plain https address (no `/manifest.json`) adds as is.
+  - Its stream answers were a static DASH manifest with one FLAC representation on one read, and a
+    direct FLAC file on a later one. Both kinds are handled.
+  - Fixtures follow those shapes. Unit tests cover the protocol, the source against scripted HTTP
+    and against a local HTTP server, the resolver step and the store.
+  - Engine tests play a generated FLAC-in-fMP4 DASH stream through real DASH parsing and extraction,
+    and measure FLAC. Layout tests cover every screen.
+  - Not yet on the phone.

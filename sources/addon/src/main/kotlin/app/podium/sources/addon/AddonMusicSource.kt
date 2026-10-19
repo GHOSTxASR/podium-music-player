@@ -215,4 +215,9 @@ object Addons {
     suspend fun manifest(base: String): Outcome<AddonManifest> = manifest(base, UrlConnectionAddonTransport())
 
     internal suspend fun manifest(base: String, transport: AddonTransport): Outcome<AddonManifest> = AddonClient(base, transport).manifest()
+
+    /** [manifest] as manifest JSON, for keeping it on the phone; [readManifest] reads it back. */
+    fun writeManifest(manifest: AddonManifest): String = AddonProtocol.write(manifest)
+
+    fun readManifest(text: String): AddonManifest? = AddonProtocol.manifest(text.toByteArray())
 }

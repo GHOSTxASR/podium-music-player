@@ -12,6 +12,7 @@ class AddonsTest {
     @Test
     fun `the address is read with or without the manifest`() {
         val expected = NetworkPolicy.Verdict.Secure("https://addon.example.com")
+        assertEquals(expected, Addons.address("https://addon.example.com"), "the address as a source gives it")
         assertEquals(expected, Addons.address("https://addon.example.com/manifest.json"))
         assertEquals(expected, Addons.address("https://addon.example.com/"))
         assertEquals(expected, Addons.address("  addon.example.com "))
@@ -36,5 +37,18 @@ class AddonsTest {
     @Test
     fun `the listener sees the host alone`() {
         assertEquals("addon.example.com", Addons.host("https://addon.example.com/u/secret-token"))
+    }
+
+    @Test
+    fun `a kept manifest reads back the same`() {
+        val m = AddonProtocol.manifest(Fixtures.MANIFEST.toByteArray())!!
+        assertEquals(m, Addons.readManifest(Addons.writeManifest(m)))
+        val mixed = AddonManifest(
+            id = "x", name = "X", version = null, description = "About",
+            resources = setOf("stream"),
+            settings = listOf(AddonSetting("hires", "Hi-res", AddonSetting.Type.TOGGLE, "true"), AddonSetting("region", "Region", AddonSetting.Type.TEXT)),
+            allowsDownloads = true,
+        )
+        assertEquals(mixed, Addons.readManifest(Addons.writeManifest(mixed)))
     }
 }
