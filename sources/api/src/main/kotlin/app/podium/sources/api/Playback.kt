@@ -92,6 +92,12 @@ enum class ResolutionPath {
     OWN_SOURCE,
     OWNED_COPY,
     EXACT_FALLBACK,
+
+    /**
+     * An EXACT copy from a source the listener added for its streams (D-91, custom sources), asked
+     * before the track's own source; the own source is the fallback.
+     */
+    PREFERRED_SOURCE,
 }
 
 enum class MissReason {

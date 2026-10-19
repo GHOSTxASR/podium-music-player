@@ -3,6 +3,7 @@ package app.podium.sources.api.resolve
 import app.podium.core.common.Clock
 import app.podium.core.common.Outcome
 import app.podium.core.common.PodiumError
+import app.podium.core.model.Explicitness
 import app.podium.core.model.SourceId
 import app.podium.core.model.Track
 import app.podium.sources.api.Capability
@@ -106,10 +107,12 @@ fun interface OwnedCopyLocator {
 /**
  * Turns a queued track into a playback [Selection] (MUSIC_SOURCE_ARCHITECTURE §8):
  *
- *   pinned selection (still valid) → owned copy → the track's own source → EXACT-match fallback
+ *   pinned selection (still valid) → owned copy → the listener's custom sources ([preferred], D-91)
+ *   → the track's own source → EXACT-match fallback
  *
- * Fallback never changes the recording: it requires an EXACT match, which by construction never
- * crosses live/studio, remix/original, explicit/clean, or different-artist boundaries. It happens
+ * A custom source or a fallback never changes the recording: both require an EXACT match, which by
+ * construction never crosses live/studio, remix/original, explicit/clean, or different-artist
+ * boundaries (a custom source must also show the same edition when the song's is known). It happens
  * only here, before playback starts; a playing item is never re-resolved to a different source.
  */
 class StreamResolver(
@@ -122,6 +125,10 @@ class StreamResolver(
     private val fallbackSearchLimit: Int = 10,
     /** How long one source may take to resolve or search before it counts as a failure and the next is tried. */
     private val sourceTimeoutMillis: Long = DEFAULT_SOURCE_TIMEOUT_MILLIS,
+    /** The listener's custom sources (D-91), asked before a song's own source. */
+    private val preferred: StreamProviders = StreamProviders.None,
+    /** How long all custom sources together may take before the song's own source plays it. */
+    private val preferredBudgetMillis: Long = DEFAULT_PREFERRED_BUDGET_MILLIS,
 ) {
     private val inFlightLock = Mutex()
     private val inFlight = mutableMapOf<String, CompletableDeferred<ResolveOutcome>>()
@@ -192,11 +199,42 @@ class StreamResolver(
             )
         }
 
-        // 2. The track's own source.
+        // 2. The listener's custom sources (D-91), in their order: an EXACT copy of the same edition,
+        //    within one time budget for them all; otherwise the song's own source plays it.
+        if (request.fallbackPolicy == FallbackPolicy.EXACT_ONLY && request.purpose != Purpose.DOWNLOAD && environment != null) {
+            val providers = preferred.ordered(environment).filter { it.descriptor.id != track.source.sourceId }
+            if (providers.isNotEmpty()) {
+                var finished = false
+                val chosen = withTimeoutOrNull(preferredBudgetMillis) {
+                    for (source in providers) {
+                        val candidate = knownExactEquivalent(source, track)
+                            ?: findExactEquivalent(source, track, attempts, ResolutionPath.PREFERRED_SOURCE)
+                            ?: continue
+                        if (!sameEdition(track, candidate.first)) {
+                            attempts += ResolveAttempt(
+                                ResolutionPath.PREFERRED_SOURCE, source.descriptor.id, ResolveAttempt.Kind.SKIPPED,
+                                detail = "edition not shown",
+                            )
+                            continue
+                        }
+                        resolveFrom(source.descriptor.id, candidate.first, request, ResolutionPath.PREFERRED_SOURCE, candidate.second, attempts)
+                            ?.let { return@withTimeoutOrNull it }
+                    }
+                    finished = true
+                    null
+                }
+                if (chosen == null && !finished) {
+                    attempts += ResolveAttempt(ResolutionPath.PREFERRED_SOURCE, null, ResolveAttempt.Kind.SKIPPED, detail = "custom sources took too long")
+                }
+                chosen?.let { return it }
+            }
+        }
+
+        // 3. The track's own source.
         resolveFrom(track.source.sourceId, track, request, ResolutionPath.OWN_SOURCE, null, attempts)
             ?.let { return it }
 
-        // 3. EXACT-match fallback on other enabled sources of the same environment, in user priority
+        // 4. EXACT-match fallback on other enabled sources of the same environment, in user priority
         //    order — never LOCAL <-> ONLINE (D-36). A copy already known to be EXACT (several sources
         //    answered the same search, D-35) is used directly; otherwise the source is searched and
         //    the matcher decides.
@@ -221,8 +259,8 @@ class StreamResolver(
         match: MatchResult?,
         attempts: MutableList<ResolveAttempt>,
     ): ResolveOutcome? {
-        val source = registry.get(sourceId)
-        if (source == null || !registry.isEnabled(sourceId)) {
+        val source = registry.get(sourceId) ?: preferred.get(sourceId)
+        if (source == null || !(registry.isEnabled(sourceId) || preferred.get(sourceId) != null)) {
             attempts += ResolveAttempt(path, sourceId, ResolveAttempt.Kind.SKIPPED, missReason = MissReason.SOURCE_UNAVAILABLE)
             return null
         }
@@ -282,10 +320,24 @@ class StreamResolver(
         return copy to decision
     }
 
+    /**
+     * A custom source's copy must be the same edition (D-91): where either side names an edition
+     * (explicit or clean), the other has to name the same one. An edition left unstated isn't proof,
+     * so an explicit song never plays from a copy that doesn't say it is explicit, and a song its own
+     * source doesn't mark never plays from a copy marked explicit (that's usually the other edition).
+     */
+    private fun sameEdition(original: Track, copy: Track): Boolean = edition(original.explicitness) == edition(copy.explicitness)
+
+    private fun edition(e: Explicitness): Explicitness? = when (e) {
+        Explicitness.EXPLICIT, Explicitness.CLEAN -> e
+        Explicitness.NOT_EXPLICIT, Explicitness.UNKNOWN -> null
+    }
+
     private suspend fun findExactEquivalent(
         source: MusicSource,
         track: Track,
         attempts: MutableList<ResolveAttempt>,
+        step: ResolutionPath = ResolutionPath.EXACT_FALLBACK,
     ): Pair<Track, MatchResult>? {
         val catalog = source.catalog ?: return null
         if (!source.capabilities.value.isUsable(Capability.SEARCH)) return null
@@ -305,7 +357,7 @@ class StreamResolver(
                     // A broken search is a failure and counts as one; finding nothing is a miss.
                     SourceFanOut.outcomeOf(r.error, signsIn = source.auth != null)?.let { health.record(source.descriptor.id, it) }
                     attempts += ResolveAttempt(
-                        ResolutionPath.EXACT_FALLBACK, source.descriptor.id, ResolveAttempt.Kind.SKIPPED, detail = "search failed",
+                        step, source.descriptor.id, ResolveAttempt.Kind.SKIPPED, detail = "search failed",
                     )
                     return null
                 }
@@ -317,13 +369,13 @@ class StreamResolver(
             known == null || known.tier != MatchTier.NO_MATCH || known.evidence.isNotEmpty()
         }
         val best = matcher.best(track, viable) ?: run {
-            attempts += ResolveAttempt(ResolutionPath.EXACT_FALLBACK, source.descriptor.id, ResolveAttempt.Kind.SKIPPED, detail = "no candidate")
+            attempts += ResolveAttempt(step, source.descriptor.id, ResolveAttempt.Kind.SKIPPED, detail = "no candidate")
             return null
         }
         equivalence.put(track, best.first, best.second)
         if (best.second.tier != MatchTier.EXACT) {
             attempts += ResolveAttempt(
-                ResolutionPath.EXACT_FALLBACK, source.descriptor.id, ResolveAttempt.Kind.SKIPPED,
+                step, source.descriptor.id, ResolveAttempt.Kind.SKIPPED,
                 detail = "best match was ${best.second.tier}",
             )
             return null
@@ -347,5 +399,11 @@ class StreamResolver(
          * need longer say so ([app.podium.sources.api.PlaybackFacet.resolveTimeoutMillis]).
          */
         const val DEFAULT_SOURCE_TIMEOUT_MILLIS = 6_000L
+
+        /**
+         * All custom sources together (D-91): long enough for one search and one stream answer from
+         * a slow server, short enough that a song still starts promptly from its own source.
+         */
+        const val DEFAULT_PREFERRED_BUDGET_MILLIS = 8_000L
     }
 }
