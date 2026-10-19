@@ -8,6 +8,7 @@ import androidx.annotation.OptIn
 import androidx.media3.common.C
 import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
+import app.podium.core.model.MediaKind
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
@@ -49,13 +50,20 @@ object QueueMediaItems {
             .setDiscNumber(track.discNumber)
             .setIsPlayable(true)
             .setIsBrowsable(false)
-            .setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC)
+            .setMediaType(if (track.kind == MediaKind.LIVE) MediaMetadata.MEDIA_TYPE_RADIO_STATION else MediaMetadata.MEDIA_TYPE_MUSIC)
             .setExtras(extras)
             .build()
         return MediaItem.Builder()
             .setMediaId(item.uid.value)
             .setUri(uriFor(item.uid))
             .setMediaMetadata(metadata)
+            .apply {
+                // A live station (D-90) is a live HLS playlist: the player must know before it loads.
+                if (track.kind == MediaKind.LIVE) {
+                    setMimeType(MimeTypes.APPLICATION_M3U8)
+                    setLiveConfiguration(MediaItem.LiveConfiguration.Builder().build())
+                }
+            }
             .build()
     }
 }

@@ -14,6 +14,7 @@ import app.podium.core.model.SourceId
 import app.podium.core.model.SourceRef
 import app.podium.core.model.Track
 import app.podium.core.model.TrackId
+import app.podium.sources.api.AccountIdentity
 import app.podium.sources.api.AccountLibraryFacet
 import app.podium.sources.api.AlbumDetail
 import app.podium.sources.api.AlbumSummary
@@ -34,6 +35,7 @@ import app.podium.sources.api.CredentialStore
 import app.podium.sources.api.DiscoveryFacet
 import app.podium.sources.api.FacetResolution
 import app.podium.sources.api.HistoryEntry
+import app.podium.sources.api.LiveRadioFacet
 import app.podium.sources.api.MissReason
 import app.podium.sources.api.MusicEnvironment
 import app.podium.sources.api.MusicSource
@@ -60,6 +62,8 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
 
@@ -98,8 +102,9 @@ class YouTubeMusicSource internal constructor(
 
     private val id = SOURCE_ID
     private val mapper = YouTubeMusicMapper(id)
-    private val client = YouTubeMusicClient(transport, userAgent, ::currentSession, now, region = region)
+    private val client = YouTubeMusicClient(transport, userAgent, ::currentSession, now, region = region, onBehalfOf = ::currentPageId)
     private val cursors = CursorCache()
+    private val liveSearch = YouTubeLiveSearch(transport, userAgent, region)
     private val resolver = streamResolver ?: YouTubeMusicStreamResolver(
         sourceId = id,
         downloader = YouTubeMusicDownloader(userAgent),
@@ -109,10 +114,21 @@ class YouTubeMusicSource internal constructor(
 
     @Volatile private var session: WebSession? = credentials.read(id)?.get(KEY_SESSION)?.let(WebSession::parse)
 
-    /** A session being checked during sign-in, before it is kept. */
-    @Volatile private var pendingSession: WebSession? = null
+    /** The channel acted as (D-86): its page id, or null for the account's own. Kept with the session. */
+    @Volatile private var pageId: String? = credentials.read(id)?.get(KEY_PAGE_ID)
 
-    private fun currentSession(): WebSession? = pendingSession ?: session
+    /** A session (and channel) being checked — signing in, or switching channel — before it is kept. */
+    private class Pending(val session: WebSession, val pageId: String?)
+
+    @Volatile private var pending: Pending? = null
+
+    private fun currentSession(): WebSession? = pending?.session ?: session
+
+    private fun currentPageId(): String? = pending.let { if (it != null) it.pageId else pageId }
+
+    /** The account's channels, once asked (D-86). */
+    private val _identities = MutableStateFlow<List<AccountIdentity>>(emptyList())
+    private val switching = Mutex()
 
     override val descriptor = SourceDescriptor(
         id = id,
@@ -160,6 +176,7 @@ class YouTubeMusicSource internal constructor(
                 Capability.LIKES to account(CapabilityState.Available),
                 Capability.PLAYLISTS to account(CapabilityState(CapabilityStatus.DEGRADED, "Playlists can be played, not edited")),
                 Capability.HISTORY to account(CapabilityState.Available),
+                Capability.LIVE_RADIO to CapabilityState.Available,
                 Capability.DIRECT_STREAM to CapabilityState.Available,
                 Capability.DOWNLOADS to CapabilityState(CapabilityStatus.UNAVAILABLE, "Not permitted"),
             ),
@@ -168,8 +185,10 @@ class YouTubeMusicSource internal constructor(
 
     /** Every account call goes through here: a refused session is an expired one, and says so. */
     private fun <T> Outcome<T>.watch(): Outcome<T> {
-        if (this is Outcome.Failure && error is PodiumError.AuthExpired && pendingSession == null && _auth.value is AuthState.SignedIn) {
+        if (this is Outcome.Failure && error is PodiumError.AuthExpired && pending == null && _auth.value is AuthState.SignedIn) {
             session = null
+            pageId = null
+            _identities.value = emptyList()
             credentials.delete(id)
             setAuth(AuthState.Expired)
         }
@@ -208,11 +227,11 @@ class YouTubeMusicSource internal constructor(
             _auth.value = AuthState.SigningIn
             var signedIn = false
             try {
-                pendingSession = candidate
+                pending = Pending(candidate, pageId = null)
                 val result = try {
                     client.accountMenu()
                 } finally {
-                    pendingSession = null
+                    pending = null
                 }
                 val account = (result as? Outcome.Success)?.value?.let(YouTubeMusicParser::account)
                     ?: return SignInResult.Refused(
@@ -231,6 +250,8 @@ class YouTubeMusicSource internal constructor(
                     return SignInResult.Refused(SetupProblem.UNKNOWN)
                 }
                 session = candidate
+                pageId = null
+                _identities.value = emptyList()
                 setAuth(AuthState.SignedIn(account.name, key))
                 signedIn = true
                 return SignInResult.SignedIn
@@ -253,8 +274,81 @@ class YouTubeMusicSource internal constructor(
 
         override suspend fun signOut() {
             session = null
+            pageId = null
+            _identities.value = emptyList()
             credentials.delete(id)
             setAuth(AuthState.SignedOut)
+        }
+
+        // --- Channels (D-86) ---------------------------------------------------------------------------
+
+        override val identities: StateFlow<List<AccountIdentity>> = _identities.asStateFlow()
+
+        /**
+         * The account's channels, from its channel switcher; the one acted as is selected. A refusal
+         * here says nothing about the session (it isn't [watch]ed): the channels just aren't offered.
+         */
+        override suspend fun refreshIdentities(): Outcome<List<AccountIdentity>> {
+            requireSession()?.let { return Outcome.Failure(it) }
+            return client.accountsList().map { json ->
+                identitiesOf(YouTubeMusicParser.channels(json), pageId).also { _identities.value = it }
+            }
+        }
+
+        /**
+         * Act as another channel: the account menu is asked as that channel first, and only a
+         * channel that answers as itself is kept — the account's name and key become that channel's,
+         * so its library, likes and history are its own. Anything short of that leaves things as
+         * they were.
+         */
+        override suspend fun selectIdentity(id: String): Outcome<Unit> = switching.withLock {
+            val signedIn = session ?: return Outcome.Failure(requireSession() ?: PodiumError.AuthRequired())
+            val target = _identities.value.firstOrNull { it.id == id } ?: return Outcome.Failure(PodiumError.NotFound("channel"))
+            val page = id.takeUnless { it == OWN_CHANNEL }
+            if (target.selected && page == pageId) return Outcome.Success(Unit)
+            val result = try {
+                pending = Pending(signedIn, page)
+                client.accountMenu()
+            } finally {
+                pending = null
+            }
+            if (result is Outcome.Failure) return result
+            val account = YouTubeMusicParser.account((result as Outcome.Success).value)
+                ?: return Outcome.Failure(PodiumError.Unexpected("no account in the answer"))
+            // The catalogue answers as the account's own channel when it won't act as another: that's not a switch.
+            val answeredAs = account.handle?.equals(target.detail, ignoreCase = true) == true || account.name == target.name
+            if (!answeredAs) return Outcome.Failure(PodiumError.Unsupported("acting as that channel"))
+            val key = if (page == null) accountKeyOf(account.handle ?: account.name) else accountKeyOf(account.handle ?: "page:$page")
+            try {
+                credentials.write(
+                    this@YouTubeMusicSource.id,
+                    buildMap {
+                        put(KEY_SESSION, signedIn.cookieHeader)
+                        put(KEY_NAME, account.name)
+                        put(KEY_ACCOUNT, key)
+                        page?.let { put(KEY_PAGE_ID, it) }
+                    },
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                return Outcome.Failure(PodiumError.Unexpected("couldn't keep the channel"))
+            }
+            pageId = page
+            _identities.value = _identities.value.map { it.copy(selected = it.id == id) }
+            setAuth(AuthState.SignedIn(account.name, key))
+            Outcome.Success(Unit)
+        }
+    }
+
+    // --- Live radio (D-90) ------------------------------------------------------------------------------
+
+    override val liveRadio: LiveRadioFacet = object : LiveRadioFacet {
+        override fun genres(): List<String> = LiveGenres.ALL.map { it.first }
+
+        override suspend fun stations(genre: String): Outcome<List<Track>> {
+            val query = LiveGenres.queryOf(genre) ?: return Outcome.Failure(PodiumError.NotFound("genre"))
+            return liveSearch.search(query).map { json -> LiveParser.stations(json).map { mapper.track(it) } }
         }
     }
 
@@ -640,6 +734,10 @@ class YouTubeMusicSource internal constructor(
         private const val KEY_SESSION = "session"
         private const val KEY_NAME = "account-name"
         private const val KEY_ACCOUNT = "account-key"
+        private const val KEY_PAGE_ID = "page-id"
+
+        /** The identity id of the account's own channel, which has no page id. */
+        internal const val OWN_CHANNEL = "own"
         private const val HOME = "FEmusic_home"
 
         /** Albums a search shows: a screenful, not the whole discography. */
@@ -650,6 +748,26 @@ class YouTubeMusicSource internal constructor(
         private const val MAX_PLAYLIST_TRACKS = 1_000
         private const val MAX_PLAYLIST_PAGES = 12
         private const val PAGE_CACHE_MS = 10 * 60 * 1000L
+
+        /**
+         * The channels as identities (D-86). The one acted as is selected: the channel with [pageId],
+         * or — acting as the account itself — the one the switcher marks, else the one without a page id.
+         */
+        internal fun identitiesOf(channels: List<YtmChannel>, pageId: String?): List<AccountIdentity> {
+            val chosen = when {
+                pageId != null -> channels.firstOrNull { it.pageId == pageId }
+                else -> channels.firstOrNull { it.selected } ?: channels.firstOrNull { it.pageId == null }
+            }
+            return channels.map { c ->
+                AccountIdentity(
+                    id = c.pageId ?: OWN_CHANNEL,
+                    name = c.name,
+                    detail = c.handle,
+                    artworkUrl = c.photo.maxByOrNull { it.width }?.url,
+                    selected = c === chosen,
+                )
+            }
+        }
 
         /** An opaque key for an account's cached data: never the name itself, never anything secret. */
         fun accountKeyOf(identity: String): String {

@@ -709,13 +709,14 @@ private fun ProgressRow(p: NowPlayingParts) {
                         contentAlignment = Alignment.Center,
                     ) {
                         ProgressBar(
-                            value = { if (duration > 0) (p.scrubTarget ?: controller.positionMs()).toFloat() / duration else 0f },
+                            value = { if (p.item.kind == MediaKind.LIVE) 1f else if (duration > 0) (p.scrubTarget ?: controller.positionMs()).toFloat() / duration else 0f },
                             running = running,
                             emphasized = p.mode == WheelMode.Scrub,
                         )
                     }
                     BasicText(
-                        "−" + (formatDuration((duration - position).coerceAtLeast(0)) ?: "0:00"),
+                        // A live station has no end: it says so where the time left would be (D-90).
+                        if (p.item.kind == MediaKind.LIVE) "Live" else "−" + (formatDuration((duration - position).coerceAtLeast(0)) ?: "0:00"),
                         style = type.caption.copy(color = colors.labelSecondary, textAlign = TextAlign.End),
                         modifier = Modifier.width(44.dp),
                     )
@@ -1116,10 +1117,14 @@ fun sleepTimerMenu(timer: SleepTimer): MenuSpec {
     )
 }
 
-/** What Now Playing says when the sound comes from a video rather than a song's audio release (D-74). */
+/**
+ * What Now Playing says when the sound comes from a video rather than a song's audio release
+ * (D-74), or from a live station (D-90).
+ */
 internal fun videoNote(kind: MediaKind): String? = when (kind) {
     MediaKind.MUSIC_VIDEO -> "Audio from the music video"
     MediaKind.VIDEO -> "Audio from a video"
+    MediaKind.LIVE -> "Live radio"
     MediaKind.SONG, MediaKind.EPISODE -> null
 }
 

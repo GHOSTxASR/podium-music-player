@@ -74,8 +74,8 @@ internal class UrlConnectionTransport(private val executor: Executor = SharedExe
         private const val READ_TIMEOUT_MS = 12_000
         private const val MAX_BODY_BYTES = 12 * 1024 * 1024
 
-        /** The music service's API and page, and the hosts its artwork comes from. */
-        private val ALLOWED_HOST_SUFFIXES = listOf("music.youtube.com", "googleusercontent.com", "ytimg.com", "ggpht.com")
+        /** The music service's API and page, the video site's search (live radio, D-90), and the hosts artwork comes from. */
+        private val ALLOWED_HOST_SUFFIXES = listOf("music.youtube.com", "www.youtube.com", "googleusercontent.com", "ytimg.com", "ggpht.com")
 
         fun isAllowedHost(url: String): Boolean {
             val host = runCatching { URI(url).host?.lowercase() }.getOrNull() ?: return false

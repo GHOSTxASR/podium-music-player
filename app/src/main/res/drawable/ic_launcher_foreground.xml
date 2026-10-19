@@ -1,16 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- An abstract disc: a ring and a center, read as "a place to play from". Not an iPod. -->
+<!-- Podium's mark: the "P" of the boot wordmark (Archivo, weight 900, width 125), in its silver. Generated from the font. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <path
-        android:fillColor="#00000000"
-        android:strokeColor="#E8EEF4"
-        android:strokeWidth="9"
-        android:pathData="M54,30a24,24 0,1 1,0 48a24,24 0,1 1,0 -48z" />
-    <path
-        android:fillColor="#367FE0"
-        android:pathData="M54,46a8,8 0,1 1,0 16a8,8 0,1 1,0 -16z" />
+    <path android:pathData="M33.18 73V35H63.72Q67.48 35 70.35 36.68Q73.22 38.37 74.82 41.38Q76.42 44.39 76.42 48.31Q76.42 52.34 74.79 55.38Q73.16 58.42 70.29 60.08Q67.42 61.73 63.72 61.73H46.82V73ZM46.82 52.29H59.91Q62.01 52.29 63.03 51.29Q64.05 50.3 64.05 48.37Q64.05 47.04 63.58 46.18Q63.11 45.33 62.2 44.89Q61.29 44.44 59.91 44.44H46.82Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="54"
+                android:startY="35.00"
+                android:endX="54"
+                android:endY="73.00">
+                <item android:offset="0.0" android:color="#FFF4F4F7" />
+                <item android:offset="0.18" android:color="#FFEFEFF2" />
+                <item android:offset="0.52" android:color="#FFD3D3D9" />
+                <item android:offset="1.0" android:color="#FFA3A3AD" />
+            </gradient>
+        </aapt:attr>
+    </path>
 </vector>

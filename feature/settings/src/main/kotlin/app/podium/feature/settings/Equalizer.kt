@@ -32,17 +32,19 @@ import app.podium.core.interaction.rememberFocusListState
 import app.podium.core.interaction.rememberPodiumHaptics
 import app.podium.player.api.EqualizerPreset
 import app.podium.player.api.EqualizerSettings
+import app.podium.player.api.SoundEffect
 import kotlin.math.roundToInt
 
 private sealed interface EqRow {
     data object Power : EqRow
     data object Preset : EqRow
+    data object Effect : EqRow
     data class Band(val index: Int) : EqRow
 }
 
 /**
- * Settings ▸ Equaliser (D-76): on or off, a preset, and the ten bands, each opening to be set with
- * the Wheel. Every change is heard at once.
+ * Settings ▸ Equaliser (D-76): on or off, a preset, the effect (D-89 — it plays with the bands on or
+ * off), and the ten bands, each opening to be set with the Wheel. Every change is heard at once.
  */
 @Composable
 fun EqualizerScreen(repository: DeviceSettingsRepository, onBand: (Int) -> Unit) {
@@ -50,7 +52,7 @@ fun EqualizerScreen(repository: DeviceSettingsRepository, onBand: (Int) -> Unit)
     val eq = effects.equalizer
     val haptics = rememberPodiumHaptics()
     val overlay = LocalOverlayHost.current
-    val rows = listOf(EqRow.Power, EqRow.Preset) + EqualizerSettings.BANDS_HZ.indices.map { EqRow.Band(it) }
+    val rows = listOf(EqRow.Power, EqRow.Preset, EqRow.Effect) + EqualizerSettings.BANDS_HZ.indices.map { EqRow.Band(it) }
     val focus = rememberFocusListState("equalizer")
     val activate: (Int) -> Unit = { i ->
         when (val row = rows[i]) {
@@ -63,6 +65,14 @@ fun EqualizerScreen(repository: DeviceSettingsRepository, onBand: (Int) -> Unit)
                     "Preset: ${eq.preset.label}",
                     EqualizerPreset.entries.filter { it != EqualizerPreset.CUSTOM }.map { preset ->
                         MenuAction(preset.label) { repository.setEqualizer(eq.withPreset(preset)) }
+                    },
+                ),
+            )
+            EqRow.Effect -> overlay.show(
+                MenuSpec(
+                    "Effect: ${effects.sound.label}",
+                    SoundEffect.entries.map { effect ->
+                        MenuAction(effect.label) { repository.setSoundEffect(effect) }
                     },
                 ),
             )
@@ -82,6 +92,7 @@ fun EqualizerScreen(repository: DeviceSettingsRepository, onBand: (Int) -> Unit)
         when (row) {
             EqRow.Power -> MenuRow("Equaliser", focused, value = if (eq.enabled) "On" else "Off", showChevron = false)
             EqRow.Preset -> MenuRow("Preset", focused, value = eq.preset.label, enabled = eq.enabled, showChevron = false)
+            EqRow.Effect -> MenuRow("Effect", focused, value = effects.sound.label, showChevron = false)
             is EqRow.Band -> MenuRow(bandLabel(row.index), focused, value = gainLabel(eq.gainsDb[row.index]), enabled = eq.enabled)
         }
     }

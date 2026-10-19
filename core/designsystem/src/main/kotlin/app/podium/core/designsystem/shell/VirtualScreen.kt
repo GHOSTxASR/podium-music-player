@@ -137,26 +137,32 @@ fun ScreenHeader(
     depth: Int = 0,
     /** Where the music is heard, or muted (D-52); null shows nothing. */
     output: OutputIndicator? = null,
+    /** Full screen (D-85): the time, on the left, in place of the phone's hidden status bar. */
+    clock: Boolean = false,
+    /** Full screen (D-85): the phone's battery, on the right; null shows nothing. */
+    battery: BatteryLevel? = null,
 ) {
     val colors = PodiumTheme.colors
     val type = PodiumTheme.type
     Box(modifier.fillMaxWidth().height(ScreenHeaderHeight)) {
-        if (canGoBack) {
-            Box(
-                Modifier
-                    .align(Alignment.CenterStart)
-                    .padding(start = Spacing.xs)
-                    .size(ScreenHeaderHeight)
-                    .pressFeedback(0.86f)
-                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onBack)
-                    .semantics {
-                        role = Role.Button
-                        contentDescription = "Back"
-                    },
-                contentAlignment = Alignment.Center,
-            ) {
-                Symbol(PodiumSymbol.ChevronLeft, colors.labelSecondary, size = 24.dp, weight = 600)
+        Row(Modifier.align(Alignment.CenterStart), verticalAlignment = Alignment.CenterVertically) {
+            if (canGoBack) {
+                Box(
+                    Modifier
+                        .padding(start = Spacing.xs)
+                        .size(ScreenHeaderHeight)
+                        .pressFeedback(0.86f)
+                        .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onBack)
+                        .semantics {
+                            role = Role.Button
+                            contentDescription = "Back"
+                        },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Symbol(PodiumSymbol.ChevronLeft, colors.labelSecondary, size = 24.dp, weight = 600)
+                }
             }
+            if (clock) TitleBarClock(colors.labelSecondary, Modifier.padding(start = if (canGoBack) 0.dp else Spacing.l))
         }
         // The title travels with the paper (D-29): forward slides it in from the right, back from the left.
         val motion = PodiumTheme.motion
@@ -172,12 +178,13 @@ fun ScreenHeader(
                         (slideOutHorizontally(motion.spatial()) { -dir * it / 2 } + fadeOut(motion.fadeFast()))
                 }
             },
-            modifier = Modifier.align(Alignment.Center).padding(horizontal = 56.dp),
+            // Room either side for the back arrow and, full screen, the time and the battery.
+            modifier = Modifier.align(Alignment.Center).padding(horizontal = if (clock || battery != null) 92.dp else 56.dp),
             label = "headerTitle",
         ) { (shown, _) ->
             PodiumText(shown, type.title, colors.labelPrimary, Modifier.semantics { heading() }, maxLines = 1)
         }
-        if (playing != null || output != null) {
+        if (playing != null || output != null || battery != null) {
             Row(Modifier.align(Alignment.CenterEnd).padding(end = Spacing.l), verticalAlignment = Alignment.CenterVertically) {
                 output?.let { OutputIcon(it, colors.labelSecondary) }
                 if (output != null && playing != null) Spacer(Modifier.width(Spacing.xs))
@@ -189,6 +196,10 @@ fun ScreenHeader(
                         weight = 600,
                         filled = true,
                     )
+                }
+                if (battery != null) {
+                    if (output != null || playing != null) Spacer(Modifier.width(Spacing.s))
+                    TitleBarBattery(battery, colors.labelSecondary)
                 }
             }
         }

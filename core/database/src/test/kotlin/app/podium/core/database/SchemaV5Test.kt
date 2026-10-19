@@ -90,4 +90,30 @@ class SchemaV5Test {
         assertEquals(setOf(a.id), store.likedIds().first())
         assertEquals(listOf("local|x"), db.likes().likedIds().first())
     }
+
+    @Test
+    fun `forgetting the accounts leaves the device's rows and local favorites alone`() = runTest {
+        val store = OnlineLibraryStore(db)
+        val yt = SourceId("ytmusic")
+        val a = song("Mine", source = yt, key = "mine0000000")
+        store.setLiked(a, true, account = "ytm-a")
+        store.setLiked(a, true, account = "ytm-b")
+        store.setLiked(a, true)
+        store.record(a, startedAt = 1, playedMs = 10_000, account = "ytm-b")
+        store.record(a, startedAt = 2, playedMs = 10_000)
+        store.createPlaylist("B's", yt, listOf(a), account = "ytm-b")
+        store.createPlaylist("Here", yt, listOf(a))
+        db.likes().like(listOf(LikedTrackEntity("local|x", 1)))
+
+        store.forgetAccounts()
+
+        assertTrue(store.likedIds("ytm-a").first().isEmpty())
+        assertTrue(store.likedIds("ytm-b").first().isEmpty())
+        assertTrue(store.listens(account = "ytm-b").isEmpty())
+        assertTrue(store.playlists("ytm-b").first().isEmpty())
+        assertEquals(setOf(a.id), store.likedIds().first())
+        assertEquals(1, store.listens().size)
+        assertEquals(1, store.playlists().first().size)
+        assertEquals(listOf("local|x"), db.likes().likedIds().first())
+    }
 }

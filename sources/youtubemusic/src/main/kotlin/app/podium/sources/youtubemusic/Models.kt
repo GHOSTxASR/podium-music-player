@@ -99,5 +99,17 @@ internal data class YtmPage<T>(val items: List<T>, val continuation: YouTubeMusi
 
 internal data class YtmAccount(val name: String, val handle: String?, val photo: List<Thumb>)
 
+/**
+ * One channel of the signed-in Google account, from its channel switcher (D-86). [pageId] says
+ * which channel to act as; the account's own (primary) channel has none.
+ */
+internal data class YtmChannel(
+    val name: String,
+    val handle: String?,
+    val photo: List<Thumb>,
+    val pageId: String?,
+    val selected: Boolean,
+)
+
 /** A song in the account's history, under the catalogue's own label for when ("Today"). */
 internal data class YtmHistoryItem(val song: YtmSong, val period: String?)

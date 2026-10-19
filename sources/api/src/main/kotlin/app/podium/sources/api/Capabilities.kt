@@ -21,6 +21,9 @@ enum class Capability {
 
     /** The account's own listening history, kept by the provider. */
     HISTORY,
+
+    /** Live radio stations, streaming now (D-90). */
+    LIVE_RADIO,
 }
 
 /**

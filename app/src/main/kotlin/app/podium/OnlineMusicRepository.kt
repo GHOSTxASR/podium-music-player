@@ -97,6 +97,7 @@ class OnlineMusicRepository(
                     canLibrary = caps.isUsable(Capability.ACCOUNT_LIBRARY),
                     canHistory = caps.isUsable(Capability.HISTORY),
                     canExplore = false,
+                    canLiveRadio = caps.isUsable(Capability.LIVE_RADIO),
                     account = accountOf(it.authenticationState),
                 )
             }
@@ -121,12 +122,12 @@ class OnlineMusicRepository(
     private val likeWrites = java.util.concurrent.atomic.AtomicLong()
 
     /**
-     * Sign out: everything kept for the account goes first, then the service forgets the session.
-     * Local music, favorites and the local queue are untouched.
+     * Sign out: everything kept for the account goes first — for each of its identities (a Google
+     * account's channels, D-86) — then the service forgets the session. Local music, favorites and
+     * the local queue are untouched.
      */
     suspend fun signOut() {
-        val key = accountKey.value
-        if (key != OnlineLibraryStore.DEVICE) store.forgetAccount(key)
+        store.forgetAccounts()
         shelvesCache = null
         source()?.auth?.signOut() ?: registry.registered(MusicEnvironment.ONLINE).firstOrNull()?.auth?.signOut()
     }
@@ -201,6 +202,11 @@ class OnlineMusicRepository(
         ask { it.discovery?.shelf(id, offset, limit) }.remembering { it.tracks }
 
     override suspend fun genres(): Outcome<List<String>> = ask { it.discovery?.genres() }
+
+    override suspend fun liveGenres(): Outcome<List<String>> = ask { s -> s.liveRadio?.genres()?.let { Outcome.Success(it) } }
+
+    override suspend fun liveStations(genre: String): Outcome<List<Track>> =
+        ask { it.liveRadio?.stations(genre) }.remembering { it }
 
     override suspend fun genre(name: String, offset: Int, limit: Int): Outcome<List<Track>> =
         ask { it.discovery?.genre(name, offset, limit) }.remembering { it }

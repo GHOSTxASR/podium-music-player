@@ -112,10 +112,14 @@ class PodiumPlaybackEngine(
     private val equalizer = EqualizerProcessor()
     private var helperEqualizer: EqualizerProcessor? = null
 
+    /** Settings ▸ Equaliser ▸ Effect (D-89), likewise in each player's path. */
+    private val sound = SoundEffectProcessor().also { it.update(deps.effects.value.sound) }
+    private var helperSound: SoundEffectProcessor? = null
+
     val player: ExoPlayer = playerFactory?.invoke(context, mediaSourceFactory) ?: buildPlayer(context)
 
     private fun buildPlayer(context: Context): ExoPlayer {
-        return ExoPlayer.Builder(context, EffectsRenderersFactory(context, equalizer, deps.audioMeter))
+        return ExoPlayer.Builder(context, EffectsRenderersFactory(context, equalizer, sound, deps.audioMeter))
             .setMediaSourceFactory(mediaSourceFactory)
             .setAudioAttributes(
                 AudioAttributes.Builder()
@@ -134,7 +138,14 @@ class PodiumPlaybackEngine(
      * end of a song. It never takes audio focus or the session; the engine's [player] keeps both.
      */
     private fun buildHelper(context: Context): ExoPlayer = (helperFactory?.invoke(context, mediaSourceFactory)
-        ?: ExoPlayer.Builder(context, EffectsRenderersFactory(context, EqualizerProcessor().also { eq -> eq.update(deps.effects.value.equalizer); helperEqualizer = eq }))
+        ?: ExoPlayer.Builder(
+            context,
+            EffectsRenderersFactory(
+                context,
+                EqualizerProcessor().also { eq -> eq.update(deps.effects.value.equalizer); helperEqualizer = eq },
+                SoundEffectProcessor().also { fx -> fx.update(deps.effects.value.sound); helperSound = fx },
+            ),
+        )
             .setMediaSourceFactory(mediaSourceFactory)
             .setAudioAttributes(
                 AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build(),
@@ -173,6 +184,8 @@ class PodiumPlaybackEngine(
         if (index !in 0 until player.mediaItemCount) return null
         val uid = QueueUid(player.getMediaItemAt(index).mediaId)
         val track = queue.state.value.items.firstOrNull { it.uid == uid }?.track ?: return null
+        // A live station has no end to fade from: the player's "duration" is only its rewind window (D-90).
+        if (track.kind == app.podium.core.model.MediaKind.LIVE) return app.podium.player.api.CrossfadeRules.Song(null, null, null)
         val duration = track.durationMs ?: player.duration.takeIf { index == player.currentMediaItemIndex && it != C.TIME_UNSET && it > 0 }
         return app.podium.player.api.CrossfadeRules.Song(track.album?.id?.value, track.trackNumber, duration)
     }
@@ -233,6 +246,8 @@ class PodiumPlaybackEngine(
             deps.effects.collect { effects ->
                 equalizer.update(effects.equalizer)
                 helperEqualizer?.update(effects.equalizer)
+                sound.update(effects.sound)
+                helperSound?.update(effects.sound)
                 crossfader.seconds = effects.crossfadeSeconds
             }
         }

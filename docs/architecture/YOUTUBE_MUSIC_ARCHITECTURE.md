@@ -84,13 +84,14 @@ Retired online sources (`sources:audius`, `sources:subsonic`, and the multi-sour
   - A session found is checked once against the account menu (`WebSignInChecks`). A check that fails shows why, with Try again and Start over, and is never repeated automatically. A check still running after 15 s says a slow connection can take a while; it isn't cut short.
   - The checks live in a `ViewModel`, and turning the phone doesn't recreate the screen, so a check under way is never lost.
   - Whatever ends a check short of signing in (a refusal, a cancelled check, a Keystore failure) puts the account state back as it was.
-- **Storage Security:** The session cookies, account display name, and account key are encrypted at rest using `KeystoreCredentialStore` (AES-256-GCM with keys held in the Android Keystore).
+- **Channels (D-86):** a Google account can have several channels (brand accounts). The channel switcher's list (`account/accounts_list`, asked as the account itself) gives each channel's page id (its `pageIdToken`, or the channel half of a `channel||user` data-sync id). Podium acts as a chosen channel by sending that page id as `context.user.onBehalfOfUser` on every signed-in request, as ytmusicapi does. A switch is kept only if the account menu, asked as that channel, answers as it. The channel's name and key replace the account's, so its library is its own. A refused list never expires the session. Settings ▸ the service ▸ Channel appears when there are two or more.
+- **Storage Security:** The session cookies, account display name, account key and chosen channel's page id are encrypted at rest using `KeystoreCredentialStore` (AES-256-GCM with keys held in the Android Keystore).
 - **Database Scope:** The local database references only the hashed account key (`ytm-<sha256>`), never plaintext credentials.
 - **Lifecycle:**
   - `SignedOut`: Public browsing only.
   - `SignedIn`: Full library, likes, history, and personalized recommendations.
   - `Expired`: When session validation fails, credentials are wiped and the user is prompted to sign in again.
-  - `SignOut`: Wipes account-scoped online database tables and Keystore credentials.
+  - `SignOut`: Wipes account-scoped online database tables (every account's, so all of a Google account's channels, D-86) and Keystore credentials.
 
 ---
 
@@ -132,7 +133,22 @@ To obtain valid progressive audio stream URLs, `sources:youtubemusic` implements
 4. **Token Minting (PoToken / BotGuard):** Providing Proof-of-Origin tokens where required to prevent bot detection and 403 playback refusals.
 5. **URL Caching and Pre-expiry Refresh:** Caching resolved URLs with consideration for their TTL (typically ~6 hours) and refreshing proactively before expiry.
 
-### 8.3 Historical Note on Superseded Options
+### 8.3 Live Radio (D-90)
+
+- **Finding stations:** YouTube's own search, filtered to live (`params` `EgJAAQ%3D%3D`), on the
+  video site's web client (`www.youtube.com/youtubei/v1/search`), signed out. Nothing of the
+  account goes with it. It sends one query per genre (`LiveGenres`, 13), and keeps videos marked
+  live now (`BADGE_STYLE_TYPE_LIVE_NOW`), once each, the most listened to first. A refused client
+  version is replaced by the page's own and asked once more. `www.youtube.com` is an allowed host
+  for this, that exact host only.
+- **A station** is a `Track` of `MediaKind.LIVE`: the channel as its artist (not linked: a
+  channel isn't an artist page), no duration.
+- **Playing:** NewPipe's stream info gives the live HLS master playlist. `HlsAudio` picks its
+  audio-only rendition, the AAC-LC one (the 128 kbps audio songs get) when there is one, and only
+  without any the smallest variant. That playlist is handed over as a `DirectStream`, with its
+  `expire` time, and the player plays it as live HLS.
+
+### 8.4 Historical Note on Superseded Options
 
 | Option | Description | Status |
 |---|---|---|

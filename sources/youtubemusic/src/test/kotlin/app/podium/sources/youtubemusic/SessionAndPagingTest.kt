@@ -120,6 +120,9 @@ class SessionAndPagingTest {
         assertTrue(UrlConnectionTransport.isAllowedHost("https://i.ytimg.com/vi/a/hq.jpg"))
         assertFalse(UrlConnectionTransport.isAllowedHost("https://evil.example/music.youtube.com"))
         assertFalse(UrlConnectionTransport.isAllowedHost("https://music.youtube.com.evil.example/"))
-        assertFalse(UrlConnectionTransport.isAllowedHost("https://www.youtube.com/watch"))
+        // The video site's search, for live radio (D-90) — that host only.
+        assertTrue(UrlConnectionTransport.isAllowedHost("https://www.youtube.com/youtubei/v1/search"))
+        assertFalse(UrlConnectionTransport.isAllowedHost("https://m.youtube.com/watch"))
+        assertFalse(UrlConnectionTransport.isAllowedHost("https://youtube.com/"))
     }
 }

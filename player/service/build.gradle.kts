@@ -8,6 +8,8 @@ dependencies {
     api(project(":player:api"))
     api(project(":sources:api"))
     implementation(libs.media3.exoplayer)
+    // Live radio's streams are live HLS (D-90); DefaultMediaSourceFactory finds it on the classpath.
+    implementation(libs.media3.exoplayer.hls)
     api(libs.media3.session)
     implementation(libs.media3.common)
     implementation(libs.kotlinx.coroutines.guava)

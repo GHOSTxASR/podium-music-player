@@ -32,6 +32,8 @@ data class OnlineStatus(
     val canHistory: Boolean = false,
     /** Genres to explore are offered. */
     val canExplore: Boolean = true,
+    /** Live radio stations are offered (D-90). */
+    val canLiveRadio: Boolean = false,
     /** The online account, when the music service has accounts. */
     val account: OnlineAccount? = null,
 )
@@ -109,6 +111,14 @@ interface OnlineRepository {
 
     /** Fetch the account's likes again (after signing in, or when Liked songs opens). */
     fun refreshLibrary() {}
+
+    // --- Live radio (D-90) ---------------------------------------------------------------------------
+
+    /** The live radio genres, in the source's order. */
+    suspend fun liveGenres(): Outcome<List<String>> = Outcome.Failure(PodiumError.Unsupported("live radio"))
+
+    /** The stations live now in [genre], the most listened to first. */
+    suspend fun liveStations(genre: String): Outcome<List<Track>> = Outcome.Failure(PodiumError.Unsupported("live radio"))
 }
 
 /** What the ONLINE screens ask the player and the system to do. */

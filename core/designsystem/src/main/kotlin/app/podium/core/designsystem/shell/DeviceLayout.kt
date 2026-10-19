@@ -39,8 +39,14 @@ fun DeviceLayout(
     indicators: @Composable () -> Unit = {},
     /** The keyboard has opened out where the Wheel was (D-45): the power button and lights step aside. */
     keyboardOpen: Boolean = false,
+    /**
+     * Full screen (D-85): the phone's bars are hidden, so only the camera cutout is kept clear; bars
+     * swiped back for a moment pass over the device instead of moving it.
+     */
+    immersive: Boolean = false,
 ) {
-    BoxWithConstraints(modifier.windowInsetsPadding(WindowInsets.systemBars.union(WindowInsets.displayCutout))) {
+    val insets = if (immersive) WindowInsets.displayCutout else WindowInsets.systemBars.union(WindowInsets.displayCutout)
+    BoxWithConstraints(modifier.windowInsetsPadding(insets)) {
         if (maxWidth <= maxHeight) {
             val diameter = (maxWidth * 0.58f).coerceIn(216.dp, 300.dp).coerceAtMost(maxHeight * 0.31f)
             Column(Modifier.fillMaxSize().padding(top = Spacing.s), horizontalAlignment = Alignment.CenterHorizontally) {

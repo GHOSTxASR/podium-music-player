@@ -17,6 +17,10 @@ sealed interface OnlinePlace {
     data object Liked : OnlinePlace { override val title = "Liked songs" }
     data object Playlists : OnlinePlace { override val title = "Playlists" }
     data object Radio : OnlinePlace { override val title = "Radio" }
+
+    /** Live radio (D-90): its genres, each a list of stations live now. */
+    data object LiveRadio : OnlinePlace { override val title = "Live radio" }
+    data class LiveGenre(val name: String) : OnlinePlace { override val title get() = name }
     data object History : OnlinePlace { override val title = "History" }
     data object Recent : OnlinePlace { override val title = "Played on Podium" }
 
@@ -48,6 +52,7 @@ sealed interface OnlinePlace {
             Liked -> "liked"
             Playlists -> "playlists"
             Radio -> "radio"
+            LiveRadio -> "live-radio"
             History -> "history"
             Recent -> "recent"
             Library -> "library"
@@ -56,6 +61,7 @@ sealed interface OnlinePlace {
             LibraryArtists -> "library-artists"
             is Shelf -> listOf("shelf", place.id, place.title).joinToString("$SEP")
             is Genre -> listOf("genre", place.name).joinToString("$SEP")
+            is LiveGenre -> listOf("live-genre", place.name).joinToString("$SEP")
             is Artist -> listOf("artist", place.id.value, place.name).joinToString("$SEP")
             is Collection -> listOf("collection", place.id.value, place.title, place.isAlbum.toString()).joinToString("$SEP")
             is MyPlaylist -> listOf("mine", place.id, place.name).joinToString("$SEP")
@@ -72,6 +78,7 @@ sealed interface OnlinePlace {
                 "liked" -> Liked
                 "playlists" -> Playlists
                 "radio" -> Radio
+                "live-radio" -> LiveRadio
                 "history" -> History
                 "recent" -> Recent
                 "library" -> Library
@@ -80,6 +87,7 @@ sealed interface OnlinePlace {
                 "library-artists" -> LibraryArtists
                 "shelf" -> p.getOrNull(2)?.let { Shelf(p[1], it) }
                 "genre" -> p.getOrNull(1)?.let { Genre(it) }
+                "live-genre" -> p.getOrNull(1)?.let { LiveGenre(it) }
                 "artist" -> p.getOrNull(2)?.let { Artist(ArtistId(p[1]), it) }
                 "collection" -> p.getOrNull(3)?.let { Collection(PlaylistId(p[1]), p[2], it.toBoolean()) }
                 "mine" -> p.getOrNull(2)?.let { MyPlaylist(p[1], it) }

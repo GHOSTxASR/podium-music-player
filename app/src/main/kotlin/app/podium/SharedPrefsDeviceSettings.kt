@@ -16,6 +16,7 @@ import app.podium.feature.settings.DeviceSettingsRepository
 import app.podium.player.api.AudioEffects
 import app.podium.player.api.EqualizerPreset
 import app.podium.player.api.EqualizerSettings
+import app.podium.player.api.SoundEffect
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -101,6 +102,22 @@ class SharedPrefsDeviceSettings(context: Context) : DeviceSettingsRepository {
         prefs.edit { putBoolean(KEY_PODIUM_KEYBOARD, enabled) }
     }
 
+    private val _immersive = MutableStateFlow(prefs.getBoolean(KEY_IMMERSIVE, false))
+    override val immersive: StateFlow<Boolean> = _immersive.asStateFlow()
+
+    override fun setImmersive(enabled: Boolean) {
+        _immersive.value = enabled
+        prefs.edit { putBoolean(KEY_IMMERSIVE, enabled) }
+    }
+
+    private val _titleBarBattery = MutableStateFlow(prefs.getBoolean(KEY_TITLE_BAR_BATTERY, true))
+    override val titleBarBattery: StateFlow<Boolean> = _titleBarBattery.asStateFlow()
+
+    override fun setTitleBarBattery(shown: Boolean) {
+        _titleBarBattery.value = shown
+        prefs.edit { putBoolean(KEY_TITLE_BAR_BATTERY, shown) }
+    }
+
     override fun setAutoplay(enabled: Boolean) {
         _autoplay.value = enabled
         prefs.edit { putBoolean(KEY_AUTOPLAY, enabled) }
@@ -177,6 +194,7 @@ class SharedPrefsDeviceSettings(context: Context) : DeviceSettingsRepository {
                 EqualizerSettings(prefs.getBoolean(KEY_EQ_ON, false), preset, gains)
             },
             crossfadeSeconds = prefs.getInt(KEY_CROSSFADE, 0).takeIf { it in AudioEffects.CROSSFADE_CHOICES } ?: 0,
+            sound = enumOf(prefs.getString(KEY_SOUND_EFFECT, null), SoundEffect.NONE),
         ),
     )
     override val effects: StateFlow<AudioEffects> = _effects.asStateFlow()
@@ -196,8 +214,14 @@ class SharedPrefsDeviceSettings(context: Context) : DeviceSettingsRepository {
         prefs.edit { putInt(KEY_CROSSFADE, chosen) }
     }
 
+    override fun setSoundEffect(effect: SoundEffect) {
+        _effects.value = _effects.value.copy(sound = effect)
+        prefs.edit { putString(KEY_SOUND_EFFECT, effect.name) }
+    }
+
     private companion object {
         const val KEY_EQ_ON = "equalizer"
+        const val KEY_SOUND_EFFECT = "sound_effect"
         const val KEY_EQ_PRESET = "equalizer_preset"
         const val KEY_EQ_GAINS = "equalizer_gains"
         const val KEY_CROSSFADE = "crossfade_seconds"
@@ -214,6 +238,8 @@ class SharedPrefsDeviceSettings(context: Context) : DeviceSettingsRepository {
         const val KEY_STAY_IN_PODIUM = "stay_in_podium"
         const val KEY_ONLINE_LYRICS = "online_lyrics"
         const val KEY_PODIUM_KEYBOARD = "podium_keyboard"
+        const val KEY_IMMERSIVE = "immersive"
+        const val KEY_TITLE_BAR_BATTERY = "title_bar_battery"
         const val KEY_GLITTER = "glitter"
         const val KEY_GLITTER_AMOUNT = "glitter_amount"
         const val KEY_GLITTER_DENSITY = "glitter_density"

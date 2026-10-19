@@ -68,7 +68,8 @@ sealed interface LyricsResult {
     /** The service failed, timed out or answered nonsense; trying again later may work. */
     data object Failed : LyricsResult
 
-    data object RateLimited : LyricsResult
+    /** The service asked Podium to slow down; it can be asked again in [retryInMs] (D-84). */
+    data class RateLimited(val retryInMs: Long) : LyricsResult
 }
 
 /** Who the words came from, for the small credit in Settings and on the lyrics screen's details. */

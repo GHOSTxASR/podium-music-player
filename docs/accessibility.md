@@ -5,14 +5,14 @@
 ## 1. Commitments
 1. **The Wheel is never required.** Every function is reachable by touch on content, TalkBack, Switch Access, keyboard, and D-pad.
 2. **Glass is never required to understand state.** Focus, selection, disabled, error, and offline all have non-glass signals (text weight/color, glyph fill, labels, semantics).
-3. **Text scales to 200%** without clipping or overlap.
+3. **Text scales to 200%** without clipping or overlap. (Since D-84 Podium keeps its own standard text size and weight whatever the phone's settings; the layouts still hold at 200%.)
 4. **Motion and transparency are user-controllable** (system settings + in-app overrides).
 
 ## 2. Settings Podium honours
 | Signal | Source | Effect |
 |---|---|---|
-| Font scale (nonlinear, Android 14+) | `Configuration.fontScale` | Text styles scale; rows grow; wheel legends cap 1.3× |
-| Bold text | `Configuration.fontWeightAdjustment` (API 31+) | +100 weight, cap 700 |
+| Font scale (nonlinear, Android 14+) | `Configuration.fontScale` | **Not followed since D-84:** Podium draws at its own standard size (`StandardText` overrides it to 1), after a listener's phone drew the wheel's symbols as boxes with large text |
+| Bold text | `Configuration.fontWeightAdjustment` (API 31+) | **Not followed since D-84** (overridden to 0), for the same reason |
 | Color contrast | `UiModeManager.getContrast()` (API 34+) ≥ 0.5, or in-app "Increase contrast" | HC color variants; Solid glass tier; focus lens = solid highlight |
 | Remove animations | `ANIMATOR_DURATION_SCALE == 0` or in-app "Reduce motion" | `animation-system.md` §5 |
 | Reduce transparency | **No Android system setting** → in-app Transparency: Full / Reduced / Off | Glass tiers (ADR-007) |

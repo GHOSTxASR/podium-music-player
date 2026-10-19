@@ -8,12 +8,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Full screen (D-85):** Settings ▸ Full screen hides Android's status and navigation bars (a swipe from the edge shows them for a moment). The iPod's title bar then shows the time on the left and the battery on the right; Settings ▸ Battery in title bar hides the battery.
+- **Choose your channel (D-86):** a Google account with several YouTube channels can pick which one Podium uses, in Settings ▸ YouTube Music ▸ Channel. Each channel's library, likes and history are its own.
+- **Live radio (D-90):** Online ▸ Live radio has music stations streaming live now, by genre. They play audio only, at the same quality as songs; Next goes to the next station.
+- **Sound effects (D-89):** Settings ▸ Equaliser ▸ Effect has Car stereo, 3D hall and 8D (the music circling your head), with or without the equaliser.
+- **Apple Lossless on every phone (D-87):** ALAC files play even on phones without their own ALAC decoder, decoded by Podium bit for bit.
 - **Continuous line lyrics theme (D-81):** an optional look for Now Playing ▸ Lyrics. A single ivory line writes the words by hand on a black sheet, flows from each phrase into the next and draws loops, spirals and notes through instrumental passages, with a touch of champagne gold at the pen. It follows the music; seeking or rewinding brings back the same drawing. In Settings ▸ Appearance ▸ Virtual display ▸ Lyrics theme. Classic stays the default.
 - **The orb (D-83):** in Classic lyrics, long instrumental breaks pull the camera back from the words to a softly glowing ivory-and-gold orb that moves gently with the music, then travel back in through its centre as the next line starts. Short gaps keep the words. Songs without words, or with none found, show the orb throughout. Not in the Continuous line theme.
 - **Lyrics move with the bass (D-82):** in both lyrics themes the words swell very slightly with the music's kick drums, like a speaker cone, smoothly and only while Podium's own player plays. Not with reduced motion.
 
 ### Changed
+- **A new app icon (D-88):** the "P" of the Podium wordmark, in silver.
+- **Text at Podium's own size (D-84):** Podium no longer grows or bolds its text with the phone's font settings, which on some phones turned the wheel's arrows and the power button into boxes.
+- **Cover Flow goes by artist, then album (D-84),** so an artist's albums stand together and "Drake, Ariana Grande" follows "Drake".
+- Signing out of the online service removes the things kept for all of the account's channels (D-86).
 - **Continuous line (D-82):** the pen moves at an even pace instead of stuttering, and changes speed smoothly from word to word. The line is a little bolder and glows softly, like a neon sign.
+
+### Fixed
+- **Lyrics said "Too many requests" often (D-84):** Podium now waits as long as the lyrics service asks, asks again by itself afterwards, and never asks in bursts.
 
 ## [0.1.2] - 2026-10-12
 

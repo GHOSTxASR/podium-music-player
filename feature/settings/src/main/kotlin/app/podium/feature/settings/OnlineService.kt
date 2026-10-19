@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -37,7 +38,16 @@ data class OnlineServiceState(
     val app: ServiceApp?,
     /** Bring Podium back to the front after handing a song to the app. */
     val stayInPodium: Boolean,
+    /** The account's channels (D-86), when it has more than its own. */
+    val channels: List<ServiceChannel> = emptyList(),
+    /** The channel being switched to, while that happens. */
+    val switchingTo: String? = null,
+    /** Why the last switch didn't happen, and what to do (shown in the channel list). */
+    val channelProblem: String? = null,
 )
+
+/** One channel of the signed-in account (D-86). */
+data class ServiceChannel(val id: String, val name: String, val detail: String?, val selected: Boolean)
 
 sealed interface ServiceAccount {
     data object NotOffered : ServiceAccount
@@ -71,6 +81,12 @@ interface OnlineServiceSettings {
     /** Podium's App info, where Android lets a sideloaded app use restricted settings. */
     fun openAppInfo()
     fun setStayInPodium(enabled: Boolean)
+
+    /** Ask the service for the account's channels (the Settings screen opening). */
+    fun refreshChannels() {}
+
+    /** Act as channel [id] from now on (D-86). */
+    fun selectChannel(id: String) {}
 }
 
 /** What the Settings row says about the service. */
@@ -82,16 +98,18 @@ fun onlineServiceSummary(state: OnlineServiceState?): String? = when {
     else -> "On"
 }
 
-private enum class ServiceRow { Enabled, Account, App, Control, AfterChoosing, Basis }
+private enum class ServiceRow { Enabled, Account, Channel, App, Control, AfterChoosing, Basis }
 
 /**
- * Settings ▸ the online service: on/off, the account, the app that plays, media control, and what
- * happens after choosing a song. Center does the obvious thing; hold Center on the account to switch
- * or sign out.
+ * Settings ▸ the online service: on/off, the account (and its channel, when it has several), the
+ * app that plays, media control, and what happens after choosing a song. Center does the obvious
+ * thing; hold Center on the account to switch or sign out.
  */
 @Composable
-fun OnlineServiceScreen(settings: OnlineServiceSettings) {
+fun OnlineServiceScreen(settings: OnlineServiceSettings, onChannels: () -> Unit = {}) {
     val current by settings.state.collectAsStateWithLifecycle()
+    val signedIn = current?.account is ServiceAccount.SignedIn
+    LaunchedEffect(signedIn) { if (signedIn) settings.refreshChannels() }
     val haptics = rememberPodiumHaptics()
     val overlay = LocalOverlayHost.current
     val state = current
@@ -105,6 +123,7 @@ fun OnlineServiceScreen(settings: OnlineServiceSettings) {
     val rows = ServiceRow.entries.filter {
         when (it) {
             ServiceRow.Account -> state.account != ServiceAccount.NotOffered
+            ServiceRow.Channel -> state.account is ServiceAccount.SignedIn && state.channels.size > 1
             ServiceRow.App, ServiceRow.AfterChoosing -> state.app != null
             ServiceRow.Control -> state.app?.installed == true
             ServiceRow.Basis -> state.basisNote != null
@@ -143,6 +162,7 @@ fun OnlineServiceScreen(settings: OnlineServiceSettings) {
                 settings.setEnabled(!state.enabled)
             }
             ServiceRow.Account -> if (!state.enabled) haptics.reject() else accountMenu()
+            ServiceRow.Channel -> if (!state.enabled) haptics.reject() else onChannels()
             ServiceRow.App -> if (state.app?.installed == true) settings.openApp() else settings.installApp()
             ServiceRow.Control -> if (state.app?.controlAllowed == true) haptics.reject() else settings.allowControl()
             ServiceRow.AfterChoosing -> {
@@ -193,6 +213,12 @@ fun OnlineServiceScreen(settings: OnlineServiceSettings) {
                 },
                 enabled = state.enabled,
             )
+            ServiceRow.Channel -> MenuRow(
+                "Channel",
+                focused,
+                value = if (state.switchingTo != null) "Switching" else state.channels.firstOrNull { it.selected }?.name ?: "Choose",
+                enabled = state.enabled,
+            )
             ServiceRow.App -> MenuRow(state.app?.name.orEmpty(), focused, value = if (state.app?.installed == true) "Installed" else "Install")
             ServiceRow.Control -> MenuRow(
                 "Media controls",
@@ -210,3 +236,55 @@ fun OnlineServiceScreen(settings: OnlineServiceSettings) {
         }
     }
 }
+
+/**
+ * Settings ▸ the online service ▸ Channel (D-86): the signed-in account's channels, the one Podium
+ * acts as checked. Choosing another switches to it — its library, likes and history are its own;
+ * the check moves only once the service has answered as that channel.
+ */
+@Composable
+fun ServiceChannelScreen(settings: OnlineServiceSettings) {
+    val current by settings.state.collectAsStateWithLifecycle()
+    val haptics = rememberPodiumHaptics()
+    LaunchedEffect(Unit) { settings.refreshChannels() }
+    val state = current
+    val channels = state?.channels.orEmpty()
+    val problem = state?.channelProblem
+    val focus = rememberFocusListState("online-channel")
+    val activate: (Int) -> Unit = { i ->
+        val channel = channels.getOrNull(i)
+        when {
+            channel == null || state?.switchingTo != null -> haptics.reject()
+            channel.selected && problem == null -> haptics.reject()
+            else -> {
+                haptics.confirm()
+                settings.selectChannel(channel.id)
+            }
+        }
+    }
+    ListInputEffect(focus, onActivate = activate)
+    FocusList(
+        items = channels.map { it.id } + listOfNotNull(problem?.let { PROBLEM_ROW }),
+        state = focus,
+        key = { it },
+        contentPadding = LocalScreenInsets.current.listPadding(),
+        onActivate = activate,
+        preview = { MenuPreview.Instrument },
+        modifier = Modifier.fillMaxSize(),
+    ) { id, _, focused ->
+        val channel = channels.firstOrNull { it.id == id }
+        if (channel == null) {
+            MenuRow(problem.orEmpty(), focused, enabled = false, showChevron = false)
+        } else {
+            MenuRow(
+                channel.name,
+                focused,
+                value = if (state?.switchingTo == channel.id) "Switching" else channel.detail,
+                selected = channel.selected,
+                showChevron = false,
+            )
+        }
+    }
+}
+
+private const val PROBLEM_ROW = "\u0000problem"

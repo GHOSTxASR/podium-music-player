@@ -42,6 +42,12 @@ class MainActivity : ComponentActivity() {
         pressedAt = 0L
     }
 
+    // Podium's own text size and weight, whatever the phone's text settings (D-84).
+    override fun attachBaseContext(newBase: android.content.Context) {
+        super.attachBaseContext(newBase)
+        StandardText.override(newBase.resources.configuration)?.let(::applyOverrideConfiguration)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
@@ -52,6 +58,11 @@ class MainActivity : ComponentActivity() {
         applyDebugWindowCommand(intent, this)
         setContent {
             PodiumApp(graph, onSourceAction = ::perform, onTurnOff = ::turnOff)
+        }
+        // Full screen (D-85): Android's bars hidden while the setting is on; a swipe from the edge
+        // shows them for a moment.
+        lifecycleScope.launch {
+            graph.deviceSettings.immersive.collect { applyImmersive(it) }
         }
         // Without music access, Podium asks once by itself, as soon as it has switched on (the
         // system's own question, over the device); after that, "Allow music access" on Home asks.
@@ -64,6 +75,23 @@ class MainActivity : ComponentActivity() {
                     ask(permission)
                 }
             }
+        }
+    }
+
+    // Some phones bring the bars back when the window regains focus (a dialog, the shade): hide them again.
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) applyImmersive(graph.deviceSettings.immersive.value)
+    }
+
+    private fun applyImmersive(on: Boolean) {
+        val controller = androidx.core.view.WindowCompat.getInsetsController(window, window.decorView)
+        val bars = androidx.core.view.WindowInsetsCompat.Type.systemBars()
+        if (on) {
+            controller.systemBarsBehavior = androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            controller.hide(bars)
+        } else {
+            controller.show(bars)
         }
     }
 

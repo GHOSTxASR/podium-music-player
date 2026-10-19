@@ -24,6 +24,11 @@ import java.net.UnknownHostException
  *
  * The client identifies as the music web client, at the version the page itself reports (read from
  * the page at most every few hours), with the device's own browser user agent.
+ *
+ * **Channels (D-86).** A Google account can have several channels (brand accounts). Signed in, the
+ * catalogue answers as the account's own channel unless asked to act as another: [onBehalfOf] names
+ * that channel's page id, sent as `context.user.onBehalfOfUser` — as the music page does, and as
+ * ytmusicapi does for brand accounts.
  */
 internal class YouTubeMusicClient(
     private val transport: HttpTransport,
@@ -32,6 +37,8 @@ internal class YouTubeMusicClient(
     private val now: () -> Long = System::currentTimeMillis,
     private val language: String = "en",
     private val region: () -> String = { "US" },
+    /** The channel being acted as (its page id), or null for the account's own. */
+    private val onBehalfOf: () -> String? = { null },
 ) {
     private data class PageConfig(val clientVersion: String, val visitorData: String?, val loadedAt: Long)
 
@@ -78,6 +85,12 @@ internal class YouTubeMusicClient(
 
     suspend fun accountMenu(): Outcome<JsonObject> = call("account/account_menu", null) {}
 
+    /** The account's channels, as the channel switcher lists them (D-86). Asked as the account itself. */
+    suspend fun accountsList(): Outcome<JsonObject> = call("account/accounts_list", null, asChannel = false) {
+        put("requestType", "ACCOUNTS_LIST_REQUEST_TYPE_CHANNEL_SWITCHER")
+        put("callCircumstance", "SWITCHING_USERS_FULL")
+    }
+
     /** Artwork bytes from the catalogue's image hosts. No session goes with these. */
     suspend fun image(url: String): ByteArray? = try {
         val r = transport.send("GET", url, mapOf("User-Agent" to userAgent()), null)
@@ -93,13 +106,14 @@ internal class YouTubeMusicClient(
     private suspend fun call(
         endpoint: String,
         continuation: Continuation?,
+        asChannel: Boolean = true,
         fields: kotlinx.serialization.json.JsonObjectBuilder.() -> Unit,
     ): Outcome<JsonObject> {
-        val first = attempt(endpoint, continuation, fields)
+        val first = attempt(endpoint, continuation, asChannel, fields)
         // A 400 usually means the page has moved on to a newer client version: learn it, try once more.
         if (first is Outcome.Failure && first.error == STALE_CLIENT) {
             config = null
-            return attempt(endpoint, continuation, fields).let { if (it is Outcome.Failure && it.error == STALE_CLIENT) Outcome.Failure(PodiumError.Server(400)) else it }
+            return attempt(endpoint, continuation, asChannel, fields).let { if (it is Outcome.Failure && it.error == STALE_CLIENT) Outcome.Failure(PodiumError.Server(400)) else it }
         }
         return first
     }
@@ -107,10 +121,12 @@ internal class YouTubeMusicClient(
     private suspend fun attempt(
         endpoint: String,
         continuation: Continuation?,
+        asChannel: Boolean,
         fields: kotlinx.serialization.json.JsonObjectBuilder.() -> Unit,
     ): Outcome<JsonObject> {
         val cfg = pageConfig()
         val signedIn = session()
+        val page = if (signedIn != null && asChannel) onBehalfOf() else null
         val body = buildJsonObject {
             putJsonObject("context") {
                 putJsonObject("client") {
@@ -120,7 +136,7 @@ internal class YouTubeMusicClient(
                     put("gl", region())
                     cfg.visitorData?.let { put("visitorData", it) }
                 }
-                putJsonObject("user") {}
+                putJsonObject("user") { page?.let { put("onBehalfOfUser", it) } }
             }
             if (continuation?.inBody == true) put("continuation", continuation.token)
             fields()

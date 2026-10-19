@@ -245,6 +245,9 @@ sealed interface Dest {
 
     /** Settings ▸ the online music service (D-38): account, the app that plays, hand-off. */
     data object OnlineSources : Dest
+
+    /** Settings ▸ the online music service ▸ Channel (D-86). */
+    data object OnlineChannel : Dest
     data class Album(val id: AlbumId) : Dest
     data class Artist(val id: ArtistId) : Dest
 
@@ -262,7 +265,7 @@ sealed interface Dest {
 private val fixedDests = listOf(
     Dest.Home, Dest.Music, Dest.CoverFlow, Dest.Albums, Dest.Artists, Dest.Songs, Dest.Favorites, Dest.NowPlaying,
     Dest.UpNext, Dest.Lyrics, Dest.Settings, Dest.Appearance, Dest.DeviceBody, Dest.VirtualDisplay, Dest.Theme, Dest.Font,
-    Dest.LyricsFont, Dest.LyricsTheme, Dest.Background, Dest.Finish, Dest.CustomColor, Dest.DisplayColor, Dest.OnlineSources, Dest.Equalizer,
+    Dest.LyricsFont, Dest.LyricsTheme, Dest.Background, Dest.Finish, Dest.CustomColor, Dest.DisplayColor, Dest.OnlineSources, Dest.OnlineChannel, Dest.Equalizer,
 ).associateBy { it.toString() }
 
 private fun Dest.encode(): String = when (this) {
@@ -322,6 +325,7 @@ private fun titleOf(dest: Dest, graph: AppGraph): String = when (dest) {
     Dest.Equalizer -> "Equaliser"
     is Dest.EqualizerBand -> app.podium.feature.settings.bandLabel(dest.band)
     Dest.OnlineSources -> graph.onlineService.state.collectAsStateWithLifecycle().value?.name ?: "Online music"
+    Dest.OnlineChannel -> "Channel"
     is Dest.Album -> {
         val album by remember(dest) { graph.library.album(dest.id) }.collectAsStateWithLifecycle(initialValue = null)
         album?.album?.title ?: "Album"
@@ -587,6 +591,7 @@ fun PodiumApp(graph: AppGraph, onSourceAction: (CapabilityAction) -> Unit, onTur
                             }
                         },
                         keyboardOpen = keyboard.isOpen,
+                        immersive = graph.deviceSettings.immersive.collectAsStateWithLifecycle().value,
                         powerButton = {
                             PowerButton(on = power != Power.OFF, palette = palette, onToggle = graph::togglePower)
                         },
@@ -650,6 +655,10 @@ private fun ScreenOs(
     val motion = PodiumTheme.motion
     val colors = PodiumTheme.colors
     val output by graph.audioOutput.state.collectAsStateWithLifecycle()
+    // Full screen (D-85): the title bar takes over the time and the battery from the hidden status bar.
+    val immersive by graph.deviceSettings.immersive.collectAsStateWithLifecycle()
+    val titleBarBattery by graph.deviceSettings.titleBarBattery.collectAsStateWithLifecycle()
+    val battery by graph.battery.collectAsStateWithLifecycle()
     val top = backStack.last()
     val miniPlayerVisible = snapshot.isActive && top.showsMiniPlayer()
     // Lyrics take the whole display: no header, no fading edges.
@@ -747,6 +756,8 @@ private fun ScreenOs(
                     onBack = { navigator.pop() },
                     playing = if (snapshot.isActive) snapshot.intent == PlayIntent.PLAY else null,
                     output = output.indicator(),
+                    clock = immersive,
+                    battery = if (immersive && titleBarBattery) battery else null,
                     modifier = Modifier.align(Alignment.TopCenter),
                 )
                 AnimatedVisibility(
@@ -958,7 +969,8 @@ private fun ScreenContent(
         )
         Dest.Equalizer -> app.podium.feature.settings.EqualizerScreen(settings, onBand = { navigator.push(Dest.EqualizerBand(it)) })
         is Dest.EqualizerBand -> app.podium.feature.settings.EqualizerBandScreen(settings, screen.band, onDone = { navigator.pop() })
-        Dest.OnlineSources -> OnlineServiceScreen(graph.onlineService)
+        Dest.OnlineSources -> OnlineServiceScreen(graph.onlineService, onChannels = { navigator.push(Dest.OnlineChannel) })
+        Dest.OnlineChannel -> app.podium.feature.settings.ServiceChannelScreen(graph.onlineService)
         is Dest.MusicFolders -> MusicFoldersScreen(graph.musicFolders, screen.path, onOpen = { navigator.push(Dest.MusicFolders(it)) })
         Dest.Appearance -> AppearanceScreen(
             settings,

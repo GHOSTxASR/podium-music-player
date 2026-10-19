@@ -1,13 +1,15 @@
 package app.podium.player.api
 
 /**
- * Settings ▸ Equaliser and Settings ▸ Crossfade (D-76, D-77): how Podium's own player shapes
- * the sound. Both are off by default; off leaves the audio exactly as decoded.
+ * Settings ▸ Equaliser and Settings ▸ Crossfade (D-76, D-77, D-89): how Podium's own player shapes
+ * the sound. All off by default; off leaves the audio exactly as decoded.
  */
 data class AudioEffects(
     val equalizer: EqualizerSettings = EqualizerSettings(),
     /** Seconds the end of one song and the start of the next overlap; 0 is off. */
     val crossfadeSeconds: Int = 0,
+    /** Where the music seems to be (D-89), after the equaliser; works with it on or off. */
+    val sound: SoundEffect = SoundEffect.NONE,
 ) {
     companion object {
         /** The crossfade lengths offered, in seconds (0 is off). */
@@ -47,6 +49,14 @@ data class EqualizerSettings(
         const val MAX_GAIN_DB = 12f
         const val STEP_DB = 1f
     }
+}
+
+/** One way of placing the music (D-89), one at a time. Labels are sentence case (copy rules). */
+enum class SoundEffect(val label: String) {
+    NONE("None"),
+    CAR("Car stereo"),
+    HALL("3D hall"),
+    ORBIT("8D"),
 }
 
 /** Ready-made curves (dB per band, 31 Hz to 16 kHz). Names are sentence case (copy rules). */

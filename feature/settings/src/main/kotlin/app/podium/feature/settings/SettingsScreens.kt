@@ -70,7 +70,7 @@ import app.podium.core.interaction.WheelContext
 import app.podium.core.interaction.rememberFocusListState
 import app.podium.core.interaction.rememberPodiumHaptics
 
-private enum class SettingsRow { Appearance, PodiumSpace, Keyboard, MusicFolders, OnlineSources, Autoplay, Recommendations, AvoidRepeats, Crossfade, Equalizer, SleepTimer, OnlineLyrics, LyricsCredit, Haptics, Clicks, StartupSound }
+private enum class SettingsRow { Appearance, PodiumSpace, FullScreen, TitleBarBattery, Keyboard, MusicFolders, OnlineSources, Autoplay, Recommendations, AvoidRepeats, Crossfade, Equalizer, SleepTimer, OnlineLyrics, LyricsCredit, Haptics, Clicks, StartupSound }
 
 /**
  * Settings (D-26, D-32, D-35): the device's look, which folders hold its music, which online sources it
@@ -101,6 +101,8 @@ fun SettingsScreen(
     val avoidRepeatsOn by repository.avoidRepeats.collectAsStateWithLifecycle()
     val onlineLyricsOn by repository.onlineLyrics.collectAsStateWithLifecycle()
     val podiumKeyboard by repository.podiumKeyboard.collectAsStateWithLifecycle()
+    val immersive by repository.immersive.collectAsStateWithLifecycle()
+    val titleBarBattery by repository.titleBarBattery.collectAsStateWithLifecycle()
     val folderList by folders.folders.collectAsStateWithLifecycle()
     val selection by folders.selection.collectAsStateWithLifecycle()
     val service by onlineService.state.collectAsStateWithLifecycle()
@@ -122,6 +124,14 @@ fun SettingsScreen(
         when (rows[index]) {
             SettingsRow.Appearance -> onAppearance()
             SettingsRow.PodiumSpace -> onPodiumSpace()
+            SettingsRow.FullScreen -> {
+                haptics.confirm()
+                repository.setImmersive(!immersive)
+            }
+            SettingsRow.TitleBarBattery -> if (!immersive) haptics.reject() else {
+                haptics.confirm()
+                repository.setTitleBarBattery(!titleBarBattery)
+            }
             SettingsRow.Keyboard -> {
                 haptics.confirm()
                 repository.setPodiumKeyboard(!podiumKeyboard)
@@ -188,6 +198,15 @@ fun SettingsScreen(
             SettingsRow.Appearance -> MenuRow("Appearance", focused, value = appearance.display.label)
             SettingsRow.PodiumSpace -> MenuRow("Podium body", focused, value = "Stickers, help, turn off")
             // Typing: the Wheel becomes Podium's keyboard, or the phone's keyboard appears (D-45).
+            // Full screen (D-85): the phone's bars hidden; the title bar shows the time and the battery.
+            SettingsRow.FullScreen -> MenuRow("Full screen", focused, value = if (immersive) "On" else "Off", showChevron = false)
+            SettingsRow.TitleBarBattery -> MenuRow(
+                "Battery in title bar",
+                focused,
+                value = if (!immersive) "Full screen only" else if (titleBarBattery) "Shown" else "Hidden",
+                enabled = immersive,
+                showChevron = false,
+            )
             SettingsRow.Keyboard -> MenuRow("Keyboard", focused, value = if (podiumKeyboard) "Podium" else "Phone", showChevron = false)
             SettingsRow.MusicFolders -> MenuRow(
                 "Music folders",
@@ -204,7 +223,7 @@ fun SettingsScreen(
             SettingsRow.AvoidRepeats -> MenuRow("Avoid repeats", focused, value = if (avoidRepeatsOn) "On" else "Off", enabled = autoplayOn, showChevron = false)
             // Podium's own player (D-75 – D-77).
             SettingsRow.Crossfade -> MenuRow("Crossfade", focused, value = if (effects.crossfadeSeconds == 0) "Off" else "${effects.crossfadeSeconds} s", showChevron = false)
-            SettingsRow.Equalizer -> MenuRow("Equaliser", focused, value = if (effects.equalizer.enabled) effects.equalizer.preset.label else "Off")
+            SettingsRow.Equalizer -> MenuRow("Equaliser", focused, value = equalizerSummary(effects))
             SettingsRow.SleepTimer -> MenuRow("Sleep timer", focused, value = sleepSummary, showChevron = false)
             SettingsRow.OnlineLyrics -> MenuRow("Online lyrics", focused, value = if (onlineLyricsOn) "On" else "Off", showChevron = false)
             // The lyrics service's credit (LYRICS_ARCHITECTURE.md §9): its community wrote the words.
@@ -506,3 +525,12 @@ internal fun Swatch(color: Color?) {
     )
 }
 
+/** The Equaliser row's value: the preset, the effect, both, or off. */
+internal fun equalizerSummary(effects: AudioEffects): String {
+    val eq = effects.equalizer.takeIf { it.enabled }?.preset?.label
+    val fx = effects.sound.takeIf { it != app.podium.player.api.SoundEffect.NONE }?.label
+    return when {
+        eq != null && fx != null -> "$eq, $fx"
+        else -> eq ?: fx ?: "Off"
+    }
+}

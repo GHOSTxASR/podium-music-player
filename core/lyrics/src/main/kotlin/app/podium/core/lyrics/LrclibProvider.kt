@@ -1,7 +1,10 @@
 package app.podium.core.lyrics
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
@@ -18,7 +21,8 @@ sealed interface ProviderAnswer {
     data class Found(val lyrics: Lyrics) : ProviderAnswer
     data object NotFound : ProviderAnswer
     data object Offline : ProviderAnswer
-    data object RateLimited : ProviderAnswer
+    /** The service asked Podium to slow down; nothing more is asked of it for [retryInMs]. */
+    data class RateLimited(val retryInMs: Long) : ProviderAnswer
     data object Failed : ProviderAnswer
 }
 
@@ -34,6 +38,11 @@ interface LyricsProvider {
 fun interface LyricsHttp {
     /** Returns the status and body; throws IOException when the network fails. */
     suspend fun get(url: String): Pair<Int, String>
+
+    /** The status, the body and how long the service asks to wait (its `Retry-After`, in seconds), when it says. */
+    suspend fun reply(url: String): Reply = get(url).let { (code, body) -> Reply(code, body, null) }
+
+    data class Reply(val code: Int, val body: String, val retryAfterSeconds: Long?)
 }
 
 /**
@@ -47,11 +56,25 @@ fun interface LyricsHttp {
  *
  * Synced lyrics are preferred (with the line end times and any word times of LRCLIB's `lyricsfile`);
  * plain lyrics are used as plain; "instrumental" is believed.
+ *
+ * **Asking politely (D-84).** The service limits how often it is asked: it answers 429 with how long
+ * to wait (`Retry-After`). Podium waits that long — or, without it, 30 s, doubling with each further
+ * refusal up to 10 min — and asks nothing at all meanwhile: every lookup in the wait is answered
+ * [ProviderAnswer.RateLimited] at once, with the time left. Its own requests are at least
+ * [MIN_INTERVAL_MS] apart, so skipping through songs can't send a burst. An answer the service does
+ * give ends the backing off.
  */
 class LrclibProvider(
     private val http: LyricsHttp,
     private val base: String = "https://lrclib.net",
+    /** A monotonic clock in milliseconds (tests pass their own). */
+    private val now: () -> Long = { System.nanoTime() / 1_000_000 },
 ) : LyricsProvider {
+
+    private val gate = Mutex()
+    private var blockedUntil = Long.MIN_VALUE
+    private var refusals = 0
+    private var lastAsked = Long.MIN_VALUE
 
     override val id = "lrclib"
     override val attribution = LyricsAttribution("LRCLIB", "https://lrclib.net")
@@ -132,19 +155,38 @@ class LrclibProvider(
     }
 
     private suspend fun fetch(url: String, decode: (String) -> List<Record>): Fetched {
-        val (code, body) = try {
-            http.get(url)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: UnknownHostException) {
-            return Fetched.Problem(ProviderAnswer.Offline)
-        } catch (e: IOException) {
-            return Fetched.Problem(if (e.message == "UnknownHostException") ProviderAnswer.Offline else ProviderAnswer.Failed)
+        val reply = gate.withLock {
+            val t = now()
+            if (t < blockedUntil) return Fetched.Problem(ProviderAnswer.RateLimited(blockedUntil - t))
+            // At least MIN_INTERVAL_MS between requests (callers wait their turn here, in order).
+            if (lastAsked != Long.MIN_VALUE) {
+                val wait = lastAsked + MIN_INTERVAL_MS - t
+                if (wait > 0) delay(wait)
+            }
+            lastAsked = now()
+            val answer = try {
+                http.reply(url)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: UnknownHostException) {
+                return Fetched.Problem(ProviderAnswer.Offline)
+            } catch (e: IOException) {
+                return Fetched.Problem(if (e.message == "UnknownHostException") ProviderAnswer.Offline else ProviderAnswer.Failed)
+            }
+            if (answer.code == 429) {
+                val asked = answer.retryAfterSeconds?.takeIf { it > 0 }?.times(1000)
+                val backoff = minOf(FIRST_BACKOFF_MS shl minOf(refusals, 5), MAX_BACKOFF_MS)
+                val wait = (asked ?: backoff).coerceIn(MIN_BACKOFF_MS, MAX_BACKOFF_MS)
+                refusals++
+                blockedUntil = now() + wait
+                return Fetched.Problem(ProviderAnswer.RateLimited(wait))
+            }
+            refusals = 0
+            answer
         }
-        return when (code) {
-            in 200..299 -> runCatching { Fetched.Records(decode(body)) }.getOrElse { Fetched.Problem(ProviderAnswer.Failed) }
+        return when (reply.code) {
+            in 200..299 -> runCatching { Fetched.Records(decode(reply.body)) }.getOrElse { Fetched.Problem(ProviderAnswer.Failed) }
             404 -> Fetched.NotFound
-            429 -> Fetched.Problem(ProviderAnswer.RateLimited)
             else -> Fetched.Problem(ProviderAnswer.Failed)
         }
     }
@@ -159,6 +201,18 @@ class LrclibProvider(
         "$base/api/search?track_name=${enc(r.title)}&artist_name=${enc(r.artist)}"
 
     private fun enc(s: String) = URLEncoder.encode(s.trim(), "UTF-8")
+
+    companion object {
+        /** Podium's own requests are at least this far apart. */
+        const val MIN_INTERVAL_MS = 1_000L
+
+        /** Without a `Retry-After`: 30 s, doubling with each refusal in a row, at most 10 min. */
+        const val FIRST_BACKOFF_MS = 30_000L
+        const val MAX_BACKOFF_MS = 10 * 60_000L
+
+        /** However short a wait the service names, at least this. */
+        const val MIN_BACKOFF_MS = 5_000L
+    }
 }
 
 /**
@@ -169,7 +223,9 @@ class UrlConnectionLyricsHttp(
     private val userAgent: String,
     private val executor: Executor = SharedExecutor,
 ) : LyricsHttp {
-    override suspend fun get(url: String): Pair<Int, String> {
+    override suspend fun get(url: String): Pair<Int, String> = reply(url).let { it.code to it.body }
+
+    override suspend fun reply(url: String): LyricsHttp.Reply {
         if (!url.startsWith("https://")) throw IOException("refused")
         return suspendCancellableCoroutine { cont ->
             val connection = URI.create(url).toURL().openConnection() as HttpURLConnection
@@ -195,7 +251,7 @@ class UrlConnectionLyricsHttp(
                                 }
                                 out.toByteArray()
                             } ?: ByteArray(0)
-                            code to bytes.toString(Charsets.UTF_8)
+                            LyricsHttp.Reply(code, bytes.toString(Charsets.UTF_8), retryAfterSeconds(connection.getHeaderField("Retry-After")))
                         } catch (e: UnknownHostException) {
                             throw e
                         } catch (e: IOException) {
@@ -211,6 +267,17 @@ class UrlConnectionLyricsHttp(
 
     private companion object {
         const val MAX_BYTES = 2 * 1024 * 1024
+
+        /** `Retry-After` as seconds, or as an HTTP date (seconds from now), or null. */
+        fun retryAfterSeconds(value: String?): Long? {
+            val v = value?.trim().orEmpty()
+            if (v.isEmpty()) return null
+            v.toLongOrNull()?.let { return it.coerceAtLeast(0) }
+            return runCatching {
+                val at = java.time.ZonedDateTime.parse(v, java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME).toInstant().toEpochMilli()
+                ((at - System.currentTimeMillis()) / 1000).coerceAtLeast(0)
+            }.getOrNull()
+        }
         val SharedExecutor: Executor = Executors.newCachedThreadPool { r -> Thread(r, "podium-lyrics-io").apply { isDaemon = true } }
     }
 }

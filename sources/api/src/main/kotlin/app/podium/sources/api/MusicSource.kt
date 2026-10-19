@@ -27,6 +27,9 @@ interface MusicSource {
     val downloads: DownloadFacet? get() = null
     val auth: AuthFacet? get() = null
 
+    /** Live radio stations (D-90), for sources that have them. */
+    val liveRadio: LiveRadioFacet? get() = null
+
     /** For libraries read from storage: which folders are read (D-32). */
     val folders: FolderFacet? get() = null
 

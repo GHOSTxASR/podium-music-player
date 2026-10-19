@@ -22,9 +22,9 @@ Evidence: `research/2026-10-02-liquid-glass-and-hig.md`, `research/2026-10-02-ty
 
 ### 1.1 Compact portrait (phones) — the canonical layout (the device, D-26)
 ```
-┌──────────────────────────────┐  status bar (system, transparent; icon colour follows the finish)
+┌──────────────────────────────┐  status bar (system, transparent; icon colour follows the finish; hidden in full screen, D-85)
 │ ╭──────────────────────────╮ │  Body: the window, in the chosen finish (§5.8)
-│ │(‹)       Songs         ▶ │ │  ScreenHeader inside the screen (44dp): back, title, play state
+│ │(‹)       Songs         ▶ │ │  ScreenHeader inside the screen (44dp): back, title, play state (full screen: + time left, battery right)
 │ │▣ Broken Tape        0:10 │ │  Virtual screen: black bezel (3dp), own canvas + atmosphere,
 │ │╭────────────────────────╮│ │    cover-glass reflection and recess shadow over the content
 │ ││▣ Coda              0:12 ││ │  ← focus lens on the focused row

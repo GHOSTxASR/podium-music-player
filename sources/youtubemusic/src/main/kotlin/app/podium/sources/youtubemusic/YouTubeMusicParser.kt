@@ -417,6 +417,32 @@ internal object YouTubeMusicParser {
         return YtmAccount(name, header.at("channelHandle").text()?.trim(), thumbnails(header.at("accountPhoto", "thumbnails")))
     }
 
+    /**
+     * The channels in the account's channel switcher (D-86), in its order. An item is a channel when
+     * it has a name; its page id comes from its switch endpoint — the page id token, or the channel
+     * half of a "channel||user" data-sync id (the account's own channel's is "user||": none).
+     * Items that can't be chosen (disabled, or without a channel) are left out.
+     */
+    fun channels(json: JsonObject): List<YtmChannel> = json.findAll("accountItem").mapNotNull { item ->
+        val name = item.at("accountName").text()?.trim() ?: return@mapNotNull null
+        if (item.at("isDisabled").bool == true || item.at("hasChannel").bool == false) return@mapNotNull null
+        val tokens = item.findAll("supportedTokens").flatMap { it.arr }
+        val pageId = tokens.firstNotNullOfOrNull { it.at("pageIdToken", "pageId").str?.takeIf(String::isNotBlank) }
+            ?: tokens.firstNotNullOfOrNull { t ->
+                t.at("datasyncIdToken", "datasyncIdToken").str?.let { id ->
+                    val parts = id.split("||", limit = 2)
+                    parts[0].takeIf { parts.getOrNull(1).orEmpty().isNotBlank() && it.isNotBlank() }
+                }
+            }
+        YtmChannel(
+            name = name,
+            handle = (item.at("channelHandle").text() ?: item.at("accountByline").text())?.trim()?.takeIf { it.startsWith("@") },
+            photo = thumbnails(item.at("accountPhoto", "thumbnails")),
+            pageId = pageId,
+            selected = item.at("isSelected").bool == true,
+        )
+    }.distinctBy { it.pageId.orEmpty() }
+
     // --- Shared pieces ----------------------------------------------------------------------------------
 
     /** The blocks of a page's main section list, and how to load more of them. */

@@ -878,3 +878,146 @@ Every significant decision, newest at the bottom. Major ones have an ADR in `adr
 - **Not verified:** the orb with the listener's own music (how it moves with real kicks and hats),
   the not-found screen on the phone (Robolectric only), the fallback drawing below Android 13, and
   reduced motion on the phone (the phone's animation setting wasn't changed).
+
+### D-84 · Listener fixes: standard text, Cover Flow's order, asking the lyrics service politely
+- **Context:** user list (2026-10-19). A listener's phone with large text drew the wheel's arrows
+  and the power button as rectangles. Cover Flow scattered an artist's albums. Lyrics said "Too
+  many requests" far more often than before.
+- **Decision:**
+  - **Standard text.** Podium draws at its own text size and weight, whatever the phone's font
+    size and Bold text settings: `MainActivity.attachBaseContext` applies an override
+    configuration with `fontScale` 1 and `fontWeightAdjustment` 0 (`StandardText`). The rectangles
+    couldn't be reproduced (Robolectric at 2× and bold drew the symbols correctly), so their cause
+    on that phone is unknown. The owner offered standard text as the fix ("either fix it or just
+    make the text size a standard"). It also stops the wheel's `MENU` wrapping. The trade-off:
+    Podium no longer follows the phone's text size (accessibility.md §2).
+  - **Cover Flow** goes by artist, then album (`coverFlowOrder`, using the lists' `sortKey`), so
+    "Drake" is followed by "Drake, Ariana Grande", as on an iPod.
+  - **Lyrics pacing.** LRCLIB now answers 429 with `Retry-After`. Podium ignored it and asked again
+    at once on every song and every reopen. Now `LrclibProvider` waits the time asked (kept
+    between 5 s and 10 min), or 30 s doubling to 10 min when none is given. It asks nothing
+    meanwhile and spaces its own requests at least 1 s apart. The screen says "The lyrics service
+    is busy" and asks again by itself once the wait is over (LYRICS_ARCHITECTURE.md §6, §8).
+- **Verified:** `StandardTextTest`, `CoverFlowOrderTest`, `LrclibPacingTest`. Not yet on the
+  listener's phone.
+
+### D-85 · Full screen, with the time and the battery in the title bar (issue #3)
+- **Context:** GitHub issue #3 and the owner: hide Android's status and navigation bars (or just
+  the status bar), as a setting. When it's on, the iPod's title bar shows a digital clock on the
+  left and, optionally, a small battery.
+- **Decision:**
+  - Settings ▸ **Full screen** (off by default). Off, nothing changes. On, the system bars are
+    hidden (`WindowInsetsControllerCompat`, both bars; a swipe from the edge shows them for a
+    moment). This is re-applied when the window regains focus. `DeviceLayout` then keeps only the
+    display cutout's insets.
+  - In full screen, `ScreenHeader` shows the time (`TitleBarClock`: the phone's 12- or 24-hour
+    choice, changing on the minute) on the left, after the back arrow when there is one. It also
+    shows the battery (`TitleBarBattery`: an outline filled to the charge, with a bolt cut out
+    while charging, in the display's quiet ink). Settings ▸ **Battery in title bar** turns the
+    battery off; it's on by default and does nothing outside full screen. The title keeps clear of
+    both (92 dp each side instead of 56).
+- **Verified:** `TitleBarStatusTest` (nothing overlaps the title, with and without the back arrow;
+  screenshots checked), `DeviceSettingsPersistenceTest`. Not yet on the phone.
+
+### D-86 · Choosing a Google account's channel (issue #4)
+- **Context:** GitHub issue #4. A Google account with several YouTube channels (brand accounts)
+  signs in as the account's own channel, but the listener's music is on another. The owner: "if it
+  is there, implement it".
+- **Decision:**
+  - The channels come from YouTube's own channel switcher: `account/accounts_list` with
+    `ACCOUNTS_LIST_REQUEST_TYPE_CHANNEL_SWITCHER`, asked as the account itself.
+    `YouTubeMusicParser.channels` reads each `accountItem` tolerantly. A channel's page id comes
+    from its switch endpoint's `pageIdToken`, or the channel half of a `channel||user` data-sync
+    id; the account's own channel has none. Disabled items, and items without a channel, are left
+    out.
+  - Podium acts as a channel by sending its page id as `context.user.onBehalfOfUser` on every
+    signed-in request. This is how ytmusicapi supports brand accounts. The page id is kept sealed
+    with the session.
+  - A switch first asks the account menu as that channel, and keeps the channel only if the
+    answer comes back as that channel. Otherwise nothing changes and Settings explains. The
+    account's name and key become the channel's, so each channel's likes, playlists and history
+    are its own. Switching back to the account's own channel gives back the original key.
+  - A refused channel list never signs the account out (it isn't watched for expiry). Signing out
+    removes every account's online rows (`OnlineLibraryStore.forgetAccounts`): all of that
+    account's channels, and anything an earlier sign-in left.
+  - `sources:api` gains provider-neutral identities on `AuthFacet` (`identities`,
+    `refreshIdentities`, `selectIdentity`, `AccountIdentity`). Settings ▸ the online service shows
+    a **Channel** row when there are two or more, opening a picker with the current one checked.
+- **Verified:** fixture tests for the parser, the switch (including restarts and back again),
+  refusals and sign-out. **Not** with a real brand account: there wasn't one to try, so the
+  issue's author should confirm.
+
+### D-87 · ALAC on every phone: Podium's own decoder after the platform's
+- **Context:** the owner asked for ALAC playback. Media3 reads ALAC from MP4, but decoding needs
+  a decoder on the phone. Android's own software codecs have none: this phone has Qualcomm's, and
+  many phones have nothing.
+- **Options:** Jellyfin's prebuilt Media3 FFmpeg decoder stops at Media3 1.9.0 (Podium uses
+  1.11.1) and adds native libraries per ABI. Building FFmpeg here is impractical. A Kotlin port of
+  Apple's reference decoder (Apache-2.0) is small, pure and testable bit for bit.
+- **Decision:**
+  - `AlacFrameDecoder` is a port of Apple's ALAC decoder (attributed in third_party/CODE.md).
+    `AlacAudioRenderer` is a Media3 `DecoderAudioRenderer`, added **after** the platform's
+    renderers. A phone with its own decoder keeps using it, exactly as before. One without uses
+    Podium's.
+  - It handles 16, 20, 24 and 32 bit, and 1–8 channels (placed in Android's channel order). It
+    doesn't read CAF files, which Media3 has no extractor for.
+- **Verified:** bit-exact against FFmpeg's decoder on five generated files (16-bit stereo with
+  silence, mono, 24-bit, uncompressed frames, 5.1). A file also plays to the end through ExoPlayer
+  with only this renderer (Robolectric). Not yet on a phone that lacks an ALAC decoder.
+
+### D-88 · The app icon: the wordmark's P
+- **Context:** the owner wants a new icon: a "P" in the boot wordmark's typeface, replacing the
+  filled circle inside a hollow one.
+- **Decision:** the "P" of `archivo_wordmark.ttf` (Archivo, weight 900, width 125). Its outline is
+  converted to a vector path with fontTools. It sits on the existing dark background, filled with
+  the wordmark's silver stops, 38 dp tall inside the 66 dp safe zone and nudged 0.8 dp right to sit
+  optically centred. The themed (monochrome) icon is the same "P" in one flat colour.
+- **Verified:** rendered under circle, squircle and square masks, small, and themed. Not yet on the
+  phone's launcher.
+
+### D-89 · Sound effects: car stereo, 3D hall, 8D
+- **Context:** the owner asked for more effects in the equaliser: a car stereo, an immersive 3D
+  hall, and the viral "8D" sound that moves between the ears.
+- **Decision:**
+  - Settings ▸ Equaliser ▸ **Effect**: None, Car stereo, 3D hall, 8D. One at a time. It works
+    with the equaliser on or off, is kept, and takes effect at once.
+  - `SoundEffectProcessor` sits in each player's audio path after the equaliser and before the bass
+    meter. With None it passes audio through bit for bit. A change crossfades over 60 ms, and a
+    soft limit above 0.8 of full scale keeps everything below clipping. It handles stereo 16-bit
+    and float; mono passes untouched.
+  - **Car stereo:** +7 dB low shelf at 85 Hz, +2 dB at 2.5 kHz, −4 dB high shelf at 9 kHz, a
+    narrower image, and five early reflections 2.3–9.8 ms late (some from the other side). A −5 dB
+    preamp makes room for the bass.
+  - **3D hall:** a stereo reverb with Freeverb's public-domain tuning (large room, 25 ms
+    pre-delay), around a slightly widened dry sound.
+  - **8D:** the music circles the head every 8 s, with equal-power level, up to 0.45 ms between
+    the ears, and the head's shadow darkening the far ear (more so behind). Some of the original
+    stereo stays, with a small room around it.
+- **Verified:** `SoundEffectProcessorTest` measured the car's bass lift (over 4 dB against 1 kHz),
+  the hall's tail after the music stops, 8D more than 6 dB to each side at a quarter turn, nothing
+  past full scale, and no clicks when switching. How much of each sounds right is for the owner's
+  ears: not yet heard on the phone.
+
+### D-90 · Live radio: YouTube's live music streams, audio only
+- **Context:** the owner wants live radio stations in Online, if available. CLAUDE.md makes
+  YouTube Music the only online provider.
+- **Decision:**
+  - Stations are YouTube's live music streams (24/7 lofi, jazz and the like), found with YouTube's
+    own search filtered to live: the video site's web client, signed out, so nothing of the
+    account goes with it. There is one search per genre (13 genres), most listened to first.
+    `www.youtube.com` is now an allowed host, that exact host only.
+  - New provider-neutral pieces: `MediaKind.LIVE`, `Capability.LIVE_RADIO` and `LiveRadioFacet`.
+    In the app: Online ▸ **Live radio** ▸ a genre ▸ its stations. Center tunes in, and Next goes
+    to the next station.
+  - Playback: the stream's HLS master playlist (from NewPipe's live info) is read for its
+    audio-only AAC-LC rendition (128 kbps, the same audio as a song), so no video is fetched.
+    `media3-exoplayer-hls` is added, and a station's media item is marked live HLS before it loads.
+  - A station isn't a song: no crossfade (the player's "duration" is only its rewind window), no
+    lyrics lookup (the lyrics screen says it's live radio), and no scrubbing. Now Playing says
+    "Live radio", with "Live" where the time left would be.
+  - A radio directory (Radio Browser, say) would be a second online provider. That isn't done; it
+    needs the owner's decision.
+- **Verified:** from this laptop against the real service: a genre found 20 live stations, two
+  resolved to their audio-only AAC-LC playlists, and ExoPlayer loaded one as live HLS with
+  AAC-LC 44.1 kHz stereo (Robolectric, which has no AAC decoder to play it). Unit tests cover the
+  search parser, the playlist choice, the source and the media item. Not yet on the phone.

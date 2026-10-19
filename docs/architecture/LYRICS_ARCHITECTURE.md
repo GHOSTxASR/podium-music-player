@@ -49,7 +49,7 @@ the feature works the same for local files and online songs and providers never 
 - `LyricsRequest(key, title, artist, album?, durationMs?)` — `key` is the source-qualified track id,
   used only for the cache fingerprint.
 - `LyricsResult`: `Found(lyrics, attribution)`, `NotFound`, `NeedsConsent`, `Offline`, `Failed`,
-  `RateLimited`.
+  `RateLimited(retryInMs)`.
 - `LyricsProvider { id; attribution; lookup(request): ProviderAnswer }` — the replaceable part.
 
 ## 3. Matching (no wrong song's words)
@@ -148,6 +148,14 @@ asked for again.
   length (2 s buckets) — different providers, songs or edited tags never share an entry, and keys are
   validated against a strict pattern before touching the file system.
 - Two requests for the same song at once make one network call.
+- **Asking politely (D-84).** LRCLIB limits how often it's asked and answers 429 with
+  `Retry-After`. `LrclibProvider` waits the time asked (kept between 5 s and 10 min), or 30 s
+  doubling with each refusal in a row up to 10 min when none is given. It asks nothing meanwhile:
+  every lookup in the wait is answered `RateLimited` at once, with the time left. Its own requests
+  are at least 1 s apart, in order, so skipping through songs can't send a burst. Any answer the
+  service does give ends the backing off. The screen asks again by itself once the wait is over
+  (plus 0.5 s). A rate-limited answer is never cached.
+- A live radio station (D-90) is never looked up: the screen says it's live radio.
 - The HTTP client is https-only, sends `User-Agent: Podium/<version> (Android music player)`, follows
   no redirects, times out after 8 s connect / 10 s read and reads at most 2 MB. Errors are reduced to
   the exception's class name — no URLs or bodies are logged.
@@ -197,7 +205,8 @@ fades — the whole virtual display is the lyric.
 | consent | Find lyrics online? | Podium sends the song title, artist, album and length to LRCLIB. Press Center to allow. Menu goes back. |
 | not found | No lyrics found | Lyrics for this song aren't available. (Classic: the orb, with "No lyrics found" small at the top, D-83.) |
 | offline | Lyrics unavailable offline | Connect, then press Center to try again. |
-| rate limited | Too many requests | Wait a moment, then press Center to try again. |
+| rate limited | The lyrics service is busy | It asked Podium to wait. Podium asks again by itself in 40 s. (The time left; Center does nothing meanwhile, D-84.) |
+| live radio | Live radio | A station plays many songs, so it has no lyrics here. Choose a song to see its words. (D-90) |
 | failed | Couldn't load lyrics | Press Center to try again. |
 | instrumental | Instrumental | This song has no words. (Classic: the orb, with "Instrumental" small at the top, D-83; Continuous line: its line art.) |
 

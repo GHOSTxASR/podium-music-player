@@ -9,7 +9,7 @@ UI ──► PlaybackController (MediaController) ══► PlaybackService : Me
                                                    ├─ MediaLibrarySession(callback = SessionPolicy)
                                                    ├─ ExoPlayer
                                                    │   ├─ MediaSourceFactory(DataSource chain ↓)
-                                                   │   ├─ RenderersFactory(float output for > 16-bit)
+                                                   │   ├─ RenderersFactory(float output for > 16-bit; ALAC decoder after the platform's, D-87)
                                                    │   └─ AnalyticsListener → QualityInspector
                                                    ├─ QueueManager ── QueuePersister
                                                    ├─ AutoplayEngine
@@ -118,9 +118,25 @@ Short, natural-case, one line: `FLAC 24-bit/96 kHz`, `ALAC 16-bit/44.1 kHz`, `AA
 | ReplayGain | `AudioProcessor` applying track/album gain from tags/Subsonic `replayGain`; pre-amp; clip prevention | Disabled when bit-perfect |
 | Crossfade | **Built (D-77).** Settings ▸ Crossfade: off, 2, 4, 6, 8 or 12 s. The engine's one player keeps the queue and the session; a silent second player (`Crossfader`) carries only the outgoing song's last seconds: levelled with the first (by playing a little slower or faster while silent), swapped in unheard, faded out on an equal-power curve while the next song fades in from its start | Never for an album's next track (gapless), repeat-one, songs under 3× the overlap, or when the sleep timer ends with the song; any pause, skip or seek ends it at once |
 | Equalizer | **Built (D-76).** Settings ▸ Equaliser: ten peaking filters an octave apart (31 Hz to 16 kHz, ±12 dB), presets or custom, as an `AudioProcessor` (`EqualizerProcessor`) in the player's own audio path, the same on every phone | Off or flat it passes audio through sample for sample; a boost lowers everything first by the curve's peak, so it never clips; changes are heard at once |
+| Sound effect | **Built (D-89).** Settings ▸ Equaliser ▸ Effect: None, Car stereo, 3D hall or 8D, one at a time, with the equaliser on or off. `SoundEffectProcessor`, after the equaliser in each player's audio path. Car: low shelf +7 dB at 85 Hz, +2 dB at 2.5 kHz, high shelf −4 dB at 9 kHz, a narrower image, five early reflections 2.3–9.8 ms. 3D hall: a stereo reverb (Freeverb's public-domain tuning, large room, 25 ms pre-delay) around a slightly wider dry sound. 8D: the music circles the head every 8 s (equal-power level, up to 0.45 ms between the ears, the head's shadow on the far ear), with a small room | None passes audio through bit for bit; a change crossfades over 60 ms; a soft limit above 0.8 of full scale keeps it from clipping; stereo 16-bit and float (mono passes untouched) |
 | Audio meter | **Built (D-82, D-83).** `AudioMeter`, after the equaliser in the main player's audio path: mono, RMS per 10 ms block whole, below 120 Hz and above 2.5 kHz, each filed under its song position from the sink's `StreamMetadata.positionOffsetUs`, for the lyrics' swell and the orb (LYRICS_ARCHITECTURE.md §13, §14) | Pass-through: changes no sample; no permission; no second decode; measures only while the lyrics screen listens; not on crossfade's second player; another app's playback is never measured |
 | Skip silence | `SilenceSkippingAudioProcessor` | P2 |
 | Speed | Not exposed (music app) | |
+
+## 8.1 ALAC (D-87)
+Media3 reads ALAC from MP4, and most phones decode it with their own MediaCodec decoder. Phones
+without one (Android's own software codecs have none) use Podium's: `AlacAudioRenderer`, a
+`DecoderAudioRenderer` over `AlacFrameDecoder` (a Kotlin port of Apple's Apache-2.0 reference
+decoder). It's added after the platform's renderers, so a phone with its own decoder keeps using
+it. It handles 16, 20 (written as 24), 24 and 32 bit, and 1–8 channels in Android's order, and is
+bit-exact against FFmpeg on the test files. It doesn't read CAF files (no Media3 extractor).
+
+## 8.2 Live radio (D-90)
+A live station (`MediaKind.LIVE`) is a queue item whose media item is marked live HLS
+(`application/x-mpegURL`, with a live configuration) before it loads; `media3-exoplayer-hls` is on
+the classpath. The resolver hands over the stream's audio-only rendition, so no video is fetched.
+Its playlist reloads go through the same `ResolvingDataSource` and reuse the pinned selection
+until it expires. Crossfade never applies (the player's duration is only the rewind window).
 
 ## 9. Sleep timer
 **Built (D-75).** Options: 15 / 30 / 45 / 60 / 90 min, end of song, end of album. A countdown fades the player's own volume (never the phone's) over its last 10 s, then pauses; the volume stays down until the music plays again, so the pause lands in silence. The end of a song or album is the player's own pause at the end of that item. Reachable via Now Playing ▸ More ▸ Sleep timer and Settings ▸ Sleep timer; Now Playing says when the music stops while it's set. (Long-press ⏯ switches the device off since D-26, so it no longer opens the timer.) Music another app plays is paused when the countdown ends, without a fade.

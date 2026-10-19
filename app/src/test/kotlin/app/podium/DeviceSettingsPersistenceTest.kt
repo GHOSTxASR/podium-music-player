@@ -92,4 +92,16 @@ class DeviceSettingsPersistenceTest {
         assertEquals(1f, read.glitter.opacity)
         assertEquals(0xFF112233.toInt(), read.screen.solidArgb, "always opaque")
     }
+
+    @Test
+    fun `full screen and the title bar's battery are kept across a restart, off and shown at first`() {
+        val fresh = SharedPrefsDeviceSettings(context)
+        assertFalse(fresh.immersive.value, "full screen is off until chosen")
+        assertEquals(true, fresh.titleBarBattery.value, "the battery shows once full screen is on")
+        fresh.setImmersive(true)
+        fresh.setTitleBarBattery(false)
+        val again = SharedPrefsDeviceSettings(context)
+        assertEquals(true, again.immersive.value)
+        assertFalse(again.titleBarBattery.value)
+    }
 }

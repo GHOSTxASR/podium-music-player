@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The mark for themed icons: the same "P", one flat colour (the launcher tints it). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M33.18 73V35H63.72Q67.48 35 70.35 36.68Q73.22 38.37 74.82 41.38Q76.42 44.39 76.42 48.31Q76.42 52.34 74.79 55.38Q73.16 58.42 70.29 60.08Q67.42 61.73 63.72 61.73H46.82V73ZM46.82 52.29H59.91Q62.01 52.29 63.03 51.29Q64.05 50.3 64.05 48.37Q64.05 47.04 63.58 46.18Q63.11 45.33 62.2 44.89Q61.29 44.44 59.91 44.44H46.82Z" />
+</vector>

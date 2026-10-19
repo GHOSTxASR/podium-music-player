@@ -7,16 +7,22 @@ import app.podium.feature.settings.OnlineServiceSettings
 import app.podium.feature.settings.OnlineServiceState
 import app.podium.feature.settings.ServiceAccount
 import app.podium.feature.settings.ServiceApp
+import app.podium.feature.settings.ServiceChannel
+import app.podium.core.common.Outcome
+import app.podium.core.common.PodiumError
 import app.podium.core.model.PlaybackRoute
 import app.podium.player.api.RemoteAccess
 import app.podium.player.remote.MediaSessionRemotePlayback
+import app.podium.sources.api.AccountIdentity
 import app.podium.sources.api.AuthState
 import app.podium.sources.api.Basis
 import app.podium.sources.api.MusicEnvironment
 import app.podium.sources.api.MusicSource
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -29,12 +35,22 @@ class AppOnlineServiceSettings(private val graph: AppGraph) : OnlineServiceSetti
     private val context: Context get() = graph.context
     private fun service(): MusicSource? = graph.registry.registered(MusicEnvironment.ONLINE).firstOrNull()
 
+    /** A channel switch under way, or why the last one didn't happen (D-86). */
+    private data class Switch(val to: String? = null, val problem: String? = null)
+
+    private val switch = MutableStateFlow(Switch())
+
+    private val identities: StateFlow<List<AccountIdentity>>? get() = service()?.auth?.identities
+
     override val state: StateFlow<OnlineServiceState?> = combine(
         graph.registry.connectedSources,
         graph.remotePlayback.access,
         graph.deviceSettings.stayInPodium,
-    ) { sources, access, stay ->
+        identities ?: flowOf(emptyList()),
+        switch,
+    ) { sources, access, stay, channels, sw ->
         val s = sources.firstOrNull { it.descriptor.environment == MusicEnvironment.ONLINE } ?: return@combine null
+        val signedIn = s.authenticationState is AuthState.SignedIn
         OnlineServiceState(
             name = s.descriptor.displayName,
             enabled = s.enabled,
@@ -53,6 +69,9 @@ class AppOnlineServiceSettings(private val graph: AppGraph) : OnlineServiceSetti
                 controlAllowed = access == RemoteAccess.READY,
             ),
             stayInPodium = stay,
+            channels = if (signedIn) channels.map { ServiceChannel(it.id, it.name, it.detail, it.selected) } else emptyList(),
+            switchingTo = sw.to,
+            channelProblem = sw.problem,
         )
     }.stateIn(graph.appScope, SharingStarted.Eagerly, null)
 
@@ -78,6 +97,32 @@ class AppOnlineServiceSettings(private val graph: AppGraph) : OnlineServiceSetti
     override fun openAppInfo() = start(MediaSessionRemotePlayback.appInfoIntent(context))
 
     override fun setStayInPodium(enabled: Boolean) = graph.deviceSettings.setStayInPodium(enabled)
+
+    override fun refreshChannels() {
+        val auth = service()?.auth ?: return
+        if (auth.state.value !is AuthState.SignedIn) return
+        graph.appScope.launch { auth.refreshIdentities() }
+    }
+
+    override fun selectChannel(id: String) {
+        val auth = service()?.auth ?: return
+        if (switch.value.to != null) return
+        val name = auth.identities.value.firstOrNull { it.id == id }?.name ?: return
+        val stayingOn = auth.identities.value.firstOrNull { it.selected }?.name
+        switch.value = Switch(to = id)
+        graph.appScope.launch {
+            val result = auth.selectIdentity(id)
+            switch.value = Switch(problem = (result as? Outcome.Failure)?.error?.let { channelProblem(it, name, stayingOn) })
+        }
+    }
+
+    /** Why a switch to [name] didn't happen, and what to do next. */
+    private fun channelProblem(error: PodiumError, name: String, stayingOn: String?): String = when (error) {
+        PodiumError.Offline, is PodiumError.Network -> "Couldn't reach the service to switch to $name. Check the connection, then try again."
+        is PodiumError.Unsupported -> "$name didn't answer as itself, so Podium stayed on ${stayingOn ?: "the current channel"}. Try again later."
+        is PodiumError.RateLimited -> "The service asked Podium to wait. Try $name again in a minute."
+        else -> "Couldn't switch to $name. Try again in a moment."
+    }
 
     private fun start(intent: Intent) {
         try {

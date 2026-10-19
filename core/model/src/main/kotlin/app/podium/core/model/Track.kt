@@ -152,4 +152,10 @@ enum class MediaKind {
 
     /** A podcast or show episode. */
     EPISODE,
+
+    /**
+     * A live radio station (D-90): music streaming now, with no end and no seeking past the live
+     * edge. Never a song: no lyrics, no matching, no crossfade.
+     */
+    LIVE,
 }

@@ -2,6 +2,7 @@ package app.podium.sources.youtubemusic
 
 import app.podium.core.model.AudioQuality
 import app.podium.core.model.Codec
+import app.podium.core.model.MediaKind
 import app.podium.core.model.SourceId
 import app.podium.core.model.Track
 import app.podium.sources.api.FacetResolution
@@ -126,6 +127,7 @@ internal open class YouTubeMusicStreamResolver(
 
         return try {
             val info = StreamInfo.getInfo(normalizedUrl)
+            if (track.kind == MediaKind.LIVE) return live(track, info.hlsUrl)
             val audioStreams = info.audioStreams.orEmpty()
             if (audioStreams.isEmpty()) return FacetResolution.Miss(MissReason.NOT_STREAMABLE)
 
@@ -168,6 +170,29 @@ internal open class YouTubeMusicStreamResolver(
         } catch (e: Throwable) {
             FacetResolution.Failed(HealthOutcome.UNKNOWN, e.javaClass.simpleName)
         }
+    }
+
+    /**
+     * A live station (D-90): the stream's HLS master playlist, read for its audio-only rendition
+     * ([HlsAudio]). The player plays that playlist as live HLS; its address lasts hours, and is
+     * asked for afresh like a song's when it runs out.
+     */
+    private fun live(track: Track, master: String?): FacetResolution {
+        if (master.isNullOrBlank()) return FacetResolution.Miss(MissReason.NOT_STREAMABLE)
+        val playlist = downloader.get(master)
+        if (playlist.responseCode() !in 200..299) return FacetResolution.Failed(HealthOutcome.NETWORK_FAILURE, "HTTP ${playlist.responseCode()}")
+        val pick = HlsAudio.pick(playlist.responseBody()) ?: return FacetResolution.Miss(MissReason.NOT_STREAMABLE)
+        val media = PlayableMedia(
+            uri = pick.uri,
+            mimeType = HLS_MIME,
+            claimedQuality = if (pick.itag == 140) AudioQuality(codec = Codec.AAC, container = "hls", bitrateKbps = 128, sampleRateHz = 44_100, channels = 2) else null,
+            durationMs = null,
+            expiresAtMillis = HlsAudio.expiresAtMillis(pick.uri) ?: HlsAudio.expiresAtMillis(master),
+            headers = emptyMap(),
+            sourceId = sourceId,
+            cacheKey = "${track.id.value}|live",
+        )
+        return FacetResolution.Resolved(PlaybackTarget.DirectStream(trackId = track.id, media = media))
     }
 
     /**
@@ -234,3 +259,6 @@ internal open class YouTubeMusicStreamResolver(
             averageKbps.takeIf { it > 0 } ?: bitsPerSecond.takeIf { it > 0 }?.let { (it + 500) / 1000 }
     }
 }
+
+/** HLS playlists' media type. */
+internal const val HLS_MIME = "application/x-mpegURL"

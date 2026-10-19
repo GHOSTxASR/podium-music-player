@@ -248,6 +248,35 @@ internal object Fixtures {
           "accountPhoto":{"thumbnails":[{"url":"https://yt3.ggpht.com/photo=s88","width":88}]}
         }}}}}}],"responseContext":{"serviceTrackingParams":[{"service":"GFEEDBACK","params":[{"key":"logged_in","value":"1"}]}]}}"""
 
+    /** The account menu, asked as one of the account's other channels (D-86). */
+    val accountMenuIshma = """
+        {"actions":[{"openPopupAction":{"popup":{"multiPageMenuRenderer":{"header":{"activeAccountHeaderRenderer":{
+          "accountName":{"runs":[{"text":"ishmaboy"}]},
+          "channelHandle":{"runs":[{"text":"@ishmaboy"}]}
+        }}}}}}],"responseContext":{"serviceTrackingParams":[{"service":"GFEEDBACK","params":[{"key":"logged_in","value":"1"}]}]}}"""
+
+    private fun accountItem(name: String, handle: String?, tokens: String, selected: Boolean = false, disabled: Boolean = false) = """
+        {"accountItem":{"accountName":{"simpleText":"$name"},
+          "accountPhoto":{"thumbnails":[{"url":"https://yt3.ggpht.com/$name=s48","width":48},{"url":"https://yt3.ggpht.com/$name=s108","width":108}]},
+          "isSelected":$selected,"isDisabled":$disabled,"hasChannel":true,
+          ${handle?.let { "\"channelHandle\":{\"simpleText\":\"$it\"}," }.orEmpty()}
+          "serviceEndpoint":{"selectActiveIdentityEndpoint":{"supportedTokens":[
+            {"accountStateToken":{"hasChannel":true,"isMerged":false,"obfuscatedGaiaId":"111"}},
+            {"offlineCacheKeyToken":{"clientCacheKey":"cache-$name"}},
+            $tokens
+          ]}}}}"""
+
+    /** The channel switcher of a Google account with its own channel and two brand channels (D-86). */
+    val accountsList = """
+        {"actions":[{"getMultiPageMenuAction":{"menu":{"multiPageMenuRenderer":{"sections":[{"accountSectionListRenderer":{"contents":[
+          {"accountItemSectionRenderer":{"contents":[
+            ${accountItem("Listener Name", "@listener", """{"datasyncIdToken":{"datasyncIdToken":"user111||"}}""", selected = true)},
+            ${accountItem("ishmaboy", "@ishmaboy", """{"pageIdToken":{"pageId":"112233445566778899001"}},{"datasyncIdToken":{"datasyncIdToken":"112233445566778899001||user111"}}""")},
+            ${accountItem("Side Project", null, """{"datasyncIdToken":{"datasyncIdToken":"998877665544332211000||user111"}}""")},
+            ${accountItem("Old Channel", "@old", """{"pageIdToken":{"pageId":"555"}}""", disabled = true)}
+          ]}}
+        ]}}]}}}}],"responseContext":{"serviceTrackingParams":[{"service":"GFEEDBACK","params":[{"key":"logged_in","value":"1"}]}]}}"""
+
     val signedOutAnswer = """{"responseContext":{"serviceTrackingParams":[{"service":"GFEEDBACK","params":[{"key":"logged_in","value":"0"}]}]},"contents":{}}"""
 
     const val PAGE_HTML = """<html><script>ytcfg.set({"INNERTUBE_CLIENT_NAME":"WEB_REMIX","INNERTUBE_CLIENT_VERSION":"1.20261005.01.00","VISITOR_DATA":"CgtWaXNpdG9yMTIz"});</script></html>"""

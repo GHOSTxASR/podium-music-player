@@ -457,4 +457,98 @@ class YouTubeMusicSourceTest {
         assertEquals("https://lh3.googleusercontent.com/abc=w300-h300-l90-rj", service.sent.last().url)
         assertNull(service.sent.last().headers["Cookie"])
     }
+
+    // --- Channels (D-86) -------------------------------------------------------------------------------
+
+    private fun signedInWithChannels(ishmaMenu: String = Fixtures.accountMenuIshma) {
+        credentials.write(YouTubeMusicSource.SOURCE_ID, mapOf("session" to session, "account-name" to "Listener Name", "account-key" to YouTubeMusicSource.accountKeyOf("@listener")))
+        service.answer = { s ->
+            when {
+                s.url.contains("account/accounts_list") -> ok(Fixtures.accountsList)
+                s.url.contains("account/account_menu") && "onBehalfOfUser" in s.body -> ok(ishmaMenu)
+                s.url.contains("account/account_menu") -> ok(Fixtures.accountMenu)
+                s.url.contains("/browse?") && "VLLM" in s.body -> ok(Fixtures.playlist)
+                else -> HttpResponse(404, ByteArray(0))
+            }
+        }
+    }
+
+    @Test
+    fun `the account's channels are listed, its own channel chosen`() = runTest {
+        signedInWithChannels()
+        val channels = (source.auth!!.refreshIdentities() as Outcome.Success).value
+        assertEquals(listOf("own", "112233445566778899001", "998877665544332211000"), channels.map { it.id })
+        assertEquals(listOf(true, false, false), channels.map { it.selected })
+        assertEquals(channels, source.auth!!.identities.value)
+        // The list is asked as the account itself.
+        assertFalse("onBehalfOfUser" in service.api("account/accounts_list").single().body)
+    }
+
+    @Test
+    fun `choosing a channel acts as it from then on, and its library is its own`() = runTest {
+        signedInWithChannels()
+        val before = assertIs<AuthState.SignedIn>(source.auth!!.state.value)
+        source.auth!!.refreshIdentities()
+        assertEquals(Outcome.Success(Unit), source.auth!!.selectIdentity("112233445566778899001"))
+
+        val after = assertIs<AuthState.SignedIn>(source.auth!!.state.value)
+        assertEquals("ishmaboy", after.accountName)
+        assertTrue(after.accountKey != before.accountKey, "each channel's things are kept apart")
+        assertEquals(listOf(false, true, false), source.auth!!.identities.value.map { it.selected })
+        assertEquals("112233445566778899001", credentials.read(YouTubeMusicSource.SOURCE_ID)!!["page-id"])
+        assertEquals("ishmaboy", credentials.read(YouTubeMusicSource.SOURCE_ID)!!["account-name"])
+
+        source.accountLibrary!!.likedSongs(0, 10)
+        assertTrue("\"onBehalfOfUser\":\"112233445566778899001\"" in service.api("browse").last().body)
+
+        // After a restart it is still that channel.
+        val again = YouTubeMusicSource(credentials, service, { "TestBrowser/1.0" }, { "GB" }, { 1_700_000_000_000L })
+        assertEquals(after, again.auth!!.state.value)
+        again.accountLibrary!!.likedSongs(0, 10)
+        assertTrue("\"onBehalfOfUser\":\"112233445566778899001\"" in service.api("browse").last().body)
+
+        // And back to the account's own channel: the same key as before.
+        source.auth!!.selectIdentity("own")
+        assertEquals(before, source.auth!!.state.value)
+        assertNull(credentials.read(YouTubeMusicSource.SOURCE_ID)!!["page-id"])
+        source.accountLibrary!!.likedSongs(0, 10)
+        assertFalse("onBehalfOfUser" in service.api("browse").last().body)
+    }
+
+    @Test
+    fun `a channel the service won't act as is not kept`() = runTest {
+        // Asked as the channel, the service answers as the account's own.
+        signedInWithChannels(ishmaMenu = Fixtures.accountMenu)
+        val before = source.auth!!.state.value
+        source.auth!!.refreshIdentities()
+        val r = source.auth!!.selectIdentity("112233445566778899001")
+        assertIs<PodiumError.Unsupported>((r as Outcome.Failure).error)
+        assertEquals(before, source.auth!!.state.value)
+        assertNull(credentials.read(YouTubeMusicSource.SOURCE_ID)!!["page-id"])
+        assertEquals(listOf(true, false, false), source.auth!!.identities.value.map { it.selected })
+    }
+
+    @Test
+    fun `a refused channel list or switch never signs the account out`() = runTest {
+        signedInWithChannels()
+        source.auth!!.refreshIdentities()
+        service.answer = { HttpResponse(403, ByteArray(0)) }
+        assertIs<Outcome.Failure>(source.auth!!.refreshIdentities())
+        assertIs<Outcome.Failure>(source.auth!!.selectIdentity("112233445566778899001"))
+        assertIs<AuthState.SignedIn>(source.auth!!.state.value)
+        assertNotNull(credentials.read(YouTubeMusicSource.SOURCE_ID))
+    }
+
+    @Test
+    fun `signing out forgets the channel`() = runTest {
+        signedInWithChannels()
+        source.auth!!.refreshIdentities()
+        source.auth!!.selectIdentity("112233445566778899001")
+        source.auth!!.signOut()
+        assertTrue(source.auth!!.identities.value.isEmpty())
+        // Signing in again starts at the account's own channel.
+        assertEquals(SignInResult.SignedIn, source.auth!!.signIn(mapOf(WebSignIn.SESSION_KEY to session)))
+        assertEquals("Listener Name", (source.auth!!.state.value as AuthState.SignedIn).accountName)
+        assertFalse("onBehalfOfUser" in service.api("account/account_menu").last().body)
+    }
 }

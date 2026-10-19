@@ -10,6 +10,7 @@ import app.podium.core.model.SourceRef
 import app.podium.core.model.Track
 import app.podium.core.model.TrackId
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
 /** Searching and looking up a source's catalogue. */
@@ -156,7 +157,36 @@ interface AuthFacet {
 
     /** Set when signing in happens on the provider's web page instead of a form. */
     val webSignIn: WebSignIn? get() = null
+
+    /**
+     * The identities the signed-in account can act as (D-86) — e.g. the several channels of one
+     * Google account — once [refreshIdentities] has asked. Empty when the source has none.
+     */
+    val identities: StateFlow<List<AccountIdentity>> get() = NoIdentities
+
+    /** Ask the source which identities the account has. */
+    suspend fun refreshIdentities(): Outcome<List<AccountIdentity>> = Outcome.Success(emptyList())
+
+    /**
+     * Act as identity [id] from now on (kept for next time). The account's name and key change with
+     * it ([AuthState.SignedIn]), so each identity's library is its own.
+     */
+    suspend fun selectIdentity(id: String): Outcome<Unit> = Outcome.Failure(PodiumError.Unsupported("identities"))
 }
+
+/**
+ * One identity a signed-in account can act as (D-86). [id] is opaque; [detail] is a second line
+ * such as the channel's handle.
+ */
+data class AccountIdentity(
+    val id: String,
+    val name: String,
+    val detail: String?,
+    val artworkUrl: String?,
+    val selected: Boolean,
+)
+
+private val NoIdentities: StateFlow<List<AccountIdentity>> = MutableStateFlow(emptyList())
 
 /**
  * An online account's own library (YOUTUBE_MUSIC_ARCHITECTURE §7). Lists page by offset; a source
@@ -175,6 +205,19 @@ interface AccountLibraryFacet {
     val canWriteLikes: Boolean get() = false
 
     suspend fun setLiked(track: Track, liked: Boolean): Outcome<Unit> = Outcome.Failure(PodiumError.Unsupported("likes"))
+}
+
+/**
+ * Live radio (D-90): stations streaming now, by genre. A station is a [Track] of kind
+ * [app.podium.core.model.MediaKind.LIVE] — no duration, no end — that plays through the source's
+ * playback like any other.
+ */
+interface LiveRadioFacet {
+    /** The genres offered, in the source's order. */
+    fun genres(): List<String>
+
+    /** The stations live now in [genre], the most listened to first. */
+    suspend fun stations(genre: String): Outcome<List<Track>>
 }
 
 /** One song in an account's own history. [period] is the provider's label for when ("Today"), if any. */

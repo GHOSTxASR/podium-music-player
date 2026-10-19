@@ -79,6 +79,18 @@ class OnlineLibraryStore(
         }
     }
 
+    /**
+     * Everything kept for every account goes — all the channels of the account signing out (D-86),
+     * and anything left by an earlier one. The device's own online rows and the local library stay.
+     */
+    suspend fun forgetAccounts() {
+        db.withWriteTransaction {
+            dao.deleteAccountLikes()
+            dao.deleteAccountPlaylists()
+            dao.clearAccountHistory()
+        }
+    }
+
     suspend fun likeCount(account: String = DEVICE): Int = dao.likeCount(account)
 
     // --- Playlists ----------------------------------------------------------------------------------------

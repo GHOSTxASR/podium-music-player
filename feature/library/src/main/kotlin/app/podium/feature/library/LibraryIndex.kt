@@ -26,6 +26,15 @@ data class LibraryArtist(
     val covers: List<String>,
 )
 
+/**
+ * Cover Flow's order (D-84): by artist, then album title, as an iPod's Cover Flow runs — so one
+ * artist's albums stand together, and an artist's collaborations ("Drake, Ariana Grande") come right
+ * after their own ("Drake"). The same alphabetical key as the lists ([LibraryGrouping.sortKey]:
+ * letter case, accents, punctuation and a leading "The" don't count).
+ */
+fun coverFlowOrder(albums: List<LibraryAlbum>): List<LibraryAlbum> =
+    albums.sortedWith(compareBy({ LibraryGrouping.sortKey(it.artist) }, { LibraryGrouping.sortKey(it.title) }, { it.id.value }))
+
 /** One album's page: the album and its songs in disc and track order. */
 data class AlbumDetail(val album: LibraryAlbum, val tracks: List<Track>)
 

@@ -328,12 +328,71 @@ two"}"""
     fun `instrumental, failures and limits are classified`() = runTest {
         val instrumental = """{"trackName":"Coastline","artistName":"Northern Sines","duration":200.0,"instrumental":true}"""
         assertEquals(ProviderAnswer.Found(Lyrics.Instrumental), LrclibProvider(Script(listOf({ 200 to instrumental }))).lookup(request))
-        assertEquals(ProviderAnswer.RateLimited, LrclibProvider(Script(listOf({ 429 to "" }))).lookup(request))
+        assertIs<ProviderAnswer.RateLimited>(LrclibProvider(Script(listOf({ 429 to "" }))).lookup(request))
         assertEquals(ProviderAnswer.Failed, LrclibProvider(Script(listOf({ 500 to "" }))).lookup(request))
         assertEquals(ProviderAnswer.Failed, LrclibProvider(Script(listOf({ 200 to "not json" }))).lookup(request))
         assertEquals(ProviderAnswer.Failed, LrclibProvider(Script(listOf({ throw IOException("SocketTimeoutException") }))).lookup(request))
         assertEquals(ProviderAnswer.Offline, LrclibProvider(Script(listOf({ throw UnknownHostException() }))).lookup(request))
         assertEquals(ProviderAnswer.NotFound, LrclibProvider(Script(emptyList())).lookup(request.copy(title = " ")))
+    }
+}
+
+/** Asking the lyrics service politely (D-84): its waits honoured, backing off without one, requests spaced. */
+class LrclibPacingTest {
+    private val request = LyricsRequest("local|1", "Coastline", "Northern Sines", "Woodland", 200_000)
+    private val found = """{"trackName":"Coastline","artistName":"Northern Sines","albumName":"Woodland","duration":200.0,"syncedLyrics":"[00:01.00] one"}"""
+
+    /** Answers in turn, each with an optional Retry-After; notes when each request came (on [clock]). */
+    private class Replies(val clock: () -> Long, val answers: List<LyricsHttp.Reply> = emptyList(), val byUrl: ((String) -> LyricsHttp.Reply)? = null) : LyricsHttp {
+        val asked = mutableListOf<Long>()
+        override suspend fun get(url: String): Pair<Int, String> = error("reply() is used")
+        override suspend fun reply(url: String): LyricsHttp.Reply {
+            asked += clock()
+            return byUrl?.invoke(url) ?: answers[minOf(asked.size - 1, answers.lastIndex)]
+        }
+    }
+
+    @Test
+    fun `the service's own wait is honoured, and nothing is asked meanwhile`() = runTest {
+        val clock = { testScheduler.currentTime }
+        val http = Replies(clock, listOf(LyricsHttp.Reply(429, "", 120), LyricsHttp.Reply(200, found, null)))
+        val provider = LrclibProvider(http, now = clock)
+        assertEquals(ProviderAnswer.RateLimited(120_000), provider.lookup(request))
+        // A minute later: still waiting, and the service isn't asked.
+        testScheduler.advanceTimeBy(60_000)
+        val waiting = assertIs<ProviderAnswer.RateLimited>(provider.lookup(request))
+        assertEquals(60_000, waiting.retryInMs)
+        assertEquals(1, http.asked.size)
+        // After the wait: asked again, and found.
+        testScheduler.advanceTimeBy(61_000)
+        assertIs<ProviderAnswer.Found>(provider.lookup(request))
+        assertEquals(2, http.asked.size)
+    }
+
+    @Test
+    fun `without a wait named, it backs off 30 s, doubling, and starts over after an answer`() = runTest {
+        val clock = { testScheduler.currentTime }
+        val limited = LyricsHttp.Reply(429, "", null)
+        val http = Replies(clock, listOf(limited, limited, LyricsHttp.Reply(200, found, null), limited))
+        val provider = LrclibProvider(http, now = clock)
+        assertEquals(ProviderAnswer.RateLimited(LrclibProvider.FIRST_BACKOFF_MS), provider.lookup(request))
+        testScheduler.advanceTimeBy(LrclibProvider.FIRST_BACKOFF_MS + 1)
+        assertEquals(ProviderAnswer.RateLimited(LrclibProvider.FIRST_BACKOFF_MS * 2), provider.lookup(request), "doubled")
+        testScheduler.advanceTimeBy(LrclibProvider.FIRST_BACKOFF_MS * 2 + 1)
+        assertIs<ProviderAnswer.Found>(provider.lookup(request))
+        assertEquals(ProviderAnswer.RateLimited(LrclibProvider.FIRST_BACKOFF_MS), provider.lookup(request.copy(title = "Other")), "back to the first wait")
+    }
+
+    @Test
+    fun `requests are at least a second apart, however fast songs change`() = runTest {
+        val clock = { testScheduler.currentTime }
+        val http = Replies(clock, byUrl = { url -> if ("/api/get" in url) LyricsHttp.Reply(404, "{}", null) else LyricsHttp.Reply(200, "[]", null) })
+        val provider = LrclibProvider(http, now = clock)
+        // Five songs at once: each a lookup and a search.
+        val jobs = (1..5).map { i -> async { provider.lookup(request.copy(title = "Song $i")) } }
+        jobs.forEach { it.await() }
+        assertEquals(10, http.asked.size)
+        for (k in 1 until http.asked.size) assertTrue(http.asked[k] - http.asked[k - 1] >= LrclibProvider.MIN_INTERVAL_MS, "spaced: ${http.asked}")
     }
 }
 

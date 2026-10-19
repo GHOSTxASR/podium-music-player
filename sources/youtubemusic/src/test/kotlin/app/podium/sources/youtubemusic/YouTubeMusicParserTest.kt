@@ -238,4 +238,17 @@ class YouTubeMusicParserTest {
         assertEquals("1.20261005.01.00" to "CgtWaXNpdG9yMTIz", PageConfigParser.parse(Fixtures.PAGE_HTML))
         assertNull(PageConfigParser.parse("<html>nothing</html>"))
     }
+
+    @Test
+    fun `the channel switcher lists the account's channels with the page id to act as each`() {
+        val channels = YouTubeMusicParser.channels(json(Fixtures.accountsList))
+        assertEquals(listOf("Listener Name", "ishmaboy", "Side Project"), channels.map { it.name })
+        // The account's own channel has no page id; a brand channel's comes from its token, or else
+        // from the channel half of its data-sync id. A disabled channel can't be chosen.
+        assertEquals(listOf(null, "112233445566778899001", "998877665544332211000"), channels.map { it.pageId })
+        assertEquals(listOf("@listener", "@ishmaboy", null), channels.map { it.handle })
+        assertEquals(listOf(true, false, false), channels.map { it.selected })
+        assertEquals("https://yt3.ggpht.com/ishmaboy=s108", channels[1].photo.maxBy { it.width }.url)
+        assertTrue(YouTubeMusicParser.channels(json("{}")).isEmpty())
+    }
 }

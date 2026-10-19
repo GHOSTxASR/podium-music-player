@@ -341,7 +341,8 @@ fun FavoritesScreen(
 fun CoverFlowScreen(repository: LibraryRepository, onOpen: (AlbumId) -> Unit) {
     val loaded = rememberLoaded(repository) { repository.albums() }
     val loading = loaded == null
-    val albums = loaded?.value.orEmpty()
+    // By artist, then album (D-84), like an iPod's Cover Flow; the Albums list stays by title.
+    val albums = remember(loaded?.value) { coverFlowOrder(loaded?.value.orEmpty()) }
     val insets = LocalScreenInsets.current
     val colors = PodiumTheme.colors
     val type = PodiumTheme.type

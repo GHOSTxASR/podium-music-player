@@ -73,7 +73,7 @@ variables; see [docs/deployment.md](docs/deployment.md). Architecture, decisions
 Podium is free software, licensed under the [GNU General Public License v3.0](LICENSE).
 
 It builds on [NewPipeExtractor](https://github.com/TeamNewPipe/NewPipeExtractor) (GPL-3.0), Google's
-MediaPipe MagicTouch model and the LiteRT runtime (Apache-2.0), AndroidX and Media3 (Apache-2.0), and
-typefaces under the SIL Open Font License. Notices and license texts are in
+MediaPipe MagicTouch model and the LiteRT runtime (Apache-2.0), AndroidX and Media3 (Apache-2.0), a
+Kotlin port of Apple's ALAC decoder (Apache-2.0), and typefaces under the SIL Open Font License. Notices and license texts are in
 [third_party/](third_party/). Podium is an independent project, not affiliated with any music
 service or hardware maker; online services are used under their own terms.

@@ -40,3 +40,7 @@ The symbols subset was produced with fontTools (`pyftsubset --unicodes=… --lay
 Archivo's notice declares no Reserved Font Name, so its instanced, subset copy keeps its name. Its license text is `third_party/licenses/OFL-Archivo.txt`.
 
 Attribution and license texts will be generated into the About screen in Phase 12 (`docs/deployment.md`).
+
+The launcher icon (`app/src/main/res/drawable/ic_launcher_foreground.xml` and
+`ic_launcher_monochrome.xml`, D-88) is the "P" of `archivo_wordmark.ttf`, its outline converted to a
+vector path with fontTools — artwork drawn from the font, which the OFL permits.

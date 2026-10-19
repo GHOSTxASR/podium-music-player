@@ -153,11 +153,13 @@ class OnlineMusicRepositoryTest {
     }
 
     @Test
-    fun `signing out removes that account's things and leaves local favorites and other accounts alone`() = runBlocking {
+    fun `signing out removes the account's things, all its channels', and leaves local favorites and the device's own alone`() = runBlocking {
         source.accountLikes += song("a")
         source.auth0.value = AuthState.SignedIn("Listener", "acct-1")
         eventually { runBlocking { store.likeCount("acct-1") }.takeIf { it == 1 } }
+        // Another channel of the same account (D-86), and the device's own online likes.
         store.setLiked(song("other"), true, account = "acct-2")
+        store.setLiked(song("mine"), true)
         store.record(song("heard"), startedAt = 1, playedMs = 10_000, account = "acct-1")
         val favorites = DatabaseFavorites(db, scope)
         favorites.toggle(TrackId("local|song"))
@@ -168,11 +170,12 @@ class OnlineMusicRepositoryTest {
         assertEquals(AuthState.SignedOut, source.auth0.value)
         assertEquals(0, store.likeCount("acct-1"))
         assertTrue(store.listens(account = "acct-1").isEmpty())
-        assertEquals(1, store.likeCount("acct-2"))
+        assertEquals(0, store.likeCount("acct-2"))
+        assertEquals(1, store.likeCount())
         assertEquals(listOf("local|song"), db.likes().likedIds().first())
-        // Signed out, what shows is the device's own (empty) online library, not the account's.
+        // Signed out, what shows is the device's own online library, not the account's.
         eventually { repository.accountKey.value.takeIf { it == OnlineLibraryStore.DEVICE } }
-        assertTrue(repository.likedTracks.first().isEmpty())
+        assertEquals(listOf("mine"), repository.likedTracks.first().map { it.title })
     }
 
     @Test

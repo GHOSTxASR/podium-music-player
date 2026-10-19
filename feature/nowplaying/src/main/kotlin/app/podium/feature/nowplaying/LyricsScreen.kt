@@ -54,6 +54,7 @@ import app.podium.core.interaction.PodiumInput
 import app.podium.core.interaction.WheelButton
 import app.podium.core.interaction.WheelContext
 import app.podium.core.interaction.rememberPodiumHaptics
+import app.podium.core.model.MediaKind
 import app.podium.core.lyrics.Lyrics
 import app.podium.core.lyrics.LyricsAttribution
 import app.podium.core.lyrics.LyricsRequest
@@ -110,13 +111,20 @@ fun LyricsScreen(controller: PlaybackController, gateway: LyricsGateway, pulse: 
     val item = snapshot.item
     val haptics = rememberPodiumHaptics()
     val request = remember(item?.trackId, item?.title, item?.artistDisplay) {
-        item?.let { LyricsRequest(it.trackId.value, it.title, it.artistDisplay, it.albumTitle, it.durationMs) }
+        // A live station isn't a song: nothing to look up (D-90).
+        item?.takeIf { it.kind != MediaKind.LIVE }?.let { LyricsRequest(it.trackId.value, it.title, it.artistDisplay, it.albumTitle, it.durationMs) }
     }
     var reload by remember { mutableIntStateOf(0) }
     var result by remember(request) { mutableStateOf<LyricsResult?>(null) }
     LaunchedEffect(request, reload) {
         result = null
         result = request?.let { gateway.lyrics(it) }
+    }
+    // The lyrics service asked Podium to wait (D-84): it asks again by itself once the wait is over.
+    LaunchedEffect(result) {
+        val limited = result as? LyricsResult.RateLimited ?: return@LaunchedEffect
+        delay(limited.retryInMs + RETRY_SLACK_MS)
+        reload++
     }
     val lyrics = (result as? LyricsResult.Found)?.lyrics
     val lines: List<String> = when (lyrics) {
@@ -231,7 +239,8 @@ fun LyricsScreen(controller: PlaybackController, gateway: LyricsGateway, pulse: 
                             if (snapshot.controls.seek) controller.seekTo(lyrics.lines[index].startMs) else haptics.reject()
                             following = true
                         }
-                        result is LyricsResult.Failed || result is LyricsResult.Offline || result is LyricsResult.RateLimited -> reload++
+                        result is LyricsResult.Failed || result is LyricsResult.Offline -> reload++
+                        result is LyricsResult.RateLimited -> Unit // it asks again by itself as soon as it may
                         else -> controller.togglePlayPause()
                     }
                     haptics.confirm()
@@ -277,6 +286,7 @@ fun LyricsScreen(controller: PlaybackController, gateway: LyricsGateway, pulse: 
     ) {
         when {
             item == null -> Message("Nothing playing", "Choose a song, then open its lyrics.", ink, quiet)
+            item.kind == MediaKind.LIVE -> Message("Live radio", "A station plays many songs, so it has no lyrics here. Choose a song to see its words.", ink, quiet)
             result == null -> Finding(ink, quiet)
             result == LyricsResult.NeedsConsent -> Message(
                 "Find lyrics online?",
@@ -288,7 +298,12 @@ fun LyricsScreen(controller: PlaybackController, gateway: LyricsGateway, pulse: 
             result == LyricsResult.NotFound && orb.always -> OrbStage(controller, pulse, orb, advancing, following = true, paper, "No lyrics found", page = {})
             result == LyricsResult.NotFound -> Message("No lyrics found", "Lyrics for this song aren't available.", ink, quiet)
             result == LyricsResult.Offline -> Message("Lyrics unavailable offline", "Connect, then press Center to try again.", ink, quiet)
-            result == LyricsResult.RateLimited -> Message("Too many requests", "Wait a moment, then press Center to try again.", ink, quiet)
+            result is LyricsResult.RateLimited -> Message(
+                "The lyrics service is busy",
+                "It asked Podium to wait. Podium asks again by itself ${waitText((result as LyricsResult.RateLimited).retryInMs)}.",
+                ink,
+                quiet,
+            )
             result == LyricsResult.Failed -> Message("Couldn't load lyrics", "Press Center to try again.", ink, quiet)
             script != null && item != null -> {
                 // A song without words is drawn too: one instrumental composition across it.
@@ -446,3 +461,11 @@ private fun upcomingLine(lyrics: Lyrics.Synced, positionMs: Long): Int {
     for (i in lines.indices) if (lines[i].startMs > positionMs && WordTiming.words(lines[i]).isNotEmpty()) return i
     return lines.lastIndex
 }
+
+/** "in 40 s", "in 2 min": how long until Podium asks the lyrics service again. */
+private fun waitText(ms: Long): String {
+    val seconds = ((ms + RETRY_SLACK_MS + 999) / 1000).coerceAtLeast(1)
+    return if (seconds < 90) "in $seconds s" else "in ${(seconds + 30) / 60} min"
+}
+
+private const val RETRY_SLACK_MS = 500L

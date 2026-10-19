@@ -3,6 +3,7 @@ package app.podium.feature.settings
 import app.podium.core.designsystem.shell.DeviceAppearance
 import app.podium.player.api.AudioEffects
 import app.podium.player.api.EqualizerSettings
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
 /** The device's own settings: its finish, startup sound and touch feedback (D-26, D-32). */
@@ -56,6 +57,23 @@ interface DeviceSettingsRepository {
     /** Seconds of overlap between songs; 0 is off. */
     fun setCrossfade(seconds: Int)
 
+    /** Settings ▸ Equaliser ▸ Effect (D-89). */
+    fun setSoundEffect(effect: app.podium.player.api.SoundEffect) {}
+
+    /**
+     * Full screen (D-85): Android's status and navigation bars hidden (a swipe from the edge shows
+     * them for a moment), and the device's own title bar shows the time and, when [titleBarBattery],
+     * the battery.
+     */
+    val immersive: StateFlow<Boolean> get() = Off
+
+    fun setImmersive(enabled: Boolean) {}
+
+    /** In full screen, whether the title bar shows the battery (the time always shows). */
+    val titleBarBattery: StateFlow<Boolean> get() = On
+
+    fun setTitleBarBattery(shown: Boolean) {}
+
     fun setAppearance(appearance: DeviceAppearance)
     fun setPreview(appearance: DeviceAppearance?)
     fun setStartupSound(enabled: Boolean)
@@ -65,3 +83,6 @@ interface DeviceSettingsRepository {
     fun setOnlineRecommendations(enabled: Boolean)
     fun setAvoidRepeats(enabled: Boolean)
 }
+
+private val Off: StateFlow<Boolean> = MutableStateFlow(false)
+private val On: StateFlow<Boolean> = MutableStateFlow(true)

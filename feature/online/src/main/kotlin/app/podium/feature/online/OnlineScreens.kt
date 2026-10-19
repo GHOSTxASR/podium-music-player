@@ -41,6 +41,8 @@ fun OnlineScreen(place: OnlinePlace, repository: OnlineRepository, actions: Onli
         OnlinePlace.Liked -> OnlineLikedScreen(repository, actions, navigate)
         OnlinePlace.Playlists -> OnlinePlaylistsScreen(repository, navigate)
         OnlinePlace.Radio -> OnlineRadioScreen(repository, actions)
+        OnlinePlace.LiveRadio -> OnlineLiveRadioScreen(repository, navigate)
+        is OnlinePlace.LiveGenre -> OnlineLiveGenreScreen(place.name, repository, actions, navigate)
         OnlinePlace.History -> if (repository.status.value?.canHistory == true) OnlineAccountHistoryScreen(repository, actions, navigate) else OnlineHistoryScreen(repository, actions, navigate)
         OnlinePlace.Recent -> OnlineHistoryScreen(repository, actions, navigate)
         OnlinePlace.Library -> OnlineLibraryScreen(repository, actions, navigate)
@@ -77,6 +79,7 @@ fun OnlineMenuScreen(repository: OnlineRepository, actions: OnlineActions, navig
         if (current.canSearch) add(OnlineEntry("Search", MenuPreview.Instrument, leading = PodiumSymbol.Search) { navigate(OnlinePlace.Search) })
         add(OnlineEntry("Library", if (liked.isEmpty()) MenuPreview.None else MenuPreview.Artwork(covers(liked)), value = playlists.size.takeIf { it > 0 && !current.canLibrary }?.toString()) { navigate(OnlinePlace.Library) })
         if (current.canRecommend) add(OnlineEntry("Radio", MenuPreview.Carousel(covers(recent).ifEmpty { trendingArt.reversed() })) { navigate(OnlinePlace.Radio) })
+        if (current.canLiveRadio) add(OnlineEntry("Live radio", MenuPreview.Instrument) { navigate(OnlinePlace.LiveRadio) })
         add(OnlineEntry("History", if (recent.isEmpty()) MenuPreview.None else MenuPreview.Artwork(covers(recent))) { navigate(OnlinePlace.History) })
         if (account != null && !account.signedIn) {
             add(
@@ -284,6 +287,35 @@ fun OnlineRadioScreen(repository: OnlineRepository, actions: OnlineActions) {
         return
     }
     OnlinePaperMenu(entries, "online-radio")
+}
+
+/** ONLINE ▸ Live radio (D-90): the genres; each opens the stations live in it now. */
+@Composable
+fun OnlineLiveRadioScreen(repository: OnlineRepository, navigate: (OnlinePlace) -> Unit) {
+    val genres = rememberRemote(Unit) { repository.liveGenres() }
+    when (genres) {
+        Remote.Loading -> LoadingScreen()
+        is Remote.Failed -> OnlineMessage(genres.error)
+        is Remote.Ready -> OnlinePaperMenu(genres.value.map { g -> OnlineEntry(g, MenuPreview.None) { navigate(OnlinePlace.LiveGenre(g)) } }, "online-live-radio")
+    }
+}
+
+/**
+ * A live radio genre: the stations streaming now, the most listened to first. Center tunes in;
+ * the rest of the list follows, so Next goes to the next station.
+ */
+@Composable
+fun OnlineLiveGenreScreen(genre: String, repository: OnlineRepository, actions: OnlineActions, navigate: (OnlinePlace) -> Unit) {
+    val stations = rememberRemote(genre) { repository.liveStations(genre) }
+    when (stations) {
+        Remote.Loading -> LoadingScreen()
+        is Remote.Failed -> OnlineMessage(stations.error)
+        is Remote.Ready -> if (stations.value.isEmpty()) {
+            CenteredMessage(PodiumSymbol.Note, "No stations live", "Nothing in $genre is live right now. Try another genre, or come back later.")
+        } else {
+            OnlineTrackList(stations.value, "live:$genre", "$genre live radio", repository, actions, navigate)
+        }
+    }
 }
 
 /** A row above a song list that isn't a song (Shuffle, Radio…). */

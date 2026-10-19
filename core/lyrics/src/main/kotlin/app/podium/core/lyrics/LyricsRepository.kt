@@ -56,7 +56,7 @@ class LyricsRepository(
                     LyricsResult.NotFound
                 }
                 ProviderAnswer.Offline -> LyricsResult.Offline
-                ProviderAnswer.RateLimited -> LyricsResult.RateLimited
+                is ProviderAnswer.RateLimited -> LyricsResult.RateLimited(answer.retryInMs)
                 ProviderAnswer.Failed -> LyricsResult.Failed
             }
         } catch (e: kotlinx.coroutines.CancellationException) {
