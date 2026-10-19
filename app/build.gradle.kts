@@ -19,8 +19,8 @@ android {
     defaultConfig {
         // Provisional: the product name is pending trademark clearance (docs/repository-audit.md §5).
         applicationId = "app.podium"
-        versionCode = 3
-        versionName = "0.1.2"
+        versionCode = 4
+        versionName = "0.1.3"
     }
     buildFeatures {
         buildConfig = true

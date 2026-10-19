@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-10-19
+
+Release notes: [docs/releases/v0.1.3.md](docs/releases/v0.1.3.md).
+
 ### Added
 - **Full screen (D-85):** Settings ▸ Full screen hides Android's status and navigation bars (a swipe from the edge shows them for a moment). The iPod's title bar then shows the time on the left and the battery on the right; Settings ▸ Battery in title bar hides the battery.
 - **Choose your channel (D-86):** a Google account with several YouTube channels can pick which one Podium uses, in Settings ▸ YouTube Music ▸ Channel. Each channel's library, likes and history are its own.
