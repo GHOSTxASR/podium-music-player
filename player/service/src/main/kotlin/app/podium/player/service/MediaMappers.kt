@@ -19,6 +19,7 @@ import app.podium.core.common.PodiumError
 import app.podium.core.model.AudioQuality
 import app.podium.core.model.Codec
 import app.podium.core.model.QueueUid
+import app.podium.core.model.SourceId
 import app.podium.player.api.QueueItem
 import app.podium.sources.api.HealthOutcome
 import app.podium.sources.api.PlayableMedia
@@ -49,14 +50,41 @@ enum class StreamKind(internal val query: String?, val mimeType: String?) {
 object QueueMediaItems {
     private const val SCHEME = "podium"
     private const val HOST = "queue"
+    private const val CARRY_HOST = "carry"
     private const val KIND = "as"
+    private const val SOURCE = "from"
 
-    fun uriFor(uid: QueueUid, kind: StreamKind = StreamKind.FILE): Uri = Uri.Builder().scheme(SCHEME).authority(HOST).appendPath(uid.value)
-        .apply { kind.query?.let { appendQueryParameter(KIND, it) } }
-        .build()
+    /**
+     * [kind]: the kind of stream the player must open. [servedBy]: set when an item is rebuilt for a
+     * new stream from another source (D-92), so the player never mistakes it for the one it had
+     * already started loading.
+     */
+    fun uriFor(uid: QueueUid, kind: StreamKind = StreamKind.FILE, servedBy: SourceId? = null): Uri =
+        Uri.Builder().scheme(SCHEME).authority(HOST).appendPath(uid.value)
+            .apply {
+                kind.query?.let { appendQueryParameter(KIND, it) }
+                servedBy?.let { appendQueryParameter(SOURCE, it.value) }
+            }
+            .build()
 
     fun uidOf(uri: Uri): QueueUid? =
         if (uri.scheme == SCHEME && uri.authority == HOST) uri.lastPathSegment?.let(::QueueUid) else null
+
+    /** The source the item at [uri] was rebuilt for, if it was (D-92). */
+    fun servedByOf(uri: Uri): SourceId? = uri.getQueryParameter(SOURCE)?.takeIf { it.isNotBlank() }?.let(::SourceId)
+
+    /**
+     * The stream that carries the rest of the song playing on crossfade's second player while the
+     * first switches over (D-92): another copy of the same recording, from a custom source.
+     */
+    fun carryItem(uid: QueueUid, kind: StreamKind): MediaItem = MediaItem.Builder()
+        .setMediaId(uid.value)
+        .setUri(Uri.Builder().scheme(SCHEME).authority(CARRY_HOST).appendPath(uid.value).build())
+        .setMimeType(kind.mimeType)
+        .build()
+
+    fun carryUidOf(uri: Uri): QueueUid? =
+        if (uri.scheme == SCHEME && uri.authority == CARRY_HOST) uri.lastPathSegment?.let(::QueueUid) else null
 
     /** The kind of stream the item at [uri] was built to open. */
     fun kindOf(uri: Uri): StreamKind = when (uri.getQueryParameter(KIND)) {
@@ -66,8 +94,12 @@ object QueueMediaItems {
     }
 
     /** [mediaItem] (one of the queue's, as the player holds it) rebuilt to open a [kind] stream. */
-    fun withKind(mediaItem: MediaItem, kind: StreamKind): MediaItem =
-        mediaItem.buildUpon().setUri(uriFor(QueueUid(mediaItem.mediaId), kind)).setMimeType(kind.mimeType).build()
+    fun withKind(mediaItem: MediaItem, kind: StreamKind, servedBy: SourceId? = null): MediaItem =
+        mediaItem.buildUpon().setUri(uriFor(QueueUid(mediaItem.mediaId), kind, servedBy)).setMimeType(kind.mimeType).build()
+
+    /** Whether the item at [uri] was built for [selection]: the same kind of stream, and the same source if it names one. */
+    fun fits(uri: Uri, selection: app.podium.sources.api.resolve.Selection): Boolean =
+        kindOf(uri) == StreamKind.of(selection.media) && servedByOf(uri).let { it == null || it == selection.servedBy }
 
     fun toMediaItem(item: QueueItem): MediaItem {
         val track = item.track

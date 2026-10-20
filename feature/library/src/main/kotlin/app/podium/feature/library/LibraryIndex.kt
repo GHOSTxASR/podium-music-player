@@ -33,7 +33,10 @@ data class LibraryArtist(
  * letter case, accents, punctuation and a leading "The" don't count).
  */
 fun coverFlowOrder(albums: List<LibraryAlbum>): List<LibraryAlbum> =
-    albums.sortedWith(compareBy({ LibraryGrouping.sortKey(it.artist) }, { LibraryGrouping.sortKey(it.title) }, { it.id.value }))
+    // Each album's keys are made once, not in every comparison of the sort.
+    albums.map { Triple(LibraryGrouping.sortKey(it.artist), LibraryGrouping.sortKey(it.title), it) }
+        .sortedWith(compareBy({ it.first }, { it.second }, { it.third.id.value }))
+        .map { it.third }
 
 /** One album's page: the album and its songs in disc and track order. */
 data class AlbumDetail(val album: LibraryAlbum, val tracks: List<Track>)

@@ -1036,7 +1036,7 @@ Every significant decision, newest at the bottom. Major ones have an ADR in `adr
   - **Resolution.** For an online song (not for downloads, not with `FallbackPolicy.NONE`), the
     resolver first asks the custom sources that are on, in the listener's order, after the pinned
     and owned-copy steps and before the song's own source.
-    - Only an **EXACT** match plays, and only the **same edition**: where either side names explicit
+    - Only an **EXACT** match plays, and only the **same edition** (the edition rule is superseded by D-92): where either side names explicit
       or clean, the other must name the same one.
     - All custom sources together get 8 s. After that, or when none has the song, YouTube Music plays
       it. The path is `ResolutionPath.PREFERRED_SOURCE`.
@@ -1074,3 +1074,75 @@ Every significant decision, newest at the bottom. Major ones have an ADR in `adr
   - Engine tests play a generated FLAC-in-fMP4 DASH stream through real DASH parsing and extraction,
     and measure FLAC. Layout tests cover every screen.
   - Not yet on the phone.
+
+### D-92 · Custom sources first, and lossless mid-song once it has loaded
+- **Context:** the owner: custom sources should play any song they have, explicit or not; songs in
+  Up Next should stream from them too; YouTube Music only when a song isn't there or the network is
+  slow, and then "start on YouTube Music and shift to lossless midway once it has loaded, like Apple
+  Music".
+- **Decision:**
+  - **Any EXACT copy plays.** D-91's extra edition rule is dropped. The matcher's own rule stays: a
+    copy marked clean is never the explicit song, and the reverse; one that doesn't say plays.
+  - **Slow or failing custom sources are asked again.** The first ask keeps its 8 s. When they ran
+    out of time or failed (`StreamResolver.mayStillAnswer`), the engine asks them again in the
+    background (`StreamResolver.preferredCopy`, 30 s, at most every 2 minutes per song). When every
+    one answered that it hasn't got the song, it isn't asked again until the sources change. Adding
+    or turning on a custom source re-asks for the song playing and the next three.
+  - **A copy found later takes over** (`PodiumPlaybackEngine.applyUpgrade`):
+    - A queued song is pinned to it and its media item rebuilt. The item's placeholder now names the
+      source it was rebuilt for, so the player never reuses a period it had started loading.
+    - The song playing switches outright when it is paused or hasn't started.
+    - Otherwise crossfade's second player carries it (`Crossfader.carry`). The copy is loaded ahead
+      (5, 10, 20, 40 s), started as the song reaches that point, brought level, and crossfaded to in
+      0.4 s. The first player plays on silently and is kept level, so the queue, position,
+      notification and lyrics stay with it. It switches to the copy at the next pause or seek. While
+      the copy is heard, the session names its source and the label is measured from that player's
+      decoder (`PodiumExtras.HEARD_*`).
+  - This amends D-18 ("never mid-track"): the one exception is an EXACT custom-source copy of the
+    song the listener chose. CLAUDE.md is amended.
+- **Verified:**
+  - Unit tests: the resolver (15) and the addon (36).
+  - Engine tests with Media3's test players on generated audio:
+    - a song started from the lossy stream is carried to the FLAC copy mid-song (heard FLAC, level
+      within 250 ms) and switches for good at a pause (where it was heard, within 500 ms);
+    - a queued song moves before it plays;
+    - a song no source has isn't asked for again.
+  - Not yet on the phone. Two copies from different masters can differ by a fraction of a second;
+    the crossfade covers that, but it hasn't been heard on a real network.
+
+### D-93 · Channels under one Google account, found and always offered (issue #4)
+- **Context:** issue #4 again: on 0.1.3 the reporter's account shows no Channel row, so the channel
+  with their music can't be chosen. The owner wants channel switching under one account, as on
+  YouTube.
+- **Decision:**
+  - The channels are asked from both of the service's lists. When `account/accounts_list` gives
+    fewer than two, the music page's own switcher (`getAccountSwitcherEndpoint`, a GET answered
+    behind a `)]}'` guard) is asked too, and the two are merged.
+  - A Google account without a channel of its own is no longer left out: the music service can be
+    used as it.
+  - Settings shows the **Channel** row whenever the account is signed in, and the account menu has
+    **Switch channel**. The picker says when it is asking, why it couldn't list the channels, or
+    that only one came back, with what to check.
+- **Verified:** fixture tests for both lists and their merge, and for an account without a channel
+  of its own. Not with a real brand account; the reporter is asked to confirm.
+
+### D-94 · Podium's ALAC decoder first (issue #6)
+- **Context:** issue #6: ALAC still doesn't play on 0.1.3. D-87 put Podium's decoder after the
+  phone's. A track goes to the first renderer that claims it, so on a phone whose own ALAC decoder
+  claims the format and then fails on the file's configuration, Podium's never got the chance.
+- **Decision:** Podium's renderer now comes before the phone's audio decoders. It takes nothing but
+  ALAC, so every other format goes to the phone exactly as before. It is bit-exact (D-87).
+- **Verified:** the renderer order is tested; the D-87 decoding tests still pass. CAF files still
+  aren't read. Not yet on the reporter's phone.
+
+### D-95 · Cover Flow opens and closes without the wait
+- **Context:** the owner: Cover Flow lags a little when opening or closing it.
+- **Decision:**
+  - Cover Flow's order (D-84) made both sort keys again in every comparison of the sort, each with
+    three freshly compiled regexes, on the main thread, every time the screen appeared, coming back
+    from an album included. Each album's keys are now made once, the regexes are compiled once, and
+    the order is made off the main thread.
+  - The last order shows at once while the library is read again, so reopening never waits.
+- **Verified:** 3,000 albums ordered in 80 ms instead of 819 ms on the development machine (a test
+  now bounds it); phones are slower, so the saving there is larger. Not yet timed on the phone.
+

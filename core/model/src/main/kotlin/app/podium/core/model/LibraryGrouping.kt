@@ -24,10 +24,15 @@ object LibraryGrouping {
      */
     fun sortKey(text: String): String {
         val folded = java.text.Normalizer.normalize(text.trim(), java.text.Normalizer.Form.NFKD)
-            .replace(Regex("\\p{M}+"), "")
+            .replace(MARKS, "")
             .lowercase()
-        val words = folded.replace(Regex("[^\\p{L}\\p{N}]+"), " ").trim()
-        val stripped = words.replaceFirst(Regex("^(the|a|an) (?=\\S)"), "")
+        val words = folded.replace(NOT_WORD, " ").trim()
+        val stripped = words.replaceFirst(ARTICLE, "")
         return stripped.ifEmpty { words }
     }
+
+    // Compiled once: sort keys are made for every album and song when lists are ordered.
+    private val MARKS = Regex("\\p{M}+")
+    private val NOT_WORD = Regex("[^\\p{L}\\p{N}]+")
+    private val ARTICLE = Regex("^(the|a|an) (?=\\S)")
 }

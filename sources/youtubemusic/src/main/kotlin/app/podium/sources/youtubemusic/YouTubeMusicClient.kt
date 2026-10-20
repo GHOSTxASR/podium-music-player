@@ -91,6 +91,38 @@ internal class YouTubeMusicClient(
         put("callCircumstance", "SWITCHING_USERS_FULL")
     }
 
+    /**
+     * The channel switcher as the music page's own "Switch account" menu loads it (issue #4): a GET
+     * with the session, answered with JSON behind a `)]}'` guard. Some accounts list their channels
+     * here and not in [accountsList]. Asked as the account itself.
+     */
+    suspend fun accountSwitcher(): Outcome<JsonObject> {
+        val cfg = pageConfig()
+        val signedIn = session() ?: return Outcome.Failure(PodiumError.AuthRequired())
+        val headers = buildMap {
+            put("Accept", "application/json")
+            put("Accept-Language", language)
+            put("User-Agent", userAgent())
+            put("Referer", "$ORIGIN/")
+            put("X-Origin", ORIGIN)
+            put("X-Youtube-Client-Name", CLIENT_ID)
+            put("X-Youtube-Client-Version", cfg.clientVersion)
+            put("Cookie", signedIn.cookieHeader)
+            signedIn.authorization(now() / 1000, ORIGIN)?.let { put("Authorization", it) }
+            put("X-Goog-AuthUser", "0")
+        }
+        val response = try {
+            transport.send("GET", "$ORIGIN/getAccountSwitcherEndpoint", headers, null)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: IOException) {
+            return Outcome.Failure(if (e is UnknownHostException || e.message == "UnknownHostException") PodiumError.Offline else PodiumError.Network())
+        }
+        if (response.code !in 200..299) return interpret(response, signedIn = true)
+        val json = parseJson(unguarded(response.body)) ?: return Outcome.Failure(PodiumError.Server(null))
+        return Outcome.Success(json)
+    }
+
     /** Artwork bytes from the catalogue's image hosts. No session goes with these. */
     suspend fun image(url: String): ByteArray? = try {
         val r = transport.send("GET", url, mapOf("User-Agent" to userAgent()), null)
@@ -249,6 +281,12 @@ internal class YouTubeMusicClient(
         private val STALE_CLIENT = PodiumError.Server(-400)
 
         private val lenient = Json { ignoreUnknownKeys = true; isLenient = true }
+
+        /** [body] without the `)]}'` line some endpoints put before their JSON (against script inclusion). */
+        fun unguarded(body: ByteArray): ByteArray {
+            val text = body.toString(Charsets.UTF_8).trimStart()
+            return if (text.startsWith(")]}'")) text.removePrefix(")]}'").toByteArray(Charsets.UTF_8) else body
+        }
 
         fun parseJson(bytes: ByteArray): JsonObject? =
             runCatching { lenient.parseToJsonElement(bytes.toString(Charsets.UTF_8)) as? JsonObject }.getOrNull()

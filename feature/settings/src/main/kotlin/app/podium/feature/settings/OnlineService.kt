@@ -44,6 +44,10 @@ data class OnlineServiceState(
     val switchingTo: String? = null,
     /** Why the last switch didn't happen, and what to do (shown in the channel list). */
     val channelProblem: String? = null,
+    /** The account's channels are being asked for. */
+    val channelsLoading: Boolean = false,
+    /** Why the channels couldn't be listed, and what to do. */
+    val channelListProblem: String? = null,
 )
 
 /** One channel of the signed-in account (D-86). */
@@ -123,7 +127,8 @@ fun OnlineServiceScreen(settings: OnlineServiceSettings, onChannels: () -> Unit 
     val rows = ServiceRow.entries.filter {
         when (it) {
             ServiceRow.Account -> state.account != ServiceAccount.NotOffered
-            ServiceRow.Channel -> state.account is ServiceAccount.SignedIn && state.channels.size > 1
+            // Always there when signed in (issue #4): an account's channels can't all be seen from here.
+            ServiceRow.Channel -> state.account is ServiceAccount.SignedIn
             ServiceRow.App, ServiceRow.AfterChoosing -> state.app != null
             ServiceRow.Control -> state.app?.installed == true
             ServiceRow.Basis -> state.basisNote != null
@@ -136,6 +141,7 @@ fun OnlineServiceScreen(settings: OnlineServiceSettings, onChannels: () -> Unit 
                 MenuSpec(
                     a.name,
                     listOf(
+                        MenuAction("Switch channel") { onChannels() },
                         MenuAction("Switch account") { settings.signOut(); settings.signIn() },
                         MenuAction("Sign out") {
                             overlay.show(
@@ -216,7 +222,10 @@ fun OnlineServiceScreen(settings: OnlineServiceSettings, onChannels: () -> Unit 
             ServiceRow.Channel -> MenuRow(
                 "Channel",
                 focused,
-                value = if (state.switchingTo != null) "Switching" else state.channels.firstOrNull { it.selected }?.name ?: "Choose",
+                value = when {
+                    state.switchingTo != null -> "Switching"
+                    else -> state.channels.firstOrNull { it.selected }?.name ?: "Choose"
+                },
                 enabled = state.enabled,
             )
             ServiceRow.App -> MenuRow(state.app?.name.orEmpty(), focused, value = if (state.app?.installed == true) "Installed" else "Install")
@@ -249,7 +258,12 @@ fun ServiceChannelScreen(settings: OnlineServiceSettings) {
     LaunchedEffect(Unit) { settings.refreshChannels() }
     val state = current
     val channels = state?.channels.orEmpty()
-    val problem = state?.channelProblem
+    val problem = state?.channelProblem ?: state?.channelListProblem ?: when {
+        state?.channelsLoading == true && channels.isEmpty() -> "Asking for this account's channels…"
+        state?.channelsLoading != true && channels.size == 1 ->
+            "Only ${channels.single().name} came back for this account. If your channel is missing, check on YouTube that it belongs to this Google account, then come back."
+        else -> null
+    }
     val focus = rememberFocusListState("online-channel")
     val activate: (Int) -> Unit = { i ->
         val channel = channels.getOrNull(i)

@@ -22,8 +22,8 @@ import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 /**
- * Custom sources (D-91): the listener's own stream sources are asked first, in their order, for an
- * EXACT copy of the same edition; the song's own source is always the fallback.
+ * Custom sources (D-91, D-92): the listener's own stream sources are asked first, in their order, for
+ * any EXACT copy; the song's own source is always the fallback.
  */
 class PreferredSourcesTest {
     private val clock = ManualClock(1_000_000)
@@ -104,17 +104,11 @@ class PreferredSourcesTest {
     }
 
     @Test
-    fun `an explicit song only takes a copy that says it is explicit`() = runTest {
+    fun `an explicit song plays from a copy that doesn't say which edition it is (D-92)`() = runTest {
         val explicitSong = own.track("Loud Song", artist = "Band").copy(explicitness = Explicitness.EXPLICIT).also(own::put)
-        // A copy that doesn't say which edition it is: could be the clean one.
         first.track("Loud Song", artist = "Band")
-        val unsure = assertIs<ResolveOutcome.Resolved>(resolver.resolve(ResolveRequest(explicitSong)))
-        assertEquals(ResolutionPath.OWN_SOURCE, unsure.selection.path)
-        assertTrue(unsure.attempts.any { it.detail == "edition not shown" })
-        // A copy that says explicit is the same edition.
-        second.put(second.track("Loud Song", artist = "Band").copy(explicitness = Explicitness.EXPLICIT))
-        val sure = assertIs<ResolveOutcome.Resolved>(resolver.resolve(ResolveRequest(explicitSong)))
-        assertEquals(second.sourceId, sure.selection.servedBy)
+        val outcome = assertIs<ResolveOutcome.Resolved>(resolver.resolve(ResolveRequest(explicitSong)))
+        assertEquals(first.sourceId, outcome.selection.servedBy, "if the song is there, it plays from there")
     }
 
     @Test
@@ -122,17 +116,43 @@ class PreferredSourcesTest {
         val explicitSong = own.track("Loud Song", artist = "Band").copy(explicitness = Explicitness.EXPLICIT).also(own::put)
         first.put(first.track("Loud Song", artist = "Band").copy(explicitness = Explicitness.CLEAN))
         val outcome = assertIs<ResolveOutcome.Resolved>(resolver.resolve(ResolveRequest(explicitSong)))
-        assertEquals(own.sourceId, outcome.selection.servedBy)
+        assertEquals(own.sourceId, outcome.selection.servedBy, "a clean copy is a different recording")
         assertEquals(0, first.resolveCalls)
     }
 
     @Test
-    fun `a song its own source doesn't mark never plays from a copy marked explicit`() = runTest {
+    fun `a song its own source doesn't mark plays from a copy marked explicit too`() = runTest {
         first.put(first.track("Night Drive", artist = "Band").copy(explicitness = Explicitness.EXPLICIT))
-        second.track("Night Drive", artist = "Band")
         val outcome = assertIs<ResolveOutcome.Resolved>(resolver.resolve(ResolveRequest(song)))
-        assertEquals(second.sourceId, outcome.selection.servedBy, "the unmarked copy is the same edition; the explicit one may not be")
-        assertEquals(0, first.resolveCalls)
+        assertEquals(first.sourceId, outcome.selection.servedBy)
+    }
+
+    @Test
+    fun `asked again in the background, only the custom sources answer (D-92)`() = runTest {
+        first.track("Night Drive", artist = "Band")
+        first.searchBehavior = Behavior.Hang(60_000)
+        val slow = assertIs<ResolveOutcome.Resolved>(resolver.resolve(ResolveRequest(song)))
+        assertEquals(ResolutionPath.OWN_SOURCE, slow.selection.path)
+        assertTrue(StreamResolver.mayStillAnswer(slow.attempts), "too slow isn't \"not there\"")
+        // The network recovers: the background ask finds the copy, and the own source isn't asked.
+        first.searchBehavior = Behavior.Answer
+        val ownCalls = own.resolveCalls
+        val later = assertIs<ResolveOutcome.Resolved>(resolver.preferredCopy(song))
+        assertEquals(ResolutionPath.PREFERRED_SOURCE, later.selection.path)
+        assertEquals(first.sourceId, later.selection.servedBy)
+        assertEquals(ownCalls, own.resolveCalls)
+    }
+
+    @Test
+    fun `a song no custom source has isn't asked for again`() = runTest {
+        first.track("Night Drive (Live)", artist = "Band")
+        val outcome = assertIs<ResolveOutcome.Resolved>(resolver.resolve(ResolveRequest(song)))
+        assertTrue(!StreamResolver.mayStillAnswer(outcome.attempts), "every custom source answered: it hasn't got it")
+        assertIs<ResolveOutcome.Miss>(resolver.preferredCopy(song))
+        first.resolveBehavior = Behavior.Fail(PodiumError.Server(503))
+        first.track("Night Drive", artist = "Band")
+        val failing = resolver.preferredCopy(song)
+        assertIs<ResolveOutcome.Failed>(failing, "a failing source may have it later")
     }
 
     @Test

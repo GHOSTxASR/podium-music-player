@@ -285,14 +285,21 @@ class YouTubeMusicSource internal constructor(
         override val identities: StateFlow<List<AccountIdentity>> = _identities.asStateFlow()
 
         /**
-         * The account's channels, from its channel switcher; the one acted as is selected. A refusal
-         * here says nothing about the session (it isn't [watch]ed): the channels just aren't offered.
+         * The account's channels, from its channel switcher; the one acted as is selected. The
+         * service lists them in two places and some accounts only in one (issue #4), so when the
+         * first lists fewer than two, the music page's own switcher is asked too and both are
+         * merged. A refusal here says nothing about the session (it isn't [watch]ed): the channels
+         * just aren't offered.
          */
         override suspend fun refreshIdentities(): Outcome<List<AccountIdentity>> {
             requireSession()?.let { return Outcome.Failure(it) }
-            return client.accountsList().map { json ->
-                identitiesOf(YouTubeMusicParser.channels(json), pageId).also { _identities.value = it }
-            }
+            val listed = client.accountsList()
+            val fromList = (listed as? Outcome.Success)?.value?.let(YouTubeMusicParser::channels).orEmpty()
+            val switcher = if (fromList.size >= 2) null else client.accountSwitcher()
+            val fromSwitcher = (switcher as? Outcome.Success)?.value?.let(YouTubeMusicParser::channels).orEmpty()
+            if (listed is Outcome.Failure && (switcher == null || switcher is Outcome.Failure)) return listed
+            val channels = (fromList + fromSwitcher).distinctBy { it.pageId.orEmpty() }
+            return Outcome.Success(identitiesOf(channels, pageId).also { _identities.value = it })
         }
 
         /**

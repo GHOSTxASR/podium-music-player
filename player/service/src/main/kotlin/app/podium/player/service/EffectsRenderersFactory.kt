@@ -16,8 +16,8 @@ import app.podium.player.service.alac.AlacAudioRenderer
 
 /**
  * The default renderers, with Podium's own audio steps in the audio path: the equaliser (D-76), the
- * sound effect (D-89), then the bass meter the lyrics move with (D-82), when there is one. After the
- * platform's audio decoders comes Podium's own ALAC decoder (D-87), for phones that have none.
+ * sound effect (D-89), then the bass meter the lyrics move with (D-82), when there is one. Podium's
+ * own ALAC decoder (D-87) comes before the platform's audio decoders, for every phone.
  */
 internal class EffectsRenderersFactory(
     context: Context,
@@ -36,9 +36,12 @@ internal class EffectsRenderersFactory(
         eventListener: AudioRendererEventListener,
         out: ArrayList<Renderer>,
     ) {
-        super.buildAudioRenderers(context, extensionRendererMode, mediaCodecSelector, enableDecoderFallback, audioSink, eventHandler, eventListener, out)
-        // Last: a track goes to the first renderer that handles it, so the phone's own decoder wins when it has one.
+        // First, ahead of the phone's decoders: a track goes to the first renderer that handles it.
+        // Some phones' own ALAC decoders claim the format and then fail on the file's configuration
+        // (issue #6); Podium's is bit-exact and handles nothing but ALAC, so every other format still
+        // goes to the phone's decoders exactly as before.
         out.add(AlacAudioRenderer(eventHandler, eventListener, audioSink))
+        super.buildAudioRenderers(context, extensionRendererMode, mediaCodecSelector, enableDecoderFallback, audioSink, eventHandler, eventListener, out)
     }
 
     override fun buildAudioSink(context: Context, enableFloatOutput: Boolean, enableAudioOutputPlaybackParams: Boolean): AudioSink =

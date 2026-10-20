@@ -37,4 +37,15 @@ class CoverFlowOrderTest {
             ordered,
         )
     }
+
+    @Test
+    fun `a large library is ordered in a moment`() {
+        val albums = (0 until 3_000).map { album("The Album ${it * 31 % 3_000} Édition", "Artist ${(it * 7_919) % 997}") }
+        coverFlowOrder(albums) // warm up
+        val started = System.nanoTime()
+        val ordered = coverFlowOrder(albums)
+        val millis = (System.nanoTime() - started) / 1_000_000
+        assertEquals(3_000, ordered.size)
+        kotlin.test.assertTrue(millis < 500, "took $millis ms")
+    }
 }

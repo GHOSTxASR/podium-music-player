@@ -108,5 +108,5 @@ Scope: `sources:youtubemusic`, `player:remote`, the sign-in WebView, the online 
 - **The network policy (D-09) holds on every hop.** https anywhere; http only on the listener's own network, after they agree. Redirects are followed by hand (at most three) and each hop is checked; so is every stream address an addon hands over, and the engine checks it again before opening it.
 - **Bounded input.** Answers are capped at 2 MB and parsed leniently without throwing. Ids, names, settings and headers are capped; a header with a bad name, or a value with a line break, is dropped. Only settings the addon declared are sent, with values it declared.
 - **Open media only.** A stream marked encrypted or DRM-protected is refused. Podium never works around protection.
-- **Identity rules unchanged.** EXACT only, the same edition, never mid-track, never across environments (CLAUDE.md, D-17, D-18, D-36).
+- **Identity rules.** EXACT only, never across environments; the one move mid-track is to an EXACT custom-source copy of the same song (CLAUDE.md, D-17, D-18, D-36, D-92).
 

@@ -251,4 +251,11 @@ class YouTubeMusicParserTest {
         assertEquals("https://yt3.ggpht.com/ishmaboy=s108", channels[1].photo.maxBy { it.width }.url)
         assertTrue(YouTubeMusicParser.channels(json("{}")).isEmpty())
     }
+
+    @Test
+    fun `a Google account without a channel of its own can still be chosen (issue #4)`() {
+        val channels = YouTubeMusicParser.channels(json(Fixtures.accountsListNoOwnChannel))
+        assertEquals(listOf("Listener Name", "ishmaboy"), channels.map { it.name })
+        assertEquals(listOf(null, "112233445566778899001"), channels.map { it.pageId })
+    }
 }

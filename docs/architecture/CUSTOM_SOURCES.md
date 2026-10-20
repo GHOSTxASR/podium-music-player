@@ -59,10 +59,9 @@ The resolver's order is now:
      is searched (`MatchQueryBuilder`) and `TrackMatcher` decides. Only **EXACT** qualifies: the
      same title and version tags, a shared artist, featured artists that agree, duration within
      ±2 s and the same album where both state one.
-   - **Edition guard:** where either side names an edition (explicit or clean), the other has to
-     name the same one. An edition left unstated isn't proof. So an explicit song never plays from
-     a copy that doesn't say it's explicit, and a song YouTube Music doesn't mark never plays from
-     a copy marked explicit.
+   - **Any EXACT copy plays (D-92).** The matcher's own rule on editions applies, and only that:
+     a copy marked clean is never the explicit song (or the other way round), but a copy that
+     doesn't say which edition it is plays like any other. If the song is there, it plays from there.
    - The first source that resolves wins. A miss or failure moves on to the next source.
    - **Budget:** all custom sources together get 8 s (`DEFAULT_PREFERRED_BUDGET_MILLIS`). After
      that the song's own source plays it, and the attempt records "custom sources took too long".
@@ -74,11 +73,29 @@ failures open its circuit breaker, and a benched source is skipped until it reco
 stream mid-song is asked for afresh from the **same** custom source (D-18). A custom source that is
 turned off or removed takes its pinned streams with it; the song playing keeps its stream.
 
-### What this means with an addon that doesn't say "explicit"
+### When custom sources are slow: YouTube Music first, then the lossless copy (D-92)
 
-Many addons (the one used to test this, for example) don't mark explicit songs. With them,
-YouTube Music songs marked explicit always play from YouTube Music. That is the identity rule
-(CLAUDE.md: never across explicitness boundaries), not a fault.
+When the custom sources don't answer within their 8 s (a slow network, a server waking up) or
+fail, the song starts from YouTube Music, and they're asked again in the background
+(`StreamResolver.preferredCopy`, 30 s). When every one of them answers that it hasn't got the
+song, it isn't asked again until the sources change. When a copy turns up:
+
+- **A queued song** (the next one, or any in Up Next when it comes round) is pinned to the copy and
+  its media item rebuilt, so the player never uses a YouTube Music stream it had started loading.
+- **The song playing, paused or not yet started** switches outright.
+- **The song playing** moves over mid-song, like Apple Music stepping up its quality: crossfade's
+  second player loads the copy 5 s ahead (10, 20, 40 s if it isn't ready in time, then gives up),
+  starts as the song gets there, is brought level, and a 0.4 s equal-power crossfade moves the sound
+  to it. The first player plays on silently, kept level, so the queue, position, notification and
+  lyrics stay with it. At the next pause or seek it switches to the copy itself, where the copy was
+  heard; when the song ends it simply moves on. Crossfade into the next song works as usual. While
+  the copy is heard, the session names its source and the quality label is measured from the
+  second player's decoder.
+- When the mid-song move can't happen (the song is nearly over, a crossfade is under way), the
+  switch waits for the next pause or seek, or the next time the song plays.
+
+Adding or turning on a custom source does the same for the song playing and the next few. This is
+the one exception to "never mid-track" (D-18): only to an EXACT copy, of the song the listener chose.
 
 ## 4. Playback
 
@@ -147,14 +164,17 @@ YouTube Music songs marked explicit always play from YouTube Music. That is the 
 
 ## 7. Tests
 
-- `sources:api` — `PreferredSourcesTest` (13): order, EXACT only, edition guard both ways,
+- `sources:api` — `PreferredSourcesTest` (15): order, EXACT only, any edition the matcher allows,
+  the background ask (`preferredCopy`, `mayStillAnswer`),
   fall-through on miss and failure, the budget, NONE and downloads, environments, pins and
   refresh, known equivalents, nothing changes without custom sources.
 - `sources:addon` (36) — protocol parsing, quality and MIME, the source against scripted HTTP, the
   resolver end to end (a catalogue song plays from the addon's exact copy, never its radio edit;
   an explicit song stays on its own source), and the real transport against a local HTTP server
   (redirects, policy, size cap).
-- `player:service` — `CustomSourceStreamTest` (3): a catalogue song plays from a custom source's DASH
+- `player:service` — `CustomSourceUpgradeTest` (3): a song that started from the catalogue moves to
+  the custom source's copy mid-song and for good at a pause; a queued song moves before it plays;
+  a song no custom source has isn't asked for again. `CustomSourceStreamTest` (3): a catalogue song plays from a custom source's DASH
   stream (FLAC, measured from the media, real DASH parsing and extraction of a generated fixture),
   a song the source doesn't have plays from its file, and a queued item built for DASH plays from
   its file once the source is off.

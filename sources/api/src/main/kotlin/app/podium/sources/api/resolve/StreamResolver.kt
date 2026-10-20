@@ -3,13 +3,13 @@ package app.podium.sources.api.resolve
 import app.podium.core.common.Clock
 import app.podium.core.common.Outcome
 import app.podium.core.common.PodiumError
-import app.podium.core.model.Explicitness
 import app.podium.core.model.SourceId
 import app.podium.core.model.Track
 import app.podium.sources.api.Capability
 import app.podium.sources.api.FacetResolution
 import app.podium.sources.api.HealthOutcome
 import app.podium.sources.api.MissReason
+import app.podium.sources.api.MusicEnvironment
 import app.podium.sources.api.MusicSource
 import app.podium.sources.api.PlayableMedia
 import app.podium.sources.api.PlaybackTarget
@@ -199,35 +199,10 @@ class StreamResolver(
             )
         }
 
-        // 2. The listener's custom sources (D-91), in their order: an EXACT copy of the same edition,
-        //    within one time budget for them all; otherwise the song's own source plays it.
+        // 2. The listener's custom sources (D-91, D-92), first, in their order: any EXACT copy, within
+        //    one time budget for them all; otherwise the song's own source plays it.
         if (request.fallbackPolicy == FallbackPolicy.EXACT_ONLY && request.purpose != Purpose.DOWNLOAD && environment != null) {
-            val providers = preferred.ordered(environment).filter { it.descriptor.id != track.source.sourceId }
-            if (providers.isNotEmpty()) {
-                var finished = false
-                val chosen = withTimeoutOrNull(preferredBudgetMillis) {
-                    for (source in providers) {
-                        val candidate = knownExactEquivalent(source, track)
-                            ?: findExactEquivalent(source, track, attempts, ResolutionPath.PREFERRED_SOURCE)
-                            ?: continue
-                        if (!sameEdition(track, candidate.first)) {
-                            attempts += ResolveAttempt(
-                                ResolutionPath.PREFERRED_SOURCE, source.descriptor.id, ResolveAttempt.Kind.SKIPPED,
-                                detail = "edition not shown",
-                            )
-                            continue
-                        }
-                        resolveFrom(source.descriptor.id, candidate.first, request, ResolutionPath.PREFERRED_SOURCE, candidate.second, attempts)
-                            ?.let { return@withTimeoutOrNull it }
-                    }
-                    finished = true
-                    null
-                }
-                if (chosen == null && !finished) {
-                    attempts += ResolveAttempt(ResolutionPath.PREFERRED_SOURCE, null, ResolveAttempt.Kind.SKIPPED, detail = "custom sources took too long")
-                }
-                chosen?.let { return it }
-            }
+            fromPreferred(track, request, environment, attempts, preferredBudgetMillis)?.let { return it }
         }
 
         // 3. The track's own source.
@@ -312,6 +287,61 @@ class StreamResolver(
         }
     }
 
+    /**
+     * The custom sources (D-91, D-92) that serve [environment], in the listener's order: the first
+     * EXACT copy that resolves, within [budgetMillis] for them all. The matcher alone decides what is
+     * the same recording; its rules include explicit vs clean (a stated conflict is never the same),
+     * so a copy that doesn't say which edition it is plays like any other EXACT copy.
+     */
+    private suspend fun fromPreferred(
+        track: Track,
+        request: ResolveRequest,
+        environment: MusicEnvironment,
+        attempts: MutableList<ResolveAttempt>,
+        budgetMillis: Long,
+    ): ResolveOutcome.Resolved? {
+        val providers = preferred.ordered(environment).filter { it.descriptor.id != track.source.sourceId }
+        if (providers.isEmpty()) return null
+        var finished = false
+        val chosen = withTimeoutOrNull(budgetMillis) {
+            for (source in providers) {
+                val candidate = knownExactEquivalent(source, track)
+                    ?: findExactEquivalent(source, track, attempts, ResolutionPath.PREFERRED_SOURCE)
+                    ?: continue
+                (resolveFrom(source.descriptor.id, candidate.first, request, ResolutionPath.PREFERRED_SOURCE, candidate.second, attempts) as? ResolveOutcome.Resolved)
+                    ?.let { return@withTimeoutOrNull it }
+            }
+            finished = true
+            null
+        }
+        if (chosen == null && !finished) {
+            attempts += ResolveAttempt(ResolutionPath.PREFERRED_SOURCE, null, ResolveAttempt.Kind.SKIPPED, detail = PREFERRED_TOO_SLOW)
+        }
+        return chosen
+    }
+
+    /**
+     * Only the custom sources (D-92), for a song that plays — or is about to — from its own source
+     * because they were slow or failing when it was resolved ([mayStillAnswer]). Asked again in the
+     * background with a longer [budgetMillis]; the song's own source is never asked here. A [ResolveOutcome.Miss]
+     * means no custom source has the song; a [ResolveOutcome.Failed], that they still couldn't say.
+     */
+    suspend fun preferredCopy(
+        track: Track,
+        quality: QualityRequest = QualityRequest.Maximum,
+        budgetMillis: Long = DEFAULT_UPGRADE_BUDGET_MILLIS,
+    ): ResolveOutcome {
+        val attempts = mutableListOf<ResolveAttempt>()
+        val environment = environmentOf(track.source.sourceId) ?: return ResolveOutcome.Miss(MissReason.NO_SOURCE, attempts)
+        val request = ResolveRequest(track = track, quality = quality, purpose = Purpose.PLAYBACK)
+        fromPreferred(track, request, environment, attempts, budgetMillis)?.let { return it }
+        return if (mayStillAnswer(attempts)) {
+            ResolveOutcome.Failed(HealthOutcome.NETWORK_FAILURE, PREFERRED_TOO_SLOW, attempts)
+        } else {
+            ResolveOutcome.Miss(MissReason.NOT_FOUND, attempts)
+        }
+    }
+
     private fun environmentOf(source: SourceId) = registry.get(source)?.descriptor?.environment
 
     /** A copy on [source] already decided EXACT for [track] (never anything less). */
@@ -319,19 +349,6 @@ class StreamResolver(
         val copy = equivalence.exactEquivalents(track).firstOrNull { it.source.sourceId == source.descriptor.id } ?: return null
         val decision = equivalence.get(track, copy)?.takeIf { it.tier == MatchTier.EXACT } ?: return null
         return copy to decision
-    }
-
-    /**
-     * A custom source's copy must be the same edition (D-91): where either side names an edition
-     * (explicit or clean), the other has to name the same one. An edition left unstated isn't proof,
-     * so an explicit song never plays from a copy that doesn't say it is explicit, and a song its own
-     * source doesn't mark never plays from a copy marked explicit (that's usually the other edition).
-     */
-    private fun sameEdition(original: Track, copy: Track): Boolean = edition(original.explicitness) == edition(copy.explicitness)
-
-    private fun edition(e: Explicitness): Explicitness? = when (e) {
-        Explicitness.EXPLICIT, Explicitness.CLEAN -> e
-        Explicitness.NOT_EXPLICIT, Explicitness.UNKNOWN -> null
     }
 
     private suspend fun findExactEquivalent(
@@ -358,7 +375,7 @@ class StreamResolver(
                     // A broken search is a failure and counts as one; finding nothing is a miss.
                     SourceFanOut.outcomeOf(r.error, signsIn = source.auth != null)?.let { health.record(source.descriptor.id, it) }
                     attempts += ResolveAttempt(
-                        step, source.descriptor.id, ResolveAttempt.Kind.SKIPPED, detail = "search failed",
+                        step, source.descriptor.id, ResolveAttempt.Kind.SKIPPED, detail = SEARCH_FAILED,
                     )
                     return null
                 }
@@ -406,5 +423,20 @@ class StreamResolver(
          * a slow server, short enough that a song still starts promptly from its own source.
          */
         const val DEFAULT_PREFERRED_BUDGET_MILLIS = 8_000L
+
+        /** A custom source asked again in the background (D-92): room for a slow network. */
+        const val DEFAULT_UPGRADE_BUDGET_MILLIS = 30_000L
+
+        internal const val PREFERRED_TOO_SLOW = "custom sources took too long"
+        internal const val SEARCH_FAILED = "search failed"
+
+        /**
+         * Whether the custom sources might still have the song (D-92): one of them failed, or they ran
+         * out of time — rather than every one answering that it hasn't got it.
+         */
+        fun mayStillAnswer(attempts: List<ResolveAttempt>): Boolean = attempts.any {
+            it.step == ResolutionPath.PREFERRED_SOURCE &&
+                (it.kind == ResolveAttempt.Kind.FAILED || it.detail == PREFERRED_TOO_SLOW || it.detail == SEARCH_FAILED)
+        }
     }
 }

@@ -49,6 +49,16 @@ object PodiumExtras {
     const val CLAIMED_BITRATE = "podium.current.claimed.kbps"
     const val CLAIMED_SAMPLE_RATE = "podium.current.claimed.hz"
     const val CLAIMED_BIT_DEPTH = "podium.current.claimed.bits"
+    /**
+     * What is heard while crossfade's second player carries the song (D-92): measured from that
+     * player's decoder, so the label follows the audio, not the silent first player.
+     */
+    const val HEARD_CODEC = "podium.current.heard.codec"
+    const val HEARD_BITRATE = "podium.current.heard.kbps"
+    const val HEARD_SAMPLE_RATE = "podium.current.heard.hz"
+    const val HEARD_BIT_DEPTH = "podium.current.heard.bits"
+    const val HEARD_CHANNELS = "podium.current.heard.channels"
+    const val HEARD_CONTAINER = "podium.current.heard.container"
     const val CONTEXT_LABEL = "podium.queue.context"
     const val LAST_ERROR = "podium.error.kind"
 

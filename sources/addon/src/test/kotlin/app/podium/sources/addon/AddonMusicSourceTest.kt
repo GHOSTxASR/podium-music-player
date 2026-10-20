@@ -231,10 +231,10 @@ class AddonMusicSourceTest {
     }
 
     @Test
-    fun `an explicit song stays on its own source when the addon doesn't say which edition it has`() = runTest {
+    fun `an explicit song plays from the addon too, when it has the song (D-92)`() = runTest {
         val outcome = assertIs<ResolveOutcome.Resolved>(resolver(source()).resolve(ResolveRequest(ytmSong(explicit = true))))
-        assertEquals(ResolutionPath.OWN_SOURCE, outcome.selection.path)
-        assertEquals(catalogue.sourceId, outcome.selection.servedBy)
+        assertEquals(ResolutionPath.PREFERRED_SOURCE, outcome.selection.path)
+        assertEquals(id, outcome.selection.servedBy)
     }
 
     @Test

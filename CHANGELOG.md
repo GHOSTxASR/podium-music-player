@@ -8,7 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **Custom sources (D-91):** add your own stream sources in Settings ▸ Custom sources: addons that speak the BitChord addon protocol (type or paste its https address, like `https://addon.example.com`). When one of them has the exact same recording of an online song, the song plays from it, lossless if that's what it serves; otherwise it plays from YouTube Music as before. Sources are asked in your order. You can turn each one on or off, change its settings (its quality, say), check it and remove it. Songs marked explicit only play from a source that says its copy is explicit too. Addresses are kept sealed on the phone, and only the host is shown.
+- **Lossless mid-song (D-92):** when your custom sources are slow, a song starts from YouTube Music and moves to the lossless copy once it has loaded, with a short crossfade, like Apple Music stepping up its quality. Songs in Up Next move to it before they play.
+- **Switch channel (D-93):** Settings ▸ YouTube Music always shows Channel when you're signed in, and the account menu has Switch channel. Podium now also finds the channels YouTube lists only in its own switcher.
+- **Custom sources (D-91):** add your own stream sources in Settings ▸ Custom sources: addons that speak the BitChord addon protocol (type or paste its https address, like `https://addon.example.com`). When one of them has the exact same recording of an online song, the song plays from it, lossless if that's what it serves; otherwise it plays from YouTube Music as before. Sources are asked in your order. You can turn each one on or off, change its settings (its quality, say), check it and remove it. Explicit songs play from it too. Addresses are kept sealed on the phone, and only the host is shown.
+
+### Fixed
+- **ALAC files (D-94, issue #6):** Podium's own Apple Lossless decoder now comes first, so phones whose own ALAC decoder fails no longer stop the song.
+- **Cover Flow (D-95):** opens and closes without the pause; large libraries are ordered about ten times faster, away from the screen's drawing.
 
 ## [0.1.3] - 2026-10-19
 

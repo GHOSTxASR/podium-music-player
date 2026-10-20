@@ -267,7 +267,7 @@ sealed interface ResolveOutcome {
 
 1. Pinned selection (reused while valid).
 2. An owned copy: the same song, or an EXACT copy in the same environment.
-3. **Custom sources (D-91):** the listener's own stream sources (`StreamProviders`, not in the registry), in their order, for an EXACT copy of the same edition, within one shared 8 s budget. Never for downloads or `FallbackPolicy.NONE`, never across environments. See [CUSTOM_SOURCES.md](CUSTOM_SOURCES.md).
+3. **Custom sources (D-91):** the listener's own stream sources (`StreamProviders`, not in the registry), in their order, for any EXACT copy, within one shared 8 s budget; when they were slow or failing, asked again in the background and a copy found takes over (D-92). Never for downloads or `FallbackPolicy.NONE`, never across environments. See [CUSTOM_SOURCES.md](CUSTOM_SOURCES.md).
 4. The track's own source, within the per-source timeout (6 s).
 5. EXACT fallback on the other enabled sources of the track's environment, in priority order. A copy already known to be EXACT (`EquivalenceStore`, persisted) is used directly; otherwise that source is searched and the matcher decides.
 6. Otherwise `Miss`/`Failed`.
@@ -353,7 +353,7 @@ Debug builds show the evidence in Song info; decisions persist in `track_equival
 3. Fallback never crosses **explicitness** or **version** boundaries, and never chooses a lower tier just to keep playing — it skips with an explanation instead.
 4. Mid-track source switching is not performed. A better copy found later applies to the **next** play.
 5. User can mark a pairing "Not the same song" → `track_equivalence` decided_by USER, tier REJECTED, respected forever. It's never re-linked: not by the matcher, not by grouping, not by a later EXACT decision, in memory or on disk. Implemented as infrastructure (`EquivalenceStore.reject`; debug command `not-same`); there's no listener-facing control yet.
-6. **Custom sources (D-91) follow the same rules, stricter on editions.** A custom source's copy plays only at EXACT, and where either side names an edition (explicit or clean) the other must name the same one: an edition left unstated isn't proof.
+6. **Custom sources (D-91, D-92) follow the same rules.** A custom source's copy plays only at EXACT. It is the one source allowed to take over mid-track: a copy that loads after the song started from its own source is carried over to by a short crossfade (CUSTOM_SOURCES.md §3).
 7. **Fallback never crosses environments** (D-36). A song chosen ONLINE plays ONLINE; a song chosen from the library plays from the library. There's no silent ONLINE → LOCAL or LOCAL → ONLINE, even for a known EXACT pair. Cross-environment playback would need an explicit listener action, which doesn't exist yet.
 
 ## 11. Recommendations & autoplay integration
