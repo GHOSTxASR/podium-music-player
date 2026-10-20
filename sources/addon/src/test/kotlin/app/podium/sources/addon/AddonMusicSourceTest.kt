@@ -42,16 +42,23 @@ class AddonMusicSourceTest {
     /** Scripted answers by path prefix; every requested URL is recorded. */
     private class Script : AddonTransport {
         val requested = mutableListOf<String>()
-        val answers = linkedMapOf<String, () -> HttpResponse>()
+        val answers = linkedMapOf<String, suspend () -> HttpResponse>()
+
+        /** One-off answers by path prefix, used up in order before [answers]. */
+        val once = linkedMapOf<String, ArrayDeque<suspend () -> HttpResponse>>()
         fun on(pathPrefix: String, code: Int = 200, body: String = "", retryAfter: Long? = null) {
             answers[pathPrefix] = { HttpResponse(code, body.toByteArray(), retryAfter) }
         }
         fun fail(pathPrefix: String) {
             answers[pathPrefix] = { throw IOException("SocketTimeoutException") }
         }
+        fun first(pathPrefix: String, answer: suspend () -> HttpResponse) {
+            once.getOrPut(pathPrefix) { ArrayDeque() }.addLast(answer)
+        }
         override suspend fun get(url: String): HttpResponse {
             requested += url
             val path = url.removePrefix(Fixtures.BASE)
+            once.entries.firstOrNull { path.startsWith(it.key) && it.value.isNotEmpty() }?.let { return it.value.removeFirst().invoke() }
             return answers.entries.firstOrNull { path.startsWith(it.key) }?.value?.invoke() ?: HttpResponse(404, ByteArray(0))
         }
     }
@@ -61,8 +68,10 @@ class AddonMusicSourceTest {
         on("/stream/", body = Fixtures.STREAM_DASH)
     }
 
-    private fun source(settings: Map<String, String> = emptyMap()) =
-        AddonMusicSource(AddonConfig(id, Fixtures.BASE, manifest, settings), { now }, script)
+    private var time = now
+
+    private fun source(settings: Map<String, String> = emptyMap(), clock: () -> Long = { time }) =
+        AddonMusicSource(AddonConfig(id, Fixtures.BASE, manifest, settings), clock, script)
 
     private suspend fun AddonMusicSource.firstTrack(): Track =
         (catalog!!.search(SearchQuery("one more time")) as Outcome.Success).value.tracks.first()
@@ -160,6 +169,7 @@ class AddonMusicSourceTest {
         assertEquals(FacetResolution.Miss(MissReason.NOT_FOUND), resolve())
         script.on("/stream/", code = 429, retryAfter = 30)
         assertEquals(FacetResolution.Failed(HealthOutcome.RATE_LIMIT, "rate limited", 30_000), resolve())
+        time += 30_000
         script.on("/stream/", code = 503)
         assertEquals(FacetResolution.Failed(HealthOutcome.SERVER_ERROR, "HTTP 503"), resolve())
         script.on("/stream/", code = 403)
@@ -186,6 +196,66 @@ class AddonMusicSourceTest {
         assertEquals("Lossless test", (source().check() as Outcome.Success).value.name)
         script.on("/manifest.json", code = 500)
         assertIs<Outcome.Failure>(source().check())
+    }
+
+    // --- Asking politely and getting an answer (D-96) ---------------------------------------------
+
+    @Test
+    fun `a request left hanging is sent again, and the first answer wins`() = runTest {
+        val s = source()
+        script.first("/search") { kotlinx.coroutines.awaitCancellation() }
+        val started = testScheduler.currentTime
+        val tracks = (s.catalog!!.search(SearchQuery("one more time")) as Outcome.Success).value.tracks
+        assertEquals("lt_001", tracks.first().source.providerKey)
+        assertEquals(2, script.requested.size, "the same request, sent once more")
+        assertEquals(script.requested[0], script.requested[1])
+        assertTrue(testScheduler.currentTime - started < 5_000, "answered without waiting out the hang")
+    }
+
+    @Test
+    fun `a dropped connection or a gateway that gave up is tried once more at once`() = runTest {
+        val s = source()
+        script.first("/search") { throw IOException("SocketException") }
+        assertIs<Outcome.Success<*>>(s.catalog!!.search(SearchQuery("one more time")))
+        script.first("/search") { HttpResponse(504, ByteArray(0)) }
+        assertIs<Outcome.Success<*>>(s.catalog!!.search(SearchQuery("around the world")))
+        assertEquals(4, script.requested.size)
+        // Twice down is down: it isn't asked a third time.
+        script.fail("/search")
+        assertIs<Outcome.Failure>(s.catalog!!.search(SearchQuery("digital love")))
+        assertEquals(6, script.requested.size)
+    }
+
+    @Test
+    fun `after too many requests nothing is sent until the addon's wait is over`() = runTest {
+        val s = source()
+        val track = s.firstTrack()
+        script.first("/stream/") { HttpResponse(429, ByteArray(0), 20) }
+        assertEquals(FacetResolution.Failed(HealthOutcome.RATE_LIMIT, "rate limited", 20_000), s.playback!!.resolve(track, QualityRequest.Maximum, Purpose.PLAYBACK))
+        val asked = script.requested.size
+        time += 5_000
+        val held = assertIs<FacetResolution.Failed>(s.playback!!.resolve(track, QualityRequest.Maximum, Purpose.PLAYBACK))
+        assertEquals(HealthOutcome.RATE_LIMIT, held.outcome)
+        assertEquals(15_000, held.retryAfterMillis, "the rest of the wait")
+        assertIs<Outcome.Failure>(s.catalog!!.search(SearchQuery("anything")))
+        assertEquals(asked, script.requested.size, "nothing reached the network")
+        time += 15_000
+        assertIs<FacetResolution.Resolved>(s.playback!!.resolve(track, QualityRequest.Maximum, Purpose.PLAYBACK))
+        assertEquals(asked + 1, script.requested.size)
+    }
+
+    @Test
+    fun `requests start a little apart, in the order they were made`() = runTest {
+        val s = source(clock = { testScheduler.currentTime })
+        val starts = mutableListOf<Long>()
+        val timed = object : AddonTransport {
+            override suspend fun get(url: String): HttpResponse = script.get(url).also { starts += testScheduler.currentTime }
+        }
+        val paced = AddonMusicSource(AddonConfig(id, Fixtures.BASE, manifest), { testScheduler.currentTime }, timed)
+        repeat(3) { paced.catalog!!.search(SearchQuery("song $it")) }
+        assertEquals(listOf(0L, AddonClient.SPACING_MS, 2 * AddonClient.SPACING_MS), starts.map { it - starts.first() })
+        assertTrue(script.requested.all { "/search" in it })
+        assertEquals(Fixtures.BASE, s.config.base)
     }
 
     // --- With the resolver: what the listener actually gets ---------------------------------------

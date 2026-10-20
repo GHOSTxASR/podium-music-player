@@ -54,10 +54,12 @@ import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.distinctUntilChangedBy
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 
 /**
@@ -107,8 +109,11 @@ class PodiumPlaybackEngine(
 
     /** Songs no custom source has (every one answered): not asked again until the sources change. */
     private val customAnswered = HashSet<QueueUid>()
+
+    /** When asking again for a song gave up, by song (D-96). */
     private val lastUpgradeTry = HashMap<QueueUid, Long>()
     private val upgradeJobs = HashMap<QueueUid, Job>()
+    private val upgradeGate = kotlinx.coroutines.sync.Mutex()
 
     /** A custom source's copy found for a song while it played, waiting for a pause or seek. */
     private val pendingSwitch = HashMap<QueueUid, Selection>()
@@ -135,6 +140,7 @@ class PodiumPlaybackEngine(
     /** Settings ▸ Equaliser ▸ Effect (D-89), likewise in each player's path. */
     private val sound = SoundEffectProcessor().also { it.update(deps.effects.value.sound) }
     private var helperSound: SoundEffectProcessor? = null
+    private var helperMeter: AudioMeter? = null
 
     val player: ExoPlayer = playerFactory?.invoke(context, mediaSourceFactory) ?: buildPlayer(context)
 
@@ -164,6 +170,8 @@ class PodiumPlaybackEngine(
                 context,
                 EqualizerProcessor().also { eq -> eq.update(deps.effects.value.equalizer); helperEqualizer = eq },
                 SoundEffectProcessor().also { fx -> fx.update(deps.effects.value.sound); helperSound = fx },
+                // Measured only while a carried copy is lined up with the song (D-96).
+                AudioMeter().also { helperMeter = it },
             ),
         )
             .setMediaSourceFactory(mediaSourceFactory)
@@ -199,6 +207,11 @@ class PodiumPlaybackEngine(
         blocked = { player.pauseAtEndOfMediaItems },
         onCarrying = { uid -> onCarrying(QueueUid(uid)) },
         onCarryEnded = ::onCarryEnded,
+        soundAlignment = {
+            val song = deps.audioMeter
+            val copy = helperMeter
+            if (song != null && copy != null) SoundAlignment(song, copy) else null
+        },
     )
 
     /** What crossfade's rules need of the song at a position in the player's playlist. */
@@ -380,17 +393,63 @@ class PodiumPlaybackEngine(
         upgradeLater(uid)
     }
 
+    /**
+     * Keeps asking the custom sources for [uid]'s song in the background until they say (D-96): at
+     * once, then after 15 s, 30 s, 1, 2 and 4 minutes. While every one of them is resting (asked too
+     * often, or not answering lately) it waits for the rest to end instead of asking; a source
+     * answering again (a check in Settings, another song) cuts any wait short. It stops when a copy
+     * turns up ([applyUpgrade]), when every source answers that it hasn't got the song, or when the
+     * song has played or left the queue. One song is asked for at a time.
+     */
     private fun upgradeLater(uid: QueueUid) {
         if (upgradeJobs[uid]?.isActive == true) return
-        val now = deps.clock.nowMillis()
-        lastUpgradeTry[uid]?.let { if (now - it < UPGRADE_RETRY_MS) return }
-        lastUpgradeTry[uid] = now
+        lastUpgradeTry[uid]?.let { if (deps.clock.nowMillis() - it < UPGRADE_RETRY_MS) return }
         upgradeJobs[uid] = scope.launch {
-            val track = queue.item(uid)?.track ?: return@launch
-            when (val outcome = runCatching { deps.resolver.preferredCopy(track) }.getOrNull()) {
-                is ResolveOutcome.Resolved -> applyUpgrade(uid, outcome.selection)
-                is ResolveOutcome.Miss -> customAnswered += uid
-                else -> Unit // still couldn't say: asked again when the song comes round
+            for (attempt in 0..UPGRADE_BACKOFF_MS.size) {
+                if (attempt > 0) restOrRecovery(UPGRADE_BACKOFF_MS[attempt - 1])
+                while (true) {
+                    val environment = upgradeWanted(uid) ?: return@launch
+                    val rest = deps.resolver.preferredRestEndsAt(environment)?.minus(deps.clock.nowMillis()) ?: break
+                    if (rest <= 0) break
+                    restOrRecovery(rest.coerceAtMost(UPGRADE_MAX_WAIT_MS))
+                }
+                val outcome = upgradeGate.withLock {
+                    val track = queue.item(uid)?.takeIf { upgradeWanted(uid) != null }?.track ?: return@launch
+                    runCatching { deps.resolver.preferredCopy(track) }.getOrNull()
+                }
+                when (outcome) {
+                    is ResolveOutcome.Resolved -> return@launch applyUpgrade(uid, outcome.selection)
+                    is ResolveOutcome.Miss -> {
+                        customAnswered += uid
+                        return@launch
+                    }
+                    else -> Log.d(TAG, "custom sources couldn't say for $uid yet (ask ${attempt + 1})")
+                }
+            }
+            // Still no answer: asked again when the song comes round, after a while.
+            lastUpgradeTry[uid] = deps.clock.nowMillis()
+        }
+    }
+
+    /** The environment whose custom sources [uid]'s song is still worth asking for, or null. */
+    private fun upgradeWanted(uid: QueueUid): app.podium.sources.api.MusicEnvironment? {
+        val state = queue.state.value
+        val index = state.items.indexOfFirst { it.uid == uid }
+        if (index < 0 || index < state.currentIndex || uid in customAnswered) return null
+        val item = state.items[index]
+        if (item.selection?.path == app.podium.sources.api.ResolutionPath.PREFERRED_SOURCE) return null
+        val environment = deps.registry.get(item.track.source.sourceId)?.descriptor?.environment ?: return null
+        return environment.takeIf { deps.streamProviders.ordered(it).isNotEmpty() }
+    }
+
+    /** Waits [millis], or until one of the custom sources answers again, whichever comes first. */
+    private suspend fun restOrRecovery(millis: Long) {
+        val before = deps.health.states.value
+        withTimeoutOrNull(millis) {
+            deps.health.states.first { now ->
+                now.any { (id, health) ->
+                    health == app.podium.sources.api.SourceHealth.Healthy && before[id] != health && deps.streamProviders.get(id) != null
+                }
             }
         }
     }
@@ -883,8 +942,14 @@ class PodiumPlaybackEngine(
         /** Rebuilds of one item for another kind of stream before its error counts (D-91). */
         private const val MAX_REOPENS = 2
 
-        /** Custom sources asked again for a song no sooner than this after the last time (D-92). */
-        private const val UPGRADE_RETRY_MS = 2 * 60_000L
+        /** Custom sources asked again for a song that ran out of asks, no sooner than this (D-92, D-96). */
+        private const val UPGRADE_RETRY_MS = 5 * 60_000L
+
+        /** The waits between background asks for one song (D-96). */
+        private val UPGRADE_BACKOFF_MS = listOf(15_000L, 30_000L, 60_000L, 120_000L, 240_000L)
+
+        /** The longest wait for a resting custom source before looking again. */
+        private const val UPGRADE_MAX_WAIT_MS = 5 * 60_000L
 
         /** The song playing and the next few: asked again when a custom source is added (D-92). */
         private const val UPGRADE_AHEAD = 4

@@ -133,6 +133,22 @@ class MultiSourceAutoplayTest {
     }
 
     @Test
+    fun `custom sources never suggest, even when one plays the seed (D-91, D-96)`() = runTest {
+        // A custom source is a stream source only: it is never registered, so autoplay and radio come
+        // from the catalogue's own recommendations, whichever copy of the song is heard.
+        val custom = FakeOnlineMusicSource("custom-1")
+        val seed = a.track("Song Shared", artist = "Band")
+        val copy = custom.track("Song Shared", artist = "Band")
+        custom.track("Custom next")
+        a.track("Catalogue next")
+        TrackGrouper().group(listOf(TrackGrouper.Ranked(a.sourceId, listOf(seed)), TrackGrouper.Ranked(custom.sourceId, listOf(copy)))).forEach(equivalence::remember)
+        val result = recommender.recommend(RecommendationRequest(listOf(seed), setOf(seed.id), 10))
+        assertTrue(custom.recommendSeeds.isEmpty(), "the custom source isn't asked")
+        assertTrue(result.isNotEmpty())
+        assertTrue(result.all { it.source.sourceId == a.sourceId })
+    }
+
+    @Test
     fun `local seeds never get online suggestions`() = runTest {
         b.track("B next")
         val result = recommender.recommend(RecommendationRequest(listOf(track("Local Song", source = "local", key = "l")), emptySet(), 10))

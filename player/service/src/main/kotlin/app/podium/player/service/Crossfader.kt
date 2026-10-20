@@ -3,6 +3,7 @@
 package app.podium.player.service
 
 import android.os.SystemClock
+import android.util.Log
 import androidx.annotation.OptIn
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -64,6 +65,8 @@ internal class Crossfader(
     private val onCarrying: (String) -> Unit = {},
     /** A carry ended, or never got going (D-92). */
     private val onCarryEnded: (CarryEnd) -> Unit = {},
+    /** Lines a carried copy up with the song by their sound, when both players can be measured (D-96). */
+    private val soundAlignment: () -> SoundAlignment? = { null },
 ) {
     var seconds: Int = 0
         set(value) {
@@ -269,10 +272,25 @@ internal class Crossfader(
     private var carryTries = 0
     private var carryPhaseStartedAt = 0L
 
+    /** Since when [main] has been past the copy's start without the copy able to join it (0: it isn't). */
+    private var carryLateSince = 0L
+
+    /** Where the copy's sound is, relative to [main]'s: at [main]'s position p the copy is at p + this. */
+    private var carryOffsetMs = 0L
+    private var alignment: SoundAlignment? = null
+    private var alignListening: AutoCloseable? = null
+    private var alignTries = 0
+    private var alignSettled = true
+    private var nextAlignAt = 0L
+
     /**
      * Start carrying the song [main] is playing from [item]: another copy of the same recording
      * (D-92). False when it can't start now — nothing else may be under way, the song must be
      * playing, and enough of it must be left; the engine then waits for a pause or seek.
+     *
+     * Race-free (D-96): the copy loads [CARRY_AHEAD_MS] ahead of the song and waits there, paused and
+     * silent. It joins only once it's ready where the song is; if the song gets there first, the copy
+     * keeps loading and jumps forward inside what it has already loaded, rather than starting over.
      */
     fun carry(item: MediaItem): Boolean {
         if (phase != Phase.IDLE || !main.playWhenReady) return false
@@ -283,7 +301,13 @@ internal class Crossfader(
         carryUid = uid
         carryIndex = main.currentMediaItemIndex
         carryTries = 0
+        carryLateSince = 0L
         carryTargetMs = main.currentPosition + CARRY_AHEAD_MS
+        carryOffsetMs = 0L
+        alignment = soundAlignment()
+        alignListening = alignment?.listen()
+        alignTries = 0
+        alignSettled = alignment == null
         setHelperShare(h, 0f)
         h.playbackParameters = PlaybackParameters.DEFAULT
         // Loaded ahead and held there: it starts only once [main] gets to that point.
@@ -301,22 +325,42 @@ internal class Crossfader(
         if (main.currentMediaItemIndex != carryIndex) return endCarry(CarryReason.MOVED_ON)
         if (h.playerError != null) return endCarry(CarryReason.GAVE_UP)
         val now = SystemClock.elapsedRealtime()
+        // Too near the end to finish getting there: the song plays out as it is (and crossfades as usual).
+        if (phase == Phase.CARRY_LOADING || phase == Phase.CARRY_LEVELLING) {
+            val remaining = remainingMs()
+            if (remaining == null || remaining < maxOf(CARRY_END_MS, seconds * 1_000L + PREPARE_AHEAD_MS)) return endCarry(CarryReason.GAVE_UP)
+        }
         when (phase) {
             Phase.CARRY_LOADING -> {
                 val position = main.currentPosition
+                if (position < carryTargetMs - CARRY_START_EARLY_MS) return // still ahead of the song
                 when {
-                    position > carryTargetMs + CARRY_MISSED_MS -> retarget(h)
-                    h.playbackState == Player.STATE_READY && position >= carryTargetMs - CARRY_START_EARLY_MS -> {
+                    // Ready where the song is, or just behind it: off it goes, silent, to be brought level.
+                    h.playbackState == Player.STATE_READY && position - h.currentPosition <= CARRY_MISSED_MS -> {
                         h.playWhenReady = true
                         phase = Phase.CARRY_LEVELLING
                         carryPhaseStartedAt = now
+                        carryLateSince = 0L
+                    }
+                    // The song got past the copy's start first, but what the copy has loaded reaches
+                    // beyond the song: it jumps there, inside what it has, and waits again.
+                    h.bufferedPosition >= position + CARRY_JUMP_LEAD_MS + CARRY_READY_MS -> {
+                        carryTargetMs = position + CARRY_JUMP_LEAD_MS
+                        h.seekTo(carryTargetMs)
+                        carryLateSince = 0L
+                    }
+                    // Still loading: it's given time to catch up before trying from further ahead.
+                    else -> {
+                        if (carryLateSince == 0L) carryLateSince = now
+                        if (now - carryLateSince > CARRY_LATE_MS) retarget(h)
                     }
                 }
             }
             Phase.CARRY_LEVELLING -> {
                 if (h.isPlaying) {
-                    val drift = h.currentPosition - main.currentPosition
-                    if (kotlin.math.abs(drift) <= CrossfadeRules.IN_STEP_MS) {
+                    if (!alignSettled) align(now)
+                    val drift = h.currentPosition - main.currentPosition - carryOffsetMs
+                    if (alignSettled && kotlin.math.abs(drift) <= CrossfadeRules.IN_STEP_MS) {
                         h.playbackParameters = PlaybackParameters.DEFAULT
                         phase = Phase.CARRY_FADING
                         fadeStartedAt = now
@@ -328,8 +372,7 @@ internal class Crossfader(
                 if (now - carryPhaseStartedAt > CARRY_LEVEL_TIMEOUT_MS) endCarry(CarryReason.GAVE_UP)
             }
             Phase.CARRY_FADING -> {
-                // Two copies of one recording: a short equal-power crossfade covers any difference
-                // in where their audio starts.
+                // Two copies of one recording, lined up by their sound: a short equal-power crossfade.
                 val p = ((now - fadeStartedAt).toFloat() / CARRY_FADE_MS).coerceIn(0f, 1f)
                 setMainShare(CrossfadeRules.fadeOut(p))
                 setHelperShare(h, CrossfadeRules.fadeIn(p))
@@ -342,7 +385,7 @@ internal class Crossfader(
                 // The copy ended first (they can differ by a second or two): [main] plays the rest.
                 if (h.playbackState == Player.STATE_ENDED) setMainShare(1f)
                 // [main] follows the helper, silently, so the position everyone sees is what's heard.
-                val drift = main.currentPosition - h.currentPosition
+                val drift = main.currentPosition - (h.currentPosition - carryOffsetMs)
                 val speed = if (kotlin.math.abs(drift) > CrossfadeRules.IN_STEP_MS * 2) CrossfadeRules.catchUpSpeed(drift) else 1f
                 if (main.playbackParameters.speed != speed) main.playbackParameters = PlaybackParameters(speed)
                 // Crossfade into the next song as usual, the helper fading out the copy it carries.
@@ -359,12 +402,35 @@ internal class Crossfader(
         }
     }
 
-    /** [main] went past the point the copy was loaded at before it was ready: try further ahead. */
+    /**
+     * Where the copy's sound is (D-96), once it has played long enough to tell. With nothing clear
+     * to go by after a few looks, equal positions it is, as copies of one recording usually are.
+     */
+    private fun align(now: Long) {
+        val a = alignment ?: return settleAlignment(0L)
+        if (main.currentPosition - carryTargetMs < SoundAlignment.NEEDS_MS || now < nextAlignAt) return
+        when (val r = a.measure(main.currentPosition)) {
+            is SoundAlignment.Result.Offset -> settleAlignment(r.ms)
+            SoundAlignment.Result.NotYet, SoundAlignment.Result.Unsure ->
+                if (++alignTries >= ALIGN_MAX_TRIES) settleAlignment(0L) else nextAlignAt = now + ALIGN_RETRY_MS
+        }
+    }
+
+    private fun settleAlignment(offsetMs: Long) {
+        carryOffsetMs = offsetMs
+        alignSettled = true
+        alignListening?.close()
+        alignListening = null
+        if (offsetMs != 0L) Log.d(TAG, "the copy's sound is ${offsetMs} ms from the song's")
+    }
+
+    /** The copy couldn't catch up with the song where it was: it starts again from further ahead. */
     private fun retarget(h: ExoPlayer) {
         carryTries++
         val remaining = remainingMs()
         if (carryTries > CARRY_MAX_TRIES || remaining == null || remaining < CARRY_MIN_REMAINING_MS) return endCarry(CarryReason.GAVE_UP)
-        carryTargetMs = main.currentPosition + CARRY_AHEAD_MS * (1L shl carryTries)
+        carryTargetMs = main.currentPosition + CARRY_AHEAD_MS * 2
+        carryLateSince = 0L
         h.seekTo(carryTargetMs)
     }
 
@@ -373,6 +439,9 @@ internal class Crossfader(
         val heard = phase == Phase.CARRYING || phase == Phase.CARRY_FADING
         val position = helper?.currentPosition ?: 0L
         carryUid = null
+        alignListening?.close()
+        alignListening = null
+        alignment = null
         finish()
         if (main.playbackParameters.speed != 1f) main.playbackParameters = PlaybackParameters.DEFAULT
         // With crossfade off, the second player was only for this.
@@ -391,15 +460,34 @@ internal class Crossfader(
         const val LEAD_MS = 150L
         const val MIN_FADE_MS = 1_000L
 
-        /** How far ahead the copy is loaded at first (D-92); further each time it isn't ready in time. */
-        const val CARRY_AHEAD_MS = 5_000L
-        const val CARRY_MAX_TRIES = 3
+        /** How far ahead of the song the copy loads and waits (D-92, D-96). */
+        const val CARRY_AHEAD_MS = 6_000L
 
-        /** Not worth it for a song's last seconds. */
+        /** Times it may start again from further ahead, when it can't catch up where it is. */
+        const val CARRY_MAX_TRIES = 2
+
+        /** How long the copy has to catch up, loading, once the song is past its start. */
+        const val CARRY_LATE_MS = 12_000L
+
+        /** A jump inside what's loaded lands this far ahead of the song… */
+        const val CARRY_JUMP_LEAD_MS = 300L
+
+        /** …and needs this much loaded beyond it to be ready at once (the player's own threshold, and some). */
+        const val CARRY_READY_MS = 3_000L
+
+        /** Not worth starting for a song's last seconds… */
         const val CARRY_MIN_REMAINING_MS = 15_000L
+
+        /** …nor finishing getting there. */
+        const val CARRY_END_MS = 8_000L
         const val CARRY_START_EARLY_MS = 40L
         const val CARRY_MISSED_MS = 400L
-        const val CARRY_LEVEL_TIMEOUT_MS = 8_000L
+
+        /** Levelling, with time to measure where the copy's sound is. */
+        const val CARRY_LEVEL_TIMEOUT_MS = 12_000L
         const val CARRY_FADE_MS = 400L
+        const val ALIGN_MAX_TRIES = 4
+        const val ALIGN_RETRY_MS = 300L
+        const val TAG = "PodiumCrossfade"
     }
 }

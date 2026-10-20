@@ -72,7 +72,7 @@ class CustomSourcesLayoutTest {
                 CustomSourceState("custom-1", "Lossless test", "addon.example.com", true, CustomSourceStatus.Ready, listOf(quality)),
                 CustomSourceState(
                     "custom-2", "Second", "second.example.com", true,
-                    CustomSourceStatus.Problem("Not answering. Songs play as usual until it's back."), emptyList(),
+                    CustomSourceStatus.Problem("Not answering. Songs play as usual, and Podium keeps trying it."), emptyList(),
                 ),
             ),
         )
@@ -147,7 +147,7 @@ class CustomSourcesLayoutTest {
     fun `a source that isn't answering says so on its menu`() {
         val fake = Fake()
         show("custom-source-problem", "Second") { CustomSourceScreen(fake, "custom-2", onEditText = {}, onRemoved = {}) }
-        compose.onNodeWithText("Not answering. Songs play as usual until it's back.").assertExists()
+        compose.onNodeWithText("Not answering. Songs play as usual, and Podium keeps trying it.").assertExists()
         compose.onNodeWithText("second.example.com").assertExists()
     }
 

@@ -31,12 +31,16 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
@@ -59,6 +63,8 @@ class CustomSources(
     private val io: CoroutineDispatcher = Dispatchers.IO,
     private val fetchManifest: suspend (String) -> Outcome<AddonManifest> = Addons::manifest,
     private val sourceFor: (AddonConfig) -> AddonMusicSource = { AddonMusicSource(it, now) },
+    /** Checks sources that are resting in the background (D-96); tests that check by hand turn it off. */
+    autoCheck: Boolean = true,
 ) : StreamProviders, CustomSourcesSettings {
 
     private class Entry(val config: AddonConfig, val enabled: Boolean, val source: AddonMusicSource) {
@@ -71,6 +77,13 @@ class CustomSources(
     /** What the last check found wrong, by source; cleared by a good check. */
     private val problems = MutableStateFlow<Map<SourceId, String>>(emptyMap())
     private val writeLock = Mutex()
+
+    /** Moves on whenever time alone may have changed how a source is doing (a rest running out). */
+    private val clockTick = MutableStateFlow(0L)
+
+    init {
+        if (autoCheck) scope.launch { keepChecking() }
+    }
 
     // --- For the resolver ------------------------------------------------------------------------
 
@@ -85,8 +98,9 @@ class CustomSources(
     // --- For Settings ----------------------------------------------------------------------------
 
     override val sources: StateFlow<List<CustomSourceState>> =
-        combine(entries, health.states, checking, problems) { list, states, busy, wrong ->
-            list.map { e -> state(e, states[e.id], e.id in busy, wrong[e.id]) }
+        // How each is doing now, not as last recorded: a rest that has run out reads as over.
+        combine(entries, health.states, checking, problems, clockTick) { list, _, busy, wrong, _ ->
+            list.map { e -> state(e, health.health(e.id), e.id in busy, wrong[e.id]) }
         }.stateIn(scope, SharingStarted.Eagerly, entries.value.map { state(it, null, false, null) })
 
     private fun state(e: Entry, health: SourceHealth?, busy: Boolean, problem: String?): CustomSourceState {
@@ -170,7 +184,7 @@ class CustomSources(
                 is Outcome.Success -> {
                     val manifest = r.value
                     if (manifest.id != entry.config.manifest.id) {
-                        problems.update { it + (entry.id to "This address now answers as a different source. Remove it and add it again.") }
+                        problems.update { it + (entry.id to DIFFERENT_SOURCE) }
                     } else {
                         health.record(entry.id, HealthOutcome.SUCCESS)
                         problems.update { it - entry.id }
@@ -187,6 +201,85 @@ class CustomSources(
                 }
             }
             checking.update { it - entry.id }
+        }
+    }
+
+    /**
+     * Background checks (D-96). A source that isn't answering — its circuit open, or a check that
+     * failed — is asked for its manifest again, quietly, 20 s after it stopped, then after 40 s, 80 s
+     * and so on up to every 5 minutes. A source asked too often isn't asked at all until its rest is
+     * over; its status just changes then. An answer puts it straight back to work: the player asks it
+     * again for the song playing and the ones coming up, without the listener doing anything.
+     */
+    private suspend fun keepChecking() {
+        val since = HashMap<SourceId, Long>()
+        val failed = HashMap<SourceId, Int>()
+        while (true) {
+            var next = Long.MAX_VALUE
+            for (e in entries.value) {
+                val id = e.id
+                val h = health.health(id)
+                val problem = problems.value[id]
+                when {
+                    !e.enabled || id in checking.value || problem == DIFFERENT_SOURCE -> {
+                        since -= id
+                        failed -= id
+                    }
+                    h is SourceHealth.RateLimited -> next = minOf(next, h.untilMillis)
+                    h is SourceHealth.Unreachable || h is SourceHealth.Probing || problem != null -> {
+                        val at = now()
+                        val tries = failed[id] ?: 0
+                        val due = since.getOrPut(id) { at } + (AUTO_CHECK_FIRST_MS shl tries.coerceAtMost(4)).coerceAtMost(AUTO_CHECK_MAX_MS)
+                        if (due > at) {
+                            next = minOf(next, due)
+                        } else if (checkQuietly(e)) {
+                            since -= id
+                            failed -= id
+                        } else {
+                            since[id] = now()
+                            failed[id] = tries + 1
+                            next = minOf(next, now())
+                        }
+                    }
+                    else -> {
+                        since -= id
+                        failed -= id
+                    }
+                }
+            }
+            clockTick.update { it + 1 }
+            val changed = merge(entries.drop(1), health.states.drop(1), problems.drop(1), checking.drop(1))
+            if (next == Long.MAX_VALUE) {
+                changed.first() // nothing resting: wait for something to change
+            } else {
+                withTimeoutOrNull((next - now()).coerceIn(AUTO_WAKE_MIN_MS, STATUS_REFRESH_MS)) { changed.first() }
+            }
+        }
+    }
+
+    /** A background check: true when the source answered as itself. */
+    private suspend fun checkQuietly(entry: Entry): Boolean = when (val r = fetchManifest(entry.config.base)) {
+        is Outcome.Success -> {
+            val manifest = r.value
+            if (manifest.id != entry.config.manifest.id) {
+                problems.update { it + (entry.id to DIFFERENT_SOURCE) }
+                false
+            } else {
+                health.record(entry.id, HealthOutcome.SUCCESS)
+                problems.update { it - entry.id }
+                // Rebuilt only when the source changed its name or settings.
+                if (manifest != entry.config.manifest) {
+                    change(entry.id.value) { e ->
+                        val config = e.config.copy(manifest = manifest)
+                        Entry(config, e.enabled, sourceFor(config))
+                    }
+                }
+                true
+            }
+        }
+        is Outcome.Failure -> {
+            outcomeOf(r.error)?.let { health.record(entry.id, it, (r.error as? PodiumError.RateLimited)?.retryAfterMillis) }
+            false
         }
     }
 
@@ -269,7 +362,7 @@ class CustomSources(
     private fun healthProblem(health: SourceHealth?): String? = when (health) {
         null, SourceHealth.Healthy -> null
         is SourceHealth.RateLimited -> "Asked too often. Songs play as usual, and Podium tries it again shortly."
-        is SourceHealth.Unreachable, is SourceHealth.Probing -> "Not answering. Songs play as usual until it's back."
+        is SourceHealth.Unreachable, is SourceHealth.Probing -> "Not answering. Songs play as usual, and Podium keeps trying it."
         is SourceHealth.Degraded -> "Answering with errors. Songs it can't play play as usual."
         is SourceHealth.AuthRejected, SourceHealth.Disabled -> "Refusing Podium. Check the address, then add it again."
     }
@@ -284,6 +377,15 @@ class CustomSources(
     }
 
     private companion object {
+        const val DIFFERENT_SOURCE = "This address now answers as a different source. Remove it and add it again."
+
+        /** Background checks of a source that isn't answering: the first, doubling up to the longest. */
+        const val AUTO_CHECK_FIRST_MS = 20_000L
+        const val AUTO_CHECK_MAX_MS = 5 * 60_000L
+
+        /** How often the status of a resting source is looked at again, at most. */
+        const val STATUS_REFRESH_MS = 5_000L
+        const val AUTO_WAKE_MIN_MS = 100L
         val INDEX = SourceId("custom-sources")
         val SETTINGS = MapSerializer(String.serializer(), String.serializer())
         const val KEY_ORDER = "order"

@@ -305,8 +305,16 @@ class StreamResolver(
         var finished = false
         val chosen = withTimeoutOrNull(budgetMillis) {
             for (source in providers) {
+                // Resting (asked too often, or not answering lately): it may well have the song, so
+                // that's never taken for "not there" (D-96); it's asked again once its rest is over.
+                if (!health.canAttempt(source.descriptor.id)) {
+                    attempts += ResolveAttempt(ResolutionPath.PREFERRED_SOURCE, source.descriptor.id, ResolveAttempt.Kind.SKIPPED, detail = SOURCE_RESTING)
+                    continue
+                }
+                // A slow answer isn't a failure here: the budget bounds the wait, and a search cut
+                // short by it never counts against the source.
                 val candidate = knownExactEquivalent(source, track)
-                    ?: findExactEquivalent(source, track, attempts, ResolutionPath.PREFERRED_SOURCE)
+                    ?: findExactEquivalent(source, track, attempts, ResolutionPath.PREFERRED_SOURCE, searchTimeoutMillis = budgetMillis)
                     ?: continue
                 (resolveFrom(source.descriptor.id, candidate.first, request, ResolutionPath.PREFERRED_SOURCE, candidate.second, attempts) as? ResolveOutcome.Resolved)
                     ?.let { return@withTimeoutOrNull it }
@@ -342,6 +350,24 @@ class StreamResolver(
         }
     }
 
+    /**
+     * When [environment]'s custom sources may next be asked, while every one of them is resting
+     * (asked too often, or not answering lately); null when one may be asked now, or there are none
+     * (D-96).
+     */
+    fun preferredRestEndsAt(environment: MusicEnvironment): Long? {
+        var next: Long? = null
+        for (source in preferred.ordered(environment)) {
+            val until = when (val h = health.health(source.descriptor.id)) {
+                is app.podium.sources.api.SourceHealth.RateLimited -> h.untilMillis
+                is app.podium.sources.api.SourceHealth.Unreachable -> h.retryAtMillis
+                else -> if (h.isAttemptAllowed) return null else continue
+            }
+            next = minOf(next ?: until, until)
+        }
+        return next
+    }
+
     private fun environmentOf(source: SourceId) = registry.get(source)?.descriptor?.environment
 
     /** A copy on [source] already decided EXACT for [track] (never anything less). */
@@ -356,6 +382,7 @@ class StreamResolver(
         track: Track,
         attempts: MutableList<ResolveAttempt>,
         step: ResolutionPath = ResolutionPath.EXACT_FALLBACK,
+        searchTimeoutMillis: Long = sourceTimeoutMillis,
     ): Pair<Track, MatchResult>? {
         val catalog = source.catalog ?: return null
         if (!source.capabilities.value.isUsable(Capability.SEARCH)) return null
@@ -363,7 +390,7 @@ class StreamResolver(
         val candidates = linkedMapOf<String, Track>()
         for (query in MatchQueryBuilder.queries(track)) {
             val r = try {
-                withTimeoutOrNull(sourceTimeoutMillis) { catalog.search(SearchQuery(query, fallbackSearchLimit)) }
+                withTimeoutOrNull(searchTimeoutMillis) { catalog.search(SearchQuery(query, fallbackSearchLimit)) }
                     ?: Outcome.Failure(PodiumError.Network("Timed out"))
             } catch (t: Throwable) {
                 if (t is kotlinx.coroutines.CancellationException) throw t
@@ -373,7 +400,8 @@ class StreamResolver(
                 is Outcome.Success -> r.value.tracks.forEach { candidates.putIfAbsent(it.id.value, it) }
                 is Outcome.Failure -> {
                     // A broken search is a failure and counts as one; finding nothing is a miss.
-                    SourceFanOut.outcomeOf(r.error, signsIn = source.auth != null)?.let { health.record(source.descriptor.id, it) }
+                    SourceFanOut.outcomeOf(r.error, signsIn = source.auth != null)
+                        ?.let { health.record(source.descriptor.id, it, (r.error as? PodiumError.RateLimited)?.retryAfterMillis) }
                     attempts += ResolveAttempt(
                         step, source.descriptor.id, ResolveAttempt.Kind.SKIPPED, detail = SEARCH_FAILED,
                     )
@@ -420,15 +448,17 @@ class StreamResolver(
 
         /**
          * All custom sources together (D-91): long enough for one search and one stream answer from
-         * a slow server, short enough that a song still starts promptly from its own source.
+         * a server answering normally, short enough that a song still starts promptly from its own
+         * source; a copy that takes longer takes over once it has loaded (D-92).
          */
-        const val DEFAULT_PREFERRED_BUDGET_MILLIS = 8_000L
+        const val DEFAULT_PREFERRED_BUDGET_MILLIS = 5_000L
 
         /** A custom source asked again in the background (D-92): room for a slow network. */
         const val DEFAULT_UPGRADE_BUDGET_MILLIS = 30_000L
 
         internal const val PREFERRED_TOO_SLOW = "custom sources took too long"
         internal const val SEARCH_FAILED = "search failed"
+        internal const val SOURCE_RESTING = "resting"
 
         /**
          * Whether the custom sources might still have the song (D-92): one of them failed, or they ran
@@ -436,7 +466,7 @@ class StreamResolver(
          */
         fun mayStillAnswer(attempts: List<ResolveAttempt>): Boolean = attempts.any {
             it.step == ResolutionPath.PREFERRED_SOURCE &&
-                (it.kind == ResolveAttempt.Kind.FAILED || it.detail == PREFERRED_TOO_SLOW || it.detail == SEARCH_FAILED)
+                (it.kind == ResolveAttempt.Kind.FAILED || it.detail == PREFERRED_TOO_SLOW || it.detail == SEARCH_FAILED || it.detail == SOURCE_RESTING)
         }
     }
 }

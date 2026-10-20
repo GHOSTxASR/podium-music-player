@@ -20,7 +20,9 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Test
@@ -55,10 +57,21 @@ class CustomSourcesTest {
 
     @After fun stop() = scope.cancel()
 
-    private fun TestScope.store() = CustomSources(
+    /** Background checks are off unless a test is about them: these tests check by hand. */
+    private fun TestScope.store(autoCheck: Boolean = false) = CustomSources(
         credentials, health, scope, clock::nowMillis, io = dispatcher,
         fetchManifest = { base -> asked += base; answers[base] ?: Outcome.Failure(PodiumError.NotFound("manifest")) },
+        autoCheck = autoCheck,
     )
+
+    /** Time passes, for the store's clock and its coroutines alike, a second at a time. */
+    private fun TestScope.pass(millis: Long) {
+        repeat((millis / 1_000).toInt()) {
+            clock.advanceBy(1_000)
+            advanceTimeBy(1_000)
+            runCurrent()
+        }
+    }
 
     @Test
     fun `adds a source from its manifest address`() = runTest(dispatcher) {
@@ -199,5 +212,47 @@ class CustomSourcesTest {
         store.check(id)
         advanceUntilIdle()
         assertIs<CustomSourceStatus.Problem>(store.sources.value.single().status)
+    }
+
+    @Test
+    fun `a source that isn't answering is checked in the background until it answers (D-96)`() = runTest(dispatcher) {
+        answers["https://a.example.com"] = Outcome.Success(manifest())
+        val store = store(autoCheck = true)
+        val id = SourceId((store.add("https://a.example.com") as AddSourceResult.Added).id)
+        runCurrent()
+        val askedAfterAdd = asked.size
+        // Three songs in a row couldn't reach it: its circuit opens.
+        answers["https://a.example.com"] = Outcome.Failure(PodiumError.Network("timeout"))
+        repeat(3) { health.record(id, app.podium.sources.api.HealthOutcome.NETWORK_FAILURE) }
+        pass(1_000)
+        assertEquals(CustomSourceStatus.Problem("Not answering. Songs play as usual, and Podium keeps trying it."), store.sources.value.single().status)
+        pass(18_000)
+        assertEquals(askedAfterAdd, asked.size, "not before 20 s")
+        pass(2_000)
+        assertEquals(askedAfterAdd + 1, asked.size, "checked quietly, without the listener")
+        assertIs<CustomSourceStatus.Problem>(store.sources.value.single().status, "still not answering")
+        // It's back: the next check (40 s later) finds it, and it goes straight back to work.
+        answers["https://a.example.com"] = Outcome.Success(manifest())
+        pass(41_000)
+        assertEquals(askedAfterAdd + 2, asked.size)
+        assertEquals(SourceHealth.Healthy, health.health(id))
+        assertEquals(CustomSourceStatus.Ready, store.sources.value.single().status)
+        pass(120_000)
+        assertEquals(askedAfterAdd + 2, asked.size, "a source that answers isn't checked again")
+    }
+
+    @Test
+    fun `a rest that runs out reads as over, without asking the source (D-96)`() = runTest(dispatcher) {
+        answers["https://a.example.com"] = Outcome.Success(manifest())
+        val store = store(autoCheck = true)
+        val id = SourceId((store.add("https://a.example.com") as AddSourceResult.Added).id)
+        runCurrent()
+        val askedAfterAdd = asked.size
+        health.record(id, app.podium.sources.api.HealthOutcome.RATE_LIMIT, retryAfterMillis = 30_000)
+        pass(1_000)
+        assertEquals(CustomSourceStatus.Problem("Asked too often. Songs play as usual, and Podium tries it again shortly."), store.sources.value.single().status)
+        pass(35_000)
+        assertEquals(CustomSourceStatus.Ready, store.sources.value.single().status)
+        assertEquals(askedAfterAdd, asked.size, "its rest is its own to finish")
     }
 }

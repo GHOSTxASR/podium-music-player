@@ -144,6 +144,32 @@ class PreferredSourcesTest {
     }
 
     @Test
+    fun `a resting custom source is never taken for not having the song (D-96)`() = runTest {
+        first.track("Night Drive", artist = "Band")
+        health.record(first.sourceId, app.podium.sources.api.HealthOutcome.RATE_LIMIT, retryAfterMillis = 30_000)
+        val outcome = assertIs<ResolveOutcome.Resolved>(resolver.resolve(ResolveRequest(song)))
+        assertEquals(ResolutionPath.OWN_SOURCE, outcome.selection.path)
+        assertTrue(StreamResolver.mayStillAnswer(outcome.attempts), "resting isn't \"not there\"")
+        assertEquals(0, first.searchCalls, "not asked while it rests")
+        assertEquals(null, resolver.preferredRestEndsAt(MusicEnvironment.ONLINE), "the other one may be asked now")
+        health.record(second.sourceId, app.podium.sources.api.HealthOutcome.RATE_LIMIT, retryAfterMillis = 60_000)
+        assertEquals(1_000_000L + 30_000, resolver.preferredRestEndsAt(MusicEnvironment.ONLINE), "the first rest to end")
+        assertIs<ResolveOutcome.Failed>(resolver.preferredCopy(song), "still resting")
+        // Its rest over, it's asked again and has the song.
+        clock.advanceBy(30_001)
+        assertEquals(null, resolver.preferredRestEndsAt(MusicEnvironment.ONLINE))
+        assertEquals(first.sourceId, assertIs<ResolveOutcome.Resolved>(resolver.preferredCopy(song)).selection.servedBy)
+    }
+
+    @Test
+    fun `a slow custom source answering in the background isn't counted as failing`() = runTest {
+        first.track("Night Drive", artist = "Band")
+        first.searchBehavior = Behavior.Slow(9_000) // longer than one ordinary search may take
+        assertIs<ResolveOutcome.Resolved>(resolver.preferredCopy(song))
+        assertEquals(SourceHealth.Healthy, health.health(first.sourceId))
+    }
+
+    @Test
     fun `a song no custom source has isn't asked for again`() = runTest {
         first.track("Night Drive (Live)", artist = "Band")
         val outcome = assertIs<ResolveOutcome.Resolved>(resolver.resolve(ResolveRequest(song)))

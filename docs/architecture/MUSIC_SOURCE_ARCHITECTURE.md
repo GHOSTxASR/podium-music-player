@@ -267,7 +267,7 @@ sealed interface ResolveOutcome {
 
 1. Pinned selection (reused while valid).
 2. An owned copy: the same song, or an EXACT copy in the same environment.
-3. **Custom sources (D-91):** the listener's own stream sources (`StreamProviders`, not in the registry), in their order, for any EXACT copy, within one shared 8 s budget; when they were slow or failing, asked again in the background and a copy found takes over (D-92). Never for downloads or `FallbackPolicy.NONE`, never across environments. See [CUSTOM_SOURCES.md](CUSTOM_SOURCES.md).
+3. **Custom sources (D-91):** the listener's own stream sources (`StreamProviders`, not in the registry), in their order, for any EXACT copy, within one shared 5 s budget (D-96); when they were slow, failing or resting, asked again in the background until they say, and a copy found takes over (D-92, D-96). Never for downloads or `FallbackPolicy.NONE`, never across environments. See [CUSTOM_SOURCES.md](CUSTOM_SOURCES.md).
 4. The track's own source, within the per-source timeout (6 s).
 5. EXACT fallback on the other enabled sources of the track's environment, in priority order. A copy already known to be EXACT (`EquivalenceStore`, persisted) is used directly; otherwise that source is searched and the matcher decides.
 6. Otherwise `Miss`/`Failed`.

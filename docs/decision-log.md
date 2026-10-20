@@ -1146,3 +1146,55 @@ Every significant decision, newest at the bottom. Major ones have an ADR in `adr
 - **Verified:** 3,000 albums ordered in 80 ms instead of 819 ms on the development machine (a test
   now bounds it); phones are slower, so the saving there is larger. Not yet timed on the phone.
 
+
+### D-96 · Custom sources: asked again by themselves, and a race-free switch mid-song
+- **Context:** the owner had never seen a song move to lossless mid-song. Their custom source often
+  showed "Not answering" or "Asked too often", and only Check now in Settings brought it back. They
+  asked for Podium to keep trying in the background, and for the lossless copy to load a few seconds
+  ahead so the switch is clean. Probing their addon showed why it "stopped answering": about one
+  request in seven hangs for 20 s or more, while the same request sent again answers in about a
+  second. Three hangs in a row opened the source's circuit.
+- **Decision:**
+  - **The addon client asks politely and gets an answer.** Requests start at least 200 ms apart, in
+    order. One with no answer after 2.5 s is sent once more, and the first answer wins. One that
+    fails at once (a dropped connection, a 502/503/504) is sent once more straight away. After a 429
+    nothing is sent until its `Retry-After` (30 s when it doesn't say, 10 minutes at most).
+  - **A resting source is never taken for not having the song.** The resolver skips a source whose
+    circuit is open or that was asked too often, records that it was resting, and the song counts as
+    "may still be there" (before, it counted as a miss and was never asked again). A custom source's
+    search may use the whole budget, so a slow first answer no longer counts as a failure. The
+    budget for all custom sources together is now 5 s, down from 8 s: a song starts promptly from
+    YouTube Music and the copy takes over once it has loaded.
+  - **The player keeps asking.** For each song that started from YouTube Music while a custom source
+    might have it, the custom sources are asked again at once, then after 15 s, 30 s, 1, 2 and
+    4 minutes. While every one is resting it waits for the rest to end instead. A source answering
+    again (another song, or a background check) cuts any wait short. It stops when a copy turns up,
+    when every source answers that it hasn't got the song, or when the song has played or left the
+    queue. One song is asked for at a time.
+  - **Settings checks by itself.** A source that isn't answering is asked for its manifest quietly,
+    20 s after it stopped, then after 40 s, 80 s and so on, up to every 5 minutes. An answer puts it
+    straight back to work. A source asked too often isn't asked until its rest is over. The status
+    is how the source is doing now, so a rest that has run out reads as over. "Not answering" now
+    says Podium keeps trying it.
+  - **The switch can't lose the race.** The copy loads 6 s ahead of the song and waits there,
+    paused and silent. It joins only once it's ready where the song is. If the song gets there first,
+    the copy keeps loading and jumps forward inside what it has already loaded (3 s beyond the song
+    is enough), instead of starting over further on. It starts over from further ahead only if it
+    can't catch up within 12 s (twice at most), and gives up only near the end of the song.
+  - **Lined up by sound.** Two copies of one recording can start their audio a little apart. Each
+    player's meter records the loudness of every 10 ms it decodes, and the copy's onsets are compared
+    with the song's over two seconds, at offsets of up to ±0.5 s. A clear match sets where the copy
+    is brought level, so the 0.4 s crossfade doesn't play anything twice. With nothing clear to go by
+    (silence, a steady sound), equal positions are used as before.
+  - **YouTube Music still drives everything.** Autoplay, radio and recommendations ask only the
+    registered sources about the queue's own songs. Custom sources are never registered, so they're
+    never asked, whichever copy is heard. Likes and history are the YouTube Music song's, with the
+    serving source noted.
+- **Verified:** addon client tests for hedging, the immediate retry, the hold after a 429 and
+  pacing (40 in `sources:addon`). Resolver tests for a resting source and a slow search (174 in
+  `sources:api`). Player tests: a copy whose first bytes take 9 s joins from inside what it has
+  loaded, 9–12 s after it was asked for, where the song is. A source that was resting is asked again
+  as soon as it answers, without a check. Alignment tests on music-like envelopes: offsets found,
+  quieter copies placed, other music and silence left unsure. App tests for background checks and
+  a rest running out. Autoplay test: a custom source holding the seed is never asked. Not yet heard
+  on the phone.

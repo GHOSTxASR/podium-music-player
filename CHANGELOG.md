@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Custom sources (D-91):** add your own stream sources in Settings ▸ Custom sources: addons that speak the BitChord addon protocol (type or paste its https address, like `https://addon.example.com`). When one of them has the exact same recording of an online song, the song plays from it, lossless if that's what it serves; otherwise it plays from YouTube Music as before. Sources are asked in your order. You can turn each one on or off, change its settings (its quality, say), check it and remove it. Explicit songs play from it too. Addresses are kept sealed on the phone, and only the host is shown.
 
 ### Fixed
+- **Custom sources keep working by themselves (D-96):** a source that stops answering or was asked too often is tried again in the background, and songs move to it as soon as it's back. No more Check now. Requests that hang are sent again, so a slow addon no longer looks down.
+- **Lossless mid-song, reliably (D-96):** the lossless copy loads a few seconds ahead and joins only once it's ready where the song is, lined up by its sound, so the switch is clean even on a slow network.
 - **ALAC files (D-94, issue #6):** Podium's own Apple Lossless decoder now comes first, so phones whose own ALAC decoder fails no longer stop the song.
 - **Cover Flow (D-95):** opens and closes without the pause; large libraries are ordered about ten times faster, away from the screen's drawing.
 

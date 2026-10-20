@@ -2,6 +2,12 @@ package app.podium.player.service
 
 import android.content.Context
 import androidx.media3.common.Player
+import androidx.media3.datasource.DataSource
+import androidx.media3.datasource.DataSpec
+import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.ResolvingDataSource
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.exoplayer.source.MediaSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.test.utils.FakeClock
 import androidx.media3.test.utils.TestExoPlayerBuilder
@@ -160,9 +166,40 @@ class CustomSourceUpgradeTest {
             override val streamProviders = providers
             override fun sessionActivity(context: Context) = null
         },
-        helperFactory = { ctx, factory -> TestExoPlayerBuilder(ctx).setClock(clock).setMediaSourceFactory(factory).build().also { helpers += it } },
+        helperFactory = { ctx, factory ->
+            val sources = stallCopyMs?.let { stalledCopies(ctx, it) } ?: factory
+            TestExoPlayerBuilder(ctx).setClock(clock).setMediaSourceFactory(sources).build().also { helpers += it }
+        },
     ) { ctx, factory -> TestExoPlayerBuilder(ctx).setClock(clock).setMediaSourceFactory(factory).build() }.also { e ->
         e.onExtrasChanged = { extras.value = it }
+    }
+
+    /** When set, the custom source's copy loads nothing for this long (players' time), then all at once. */
+    private var stallCopyMs: Long? = null
+
+    /**
+     * The second player's media, like the engine's, but the copy's first bytes held back for
+     * [stallMs] of the players' clock: a slow network, or a server waking up.
+     */
+    private fun stalledCopies(context: Context, stallMs: Long): MediaSource.Factory {
+        val until = clock.elapsedRealtime() + stallMs
+        val upstream = DefaultDataSource.Factory(context)
+        val stalled = DataSource.Factory {
+            val source = upstream.createDataSource()
+            object : DataSource by source {
+                override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+                    while (clock.elapsedRealtime() < until) {
+                        if (Thread.interrupted()) throw java.io.InterruptedIOException()
+                        Thread.sleep(1)
+                    }
+                    return source.read(buffer, offset, length)
+                }
+            }
+        }
+        val copyFile = ResolvingDataSource.Resolver { spec: DataSpec ->
+            if (QueueMediaItems.carryUidOf(spec.uri) != null) spec.withUri(android.net.Uri.fromFile(File(files, "song.flac"))) else spec
+        }
+        return DefaultMediaSourceFactory(ResolvingDataSource.Factory(stalled, copyFile))
     }
 
     @After
@@ -228,6 +265,44 @@ class CustomSourceUpgradeTest {
         until { engine.player.isPlaying }
         assertEquals(null, engine.lastError)
         engine.assertMirrorsPlayer()
+    }
+
+    @Test
+    fun `a copy that loads slowly at first joins from inside what it has loaded, rather than starting over (D-96)`() {
+        customOn.value = false
+        // The copy's first bytes take 9 s: the song gets past the point the copy was to join at.
+        stallCopyMs = 9_000
+        play(song(catalogue.descriptor.id, "c1", "Night Drive"))
+        until { engine.player.playbackState == Player.STATE_READY && engine.player.currentPosition > 2_000 }
+        customOn.value = true
+        until { helpers.isNotEmpty() }
+        val askedAt = engine.player.currentPosition
+
+        until { extras.value.getString(PodiumExtras.SERVED_BY_ID) == lossless.descriptor.id.value }
+        val helper = helpers.single()
+        assertTrue(helper.isPlaying)
+        // It joined soon after its bytes came, where the song was — not 10 s further on, from scratch.
+        val joinedAfter = engine.player.currentPosition - askedAt
+        assertTrue(joinedAfter in 9_000..12_000, "joined ${joinedAfter} ms after it was asked for")
+        assertTrue(kotlin.math.abs(helper.currentPosition - engine.player.currentPosition) < 250, "level: ${helper.currentPosition} vs ${engine.player.currentPosition}")
+        assertEquals(Codec.FLAC.name, extras.value.getString(PodiumExtras.HEARD_CODEC))
+        assertEquals(null, engine.lastError)
+    }
+
+    @Test
+    fun `a custom source that was resting is asked again as soon as it answers, without a check (D-96)`() {
+        // Asked too often: it rests for ten minutes, so the song starts from the catalogue.
+        health.record(lossless.descriptor.id, app.podium.sources.api.HealthOutcome.RATE_LIMIT, retryAfterMillis = 600_000)
+        val nightDrive = song(catalogue.descriptor.id, "c1", "Night Drive")
+        play(nightDrive)
+        until { engine.player.playbackState == Player.STATE_READY && engine.player.currentPosition > 2_000 }
+        assertEquals(ResolutionPath.OWN_SOURCE, engine.queue.state.value.current?.selection?.path)
+        assertEquals(0, lossless.searches, "not asked while it rests")
+        // It answers again (another song, or Settings checking it in the background): the song moves over.
+        health.record(lossless.descriptor.id, app.podium.sources.api.HealthOutcome.SUCCESS)
+        until { extras.value.getString(PodiumExtras.SERVED_BY_ID) == lossless.descriptor.id.value }
+        assertEquals(nightDrive.id, engine.queue.state.value.current?.track?.id)
+        assertEquals(null, engine.lastError)
     }
 
     @Test

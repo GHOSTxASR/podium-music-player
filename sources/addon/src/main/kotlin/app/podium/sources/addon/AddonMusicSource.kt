@@ -69,7 +69,7 @@ class AddonMusicSource internal constructor(
 
     constructor(config: AddonConfig, now: () -> Long = System::currentTimeMillis) : this(config, now, UrlConnectionAddonTransport())
 
-    private val client = AddonClient(config.base, transport)
+    private val client = AddonClient(config.base, transport, now)
     private val settings: Map<String, String> = config.manifest.settle(config.settings)
     private val settingsKey = settings.toSortedMap().entries.joinToString("&") { "${it.key}=${it.value}" }
 
