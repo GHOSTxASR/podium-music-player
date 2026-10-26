@@ -255,10 +255,10 @@ internal object Fixtures {
           "channelHandle":{"runs":[{"text":"@ishmaboy"}]}
         }}}}}}],"responseContext":{"serviceTrackingParams":[{"service":"GFEEDBACK","params":[{"key":"logged_in","value":"1"}]}]}}"""
 
-    private fun accountItem(name: String, handle: String?, tokens: String, selected: Boolean = false, disabled: Boolean = false) = """
+    private fun accountItem(name: String, handle: String?, tokens: String, selected: Boolean = false, disabled: Boolean = false, hasChannel: Boolean = true) = """
         {"accountItem":{"accountName":{"simpleText":"$name"},
           "accountPhoto":{"thumbnails":[{"url":"https://yt3.ggpht.com/$name=s48","width":48},{"url":"https://yt3.ggpht.com/$name=s108","width":108}]},
-          "isSelected":$selected,"isDisabled":$disabled,"hasChannel":true,
+          "isSelected":$selected,"isDisabled":$disabled,"hasChannel":$hasChannel,
           ${handle?.let { "\"channelHandle\":{\"simpleText\":\"$it\"}," }.orEmpty()}
           "serviceEndpoint":{"selectActiveIdentityEndpoint":{"supportedTokens":[
             {"accountStateToken":{"hasChannel":true,"isMerged":false,"obfuscatedGaiaId":"111"}},
@@ -276,6 +276,32 @@ internal object Fixtures {
             ${accountItem("Old Channel", "@old", """{"pageIdToken":{"pageId":"555"}}""", disabled = true)}
           ]}}
         ]}}]}}}}],"responseContext":{"serviceTrackingParams":[{"service":"GFEEDBACK","params":[{"key":"logged_in","value":"1"}]}]}}"""
+
+    /** The first list, for an account where it shows only the account itself (issue #4). */
+    val accountsListOwnOnly = """
+        {"actions":[{"getMultiPageMenuAction":{"menu":{"multiPageMenuRenderer":{"sections":[{"accountSectionListRenderer":{"contents":[
+          {"accountItemSectionRenderer":{"contents":[
+            ${accountItem("crowdstrike", "@crowdstrike", """{"datasyncIdToken":{"datasyncIdToken":"user111||"}}""", selected = true)}
+          ]}}
+        ]}}]}}}}],"responseContext":{"serviceTrackingParams":[{"service":"GFEEDBACK","params":[{"key":"logged_in","value":"1"}]}]}}"""
+
+    /** The music page's own switcher for the same account, behind its `)]}'` guard (issue #4). */
+    val accountSwitcher = """)]}'
+        {"code":"SUCCESS","data":{"actions":[{"getMultiPageMenuAction":{"menu":{"multiPageMenuRenderer":{"sections":[{"accountSectionListRenderer":{"contents":[
+          {"accountItemSectionRenderer":{"contents":[
+            ${accountItem("crowdstrike", "@crowdstrike", """{"datasyncIdToken":{"datasyncIdToken":"user111||"}}""", selected = true)},
+            ${accountItem("ishmaboy", "@ishmaboy", """{"pageIdToken":{"pageId":"112233445566778899001"}}""")}
+          ]}}
+        ]}}]}}}}]}}"""
+
+    /** A Google account with no channel of its own, and one brand channel (issue #4). */
+    val accountsListNoOwnChannel = """
+        {"actions":[{"getMultiPageMenuAction":{"menu":{"multiPageMenuRenderer":{"sections":[{"accountSectionListRenderer":{"contents":[
+          {"accountItemSectionRenderer":{"contents":[
+            ${accountItem("Listener Name", null, """{"datasyncIdToken":{"datasyncIdToken":"user111||"}}""", selected = true, hasChannel = false)},
+            ${accountItem("ishmaboy", "@ishmaboy", """{"pageIdToken":{"pageId":"112233445566778899001"}}""")}
+          ]}}
+        ]}}]}}}}]}"""
 
     val signedOutAnswer = """{"responseContext":{"serviceTrackingParams":[{"service":"GFEEDBACK","params":[{"key":"logged_in","value":"0"}]}]},"contents":{}}"""
 

@@ -70,7 +70,20 @@ import app.podium.core.interaction.WheelContext
 import app.podium.core.interaction.rememberFocusListState
 import app.podium.core.interaction.rememberPodiumHaptics
 
-private enum class SettingsRow { Appearance, PodiumSpace, FullScreen, TitleBarBattery, Keyboard, MusicFolders, OnlineSources, Autoplay, Recommendations, AvoidRepeats, Crossfade, Equalizer, SleepTimer, OnlineLyrics, LyricsCredit, Haptics, Clicks, StartupSound }
+private enum class SettingsRow { Appearance, PodiumSpace, FullScreen, TitleBarBattery, Keyboard, MusicFolders, OnlineSources, CustomSources, Autoplay, Recommendations, AvoidRepeats, Crossfade, Equalizer, SleepTimer, OnlineLyrics, LyricsCredit, Haptics, Clicks, StartupSound, SoftwareUpdate }
+
+/** Settings ▸ Software update (D-99): the version, a check now, and whether Podium checks by itself. */
+interface SoftwareUpdateSettings {
+    /** "0.1.3". */
+    val version: String
+
+    /** Null when this build never checks by itself (a test build). */
+    val automatic: kotlinx.coroutines.flow.StateFlow<Boolean>?
+
+    fun setAutomatic(on: Boolean)
+
+    fun checkNow()
+}
 
 /**
  * Settings (D-26, D-32, D-35): the device's look, which folders hold its music, which online sources it
@@ -91,6 +104,11 @@ fun SettingsScreen(
     /** The sleep timer (D-75): its row shows when the music stops; choosing opens its choices. */
     sleepTimer: SleepTimer? = null,
     onSleepTimer: () -> Unit = {},
+    /** Settings ▸ Custom sources (D-91): the listener's own stream sources; null in a build without online music. */
+    customSources: CustomSourcesSettings? = null,
+    onCustomSources: () -> Unit = {},
+    /** Settings ▸ Software update (D-99); null in a build that can't check. */
+    softwareUpdate: SoftwareUpdateSettings? = null,
 ) {
     val appearance by repository.appearance.collectAsStateWithLifecycle()
     val startupSound by repository.startupSound.collectAsStateWithLifecycle()
@@ -107,6 +125,7 @@ fun SettingsScreen(
     val selection by folders.selection.collectAsStateWithLifecycle()
     val service by onlineService.state.collectAsStateWithLifecycle()
     val effects by repository.effects.collectAsStateWithLifecycle()
+    val customList by (customSources?.sources ?: remember { kotlinx.coroutines.flow.MutableStateFlow(emptyList<CustomSourceState>()) }).collectAsStateWithLifecycle()
     val overlay = app.podium.core.designsystem.component.LocalOverlayHost.current
     val sleepState by (sleepTimer?.state ?: remember { kotlinx.coroutines.flow.MutableStateFlow<SleepTimerState>(SleepTimerState.Off) }).collectAsStateWithLifecycle()
     val sleepSummary by androidx.compose.runtime.produceState(SleepTimerText.summary(sleepState, sleepTimer?.remainingMs()), sleepState) {
@@ -118,7 +137,13 @@ fun SettingsScreen(
     }
     val haptics = rememberPodiumHaptics()
     // Only a build with an online service has anything to choose there.
-    val rows = SettingsRow.entries.filter { (it != SettingsRow.OnlineSources || service != null) && (it != SettingsRow.SleepTimer || sleepTimer != null) }
+    val rows = SettingsRow.entries.filter {
+        (it != SettingsRow.OnlineSources || service != null) &&
+            (it != SettingsRow.CustomSources || (service != null && customSources != null)) &&
+            (it != SettingsRow.SleepTimer || sleepTimer != null) &&
+            (it != SettingsRow.SoftwareUpdate || softwareUpdate != null)
+    }
+    val automaticUpdates by (softwareUpdate?.automatic ?: remember { kotlinx.coroutines.flow.MutableStateFlow(false) }).collectAsStateWithLifecycle()
     val focus = rememberFocusListState("settings")
     val activate: (Int) -> Unit = { index ->
         when (rows[index]) {
@@ -138,6 +163,7 @@ fun SettingsScreen(
             }
             SettingsRow.MusicFolders -> onMusicFolders()
             SettingsRow.OnlineSources -> onOnlineService()
+            SettingsRow.CustomSources -> onCustomSources()
             SettingsRow.Autoplay -> {
                 haptics.confirm()
                 repository.setAutoplay(!autoplayOn)
@@ -176,6 +202,21 @@ fun SettingsScreen(
             SettingsRow.StartupSound -> {
                 haptics.confirm()
                 repository.setStartupSound(!startupSound)
+            }
+            SettingsRow.SoftwareUpdate -> softwareUpdate?.let { updates ->
+                overlay.show(
+                    app.podium.core.designsystem.component.MenuSpec(
+                        "Podium ${updates.version}",
+                        listOfNotNull(
+                            app.podium.core.designsystem.component.MenuAction("Check now") { updates.checkNow() },
+                            updates.automatic?.let {
+                                app.podium.core.designsystem.component.MenuAction(if (automaticUpdates) "Automatic checks: On" else "Automatic checks: Off") {
+                                    updates.setAutomatic(!automaticUpdates)
+                                }
+                            },
+                        ),
+                    ),
+                )
             }
         }
     }
@@ -218,6 +259,7 @@ fun SettingsScreen(
                 },
             )
             SettingsRow.OnlineSources -> MenuRow(service?.name ?: "Online music", focused, value = onlineServiceSummary(service))
+            SettingsRow.CustomSources -> MenuRow("Custom sources", focused, value = customSourcesSummary(customList))
             SettingsRow.Autoplay -> MenuRow("Autoplay", focused, value = if (autoplayOn) "On" else "Off", showChevron = false)
             SettingsRow.Recommendations -> MenuRow("Online recommendations", focused, value = if (recommendationsOn) "On" else "Off", enabled = autoplayOn, showChevron = false)
             SettingsRow.AvoidRepeats -> MenuRow("Avoid repeats", focused, value = if (avoidRepeatsOn) "On" else "Off", enabled = autoplayOn, showChevron = false)
@@ -231,6 +273,7 @@ fun SettingsScreen(
             SettingsRow.Haptics -> MenuRow("Haptics", focused, value = if (hapticsOn) "On" else "Off", showChevron = false)
             SettingsRow.Clicks -> MenuRow("Click sound", focused, value = if (clicksOn) "On" else "Off", showChevron = false)
             SettingsRow.StartupSound -> MenuRow("Startup sound", focused, value = if (startupSound) "On" else "Off", showChevron = false)
+            SettingsRow.SoftwareUpdate -> MenuRow("Software update", focused, value = softwareUpdate?.version, showChevron = false)
         }
     }
 }

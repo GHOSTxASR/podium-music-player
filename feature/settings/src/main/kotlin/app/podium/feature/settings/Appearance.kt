@@ -235,7 +235,7 @@ fun DeviceBodyScreen(
     }
 }
 
-private enum class DisplayRow { Theme, Font, LyricsFont, LyricsTheme, Background, BackgroundColor, BackgroundOpacity, NoBackground, TextContrast }
+private enum class DisplayRow { Theme, Font, LyricsFont, LyricsTheme, LyricsBackground, Background, BackgroundColor, BackgroundOpacity, NoBackground, TextContrast }
 
 /** Settings ▸ Appearance ▸ Virtual display: theme, font, background and contrast. */
 @Composable
@@ -263,9 +263,12 @@ fun VirtualDisplayScreen(
             DisplayRow.Background, DisplayRow.BackgroundColor -> !ownDisplay
             DisplayRow.BackgroundOpacity -> !ownDisplay && shown == DisplayBackground.IMAGE
             DisplayRow.NoBackground -> ownDisplay
+            // Classic's paper only (D-100): the line theme keeps its own black sheet.
+            DisplayRow.LyricsBackground -> screen.lyricsTheme == app.podium.core.designsystem.theme.LyricsTheme.CLASSIC
             else -> true
         }
     }
+    val overlay = app.podium.core.designsystem.component.LocalOverlayHost.current
     val canvas = PodiumTheme.colors.canvas
     val activate: (Int) -> Unit = { index ->
         when (rows[index]) {
@@ -273,6 +276,20 @@ fun VirtualDisplayScreen(
             DisplayRow.Font -> onFont()
             DisplayRow.LyricsFont -> onLyricsFont()
             DisplayRow.LyricsTheme -> onLyricsTheme()
+            // Classic's paper (D-100).
+            DisplayRow.LyricsBackground -> {
+                overlay.show(
+                    app.podium.core.designsystem.component.MenuSpec(
+                        "Lyrics background: ${screen.lyricsBackground.label}",
+                        app.podium.core.designsystem.theme.LyricsBackground.entries.map { choice ->
+                            app.podium.core.designsystem.component.MenuAction(lyricsBackgroundChoice(choice)) {
+                                val current = repository.appearance.value
+                                repository.setAppearance(current.copy(screen = current.screen.copy(lyricsBackground = choice)))
+                            }
+                        },
+                    ),
+                )
+            }
             DisplayRow.Background -> if (ownDisplay) haptics.reject() else onBackground()
             DisplayRow.BackgroundColor -> if (ownDisplay) haptics.reject() else onBackgroundColor()
             DisplayRow.BackgroundOpacity -> if (AppearanceLevel.BackgroundOpacity.unavailable(appearance) != null) haptics.reject() else onLevel(AppearanceLevel.BackgroundOpacity)
@@ -304,6 +321,7 @@ fun VirtualDisplayScreen(
             DisplayRow.Font -> MenuRow("Font", focused, value = screen.font.label)
             DisplayRow.LyricsFont -> MenuRow("Lyrics font", focused, value = screen.lyricsFont.label)
             DisplayRow.LyricsTheme -> MenuRow("Lyrics theme", focused, value = screen.lyricsTheme.label)
+            DisplayRow.LyricsBackground -> MenuRow("Lyrics background", focused, value = screen.lyricsBackground.label, showChevron = false)
             DisplayRow.Background -> MenuRow(
                 "Background",
                 focused,
@@ -559,3 +577,10 @@ fun LevelScreen(repository: DeviceSettingsRepository, level: AppearanceLevel) {
 }
 
 internal fun percent(value: Float) = "${(value * 100).roundToInt()}%"
+
+/** A choice in the lyrics background menu (D-100). */
+private fun lyricsBackgroundChoice(choice: app.podium.core.designsystem.theme.LyricsBackground): String = when (choice) {
+    app.podium.core.designsystem.theme.LyricsBackground.AUTOMATIC -> "Automatic: turns with each line"
+    app.podium.core.designsystem.theme.LyricsBackground.BLACK -> "Always black"
+    app.podium.core.designsystem.theme.LyricsBackground.WHITE -> "Always white"
+}

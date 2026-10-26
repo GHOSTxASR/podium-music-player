@@ -64,7 +64,16 @@ class AppGraph(val context: Context) {
      * searches and the listener's "not the same song", kept across restarts; used to play a twin.
      */
     val equivalence = DatabaseEquivalenceStore(database, appScope).also { store -> appScope.launch { store.load() } }
-    val resolver = StreamResolver(registry, health, matcher, clock, equivalence = equivalence)
+
+    /** Secrets for sources the listener signs in to (D-37): sealed with a Keystore key, never logged. */
+    val credentials = KeystoreCredentialStore(context)
+
+    /**
+     * Custom sources (D-91): addons the listener added for their streams. Asked first, in their order,
+     * for an EXACT copy of an online song; the song's own source is the fallback. Never in the registry.
+     */
+    val customSources = CustomSources(credentials, health, appScope, clock::nowMillis)
+    val resolver = StreamResolver(registry, health, matcher, clock, equivalence = equivalence, preferred = customSources)
 
     val libraryStore = LibraryStore(database)
     val catalog = TrackCatalog(registry) { id -> libraryStore.track(id) }
@@ -78,9 +87,6 @@ class AppGraph(val context: Context) {
 
     /** Which sources are on (D-35): stored, applied once every source is registered. */
     val sourceSettings = SourceSettings(registry, SharedPrefsSourcePreferences(context))
-
-    /** Secrets for sources the listener signs in to (D-37): sealed with a Keystore key, never logged. */
-    val credentials = KeystoreCredentialStore(context)
 
     /** Where Podium hands YouTube Music songs to play (YOUTUBE_MUSIC_ARCHITECTURE §8): the official app. */
     val remotePlayback = MediaSessionRemotePlayback(
@@ -96,10 +102,35 @@ class AppGraph(val context: Context) {
      * ONLINE (D-38, D-48): YouTube Music — its catalogue and the listener's account read here, its
      * songs played by Podium itself. The device's own browser user agent, warmed off the main thread.
      */
+    /**
+     * Podium's own updates (D-99): GitHub's newest release, offered in a notice; installed through
+     * Android's installer once it's checked to be this app, newer, and signed by the same key. Release
+     * builds check by themselves; debug builds (another package) only open the release's page.
+     */
+    internal val updates = app.podium.update.UpdateCenter(
+        net = app.podium.update.HttpsUpdateNet("Podium/${BuildConfig.VERSION_NAME} (update check)"),
+        store = app.podium.update.PrefsUpdateStore(context),
+        installer = app.podium.update.PackageUpdateInstaller(context),
+        current = app.podium.update.Version.of(BuildConfig.VERSION_NAME) ?: app.podium.update.Version(listOf(0), "0"),
+        downloads = java.io.File(context.cacheDir, "updates"),
+        scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.IO),
+        checksByItself = !BuildConfig.DEBUG,
+        canInstallReleases = !BuildConfig.DEBUG,
+    )
+
+    /** Runs the online source's player script for its backup apps (D-98), off the app's own process. */
+    internal val scriptEngine = AndroidScriptEngine(context)
+
     val youtubeMusic = YouTubeMusicSource(
         credentials,
         userAgent = { webUserAgent },
         region = { java.util.Locale.getDefault().country.takeIf { it.length == 2 } ?: "US" },
+        streamMemory = PrefsStreamWalkMemory(context),
+        // The backup apps' player script (D-98): run off the app's process, kept prepared in the cache.
+        scriptEngine = scriptEngine,
+        scriptCache = app.podium.sources.youtubemusic.DirectoryPlayerScriptCache(java.io.File(context.cacheDir, "player-scripts")),
+        // A hidden page the online source mints its PoTokens in (D-98).
+        pages = HiddenOriginPages(context),
     )
 
     @Volatile
@@ -108,6 +139,7 @@ class AppGraph(val context: Context) {
 
     init {
         BuildConfigFlags.checkMirror = BuildConfig.DEBUG
+        installDebugDiagnostics()
         registry.register(localSource)
         registry.register(youtubeMusic)
         buildVariantSources(context).forEach { registry.register(it) }
@@ -329,6 +361,7 @@ class AppGraph(val context: Context) {
         override val audioMeter = this@AppGraph.audioMeter
         override val recommendations = this@AppGraph.recommendations
         override val equivalence = this@AppGraph.equivalence
+        override val streamProviders = this@AppGraph.customSources
         override suspend fun playedSince(sinceMillis: Long) = onlineStore.playedSince(sinceMillis)
 
         override fun sessionActivity(context: Context): PendingIntent = PendingIntent.getActivity(

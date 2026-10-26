@@ -421,11 +421,12 @@ internal object YouTubeMusicParser {
      * The channels in the account's channel switcher (D-86), in its order. An item is a channel when
      * it has a name; its page id comes from its switch endpoint — the page id token, or the channel
      * half of a "channel||user" data-sync id (the account's own channel's is "user||": none).
-     * Items that can't be chosen (disabled, or without a channel) are left out.
+     * Items that can't be chosen (disabled) are left out. The Google account itself stays even
+     * without a channel of its own: the music service can be used as it (issue #4).
      */
     fun channels(json: JsonObject): List<YtmChannel> = json.findAll("accountItem").mapNotNull { item ->
         val name = item.at("accountName").text()?.trim() ?: return@mapNotNull null
-        if (item.at("isDisabled").bool == true || item.at("hasChannel").bool == false) return@mapNotNull null
+        if (item.at("isDisabled").bool == true) return@mapNotNull null
         val tokens = item.findAll("supportedTokens").flatMap { it.arr }
         val pageId = tokens.firstNotNullOfOrNull { it.at("pageIdToken", "pageId").str?.takeIf(String::isNotBlank) }
             ?: tokens.firstNotNullOfOrNull { t ->

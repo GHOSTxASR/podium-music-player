@@ -54,10 +54,12 @@ import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.distinctUntilChangedBy
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 
 /**
@@ -66,8 +68,9 @@ import kotlinx.coroutines.withTimeoutOrNull
  * - Queue mutations come in as commands, go through the QueueManager (single writer), and the
  *   resulting [QueueOp]s are applied to the player.
  * - Each item is resolved through the [QueueItemResolver] **before** it opens (pre-resolution on
- *   transition, or on demand from the loader thread) and pinned. A playing item is never switched
- *   to another source (D-18).
+ *   transition, or on demand from the loader thread) and pinned. A playing item never changes
+ *   source (D-18), with one exception: an EXACT copy from the listener's custom sources that was
+ *   too slow to answer at first takes over once it has loaded (D-92, [applyUpgrade]).
  * - Only DirectStream targets are played here; other routes belong to other engines (S5).
  *
  * Must be used from the application (main) thread, except [resolveForLoader].
@@ -99,6 +102,28 @@ class PodiumPlaybackEngine(
     private var positionJob: Job? = null
     private var skipJob: Job? = null
 
+    // Custom sources first (D-92). Declared before init too: the source watcher started there reads them.
+
+    /** The custom sources serving when last looked. */
+    private var knownCustom: Set<app.podium.core.model.SourceId> = emptySet()
+
+    /** Songs no custom source has (every one answered): not asked again until the sources change. */
+    private val customAnswered = HashSet<QueueUid>()
+
+    /** When asking again for a song gave up, by song (D-96). */
+    private val lastUpgradeTry = HashMap<QueueUid, Long>()
+    private val upgradeJobs = HashMap<QueueUid, Job>()
+    private val upgradeGate = kotlinx.coroutines.sync.Mutex()
+
+    /** A custom source's copy found for a song while it played, waiting for a pause or seek. */
+    private val pendingSwitch = HashMap<QueueUid, Selection>()
+
+    /** The copies crossfade's second player carries songs from, by song (read on its loader thread). */
+    private val carrySelections = ConcurrentHashMap<QueueUid, Selection>()
+
+    /** The song being heard from a carried copy, and that copy (for the session, D-92). */
+    private var carried: Pair<QueueUid, Selection>? = null
+
     /** Invoked whenever session extras (current resolution, errors) change. */
     var onExtrasChanged: (Bundle) -> Unit = {}
 
@@ -115,6 +140,7 @@ class PodiumPlaybackEngine(
     /** Settings ▸ Equaliser ▸ Effect (D-89), likewise in each player's path. */
     private val sound = SoundEffectProcessor().also { it.update(deps.effects.value.sound) }
     private var helperSound: SoundEffectProcessor? = null
+    private var helperMeter: AudioMeter? = null
 
     val player: ExoPlayer = playerFactory?.invoke(context, mediaSourceFactory) ?: buildPlayer(context)
 
@@ -144,6 +170,8 @@ class PodiumPlaybackEngine(
                 context,
                 EqualizerProcessor().also { eq -> eq.update(deps.effects.value.equalizer); helperEqualizer = eq },
                 SoundEffectProcessor().also { fx -> fx.update(deps.effects.value.sound); helperSound = fx },
+                // Measured only while a carried copy is lined up with the song (D-96).
+                AudioMeter().also { helperMeter = it },
             ),
         )
             .setMediaSourceFactory(mediaSourceFactory)
@@ -177,6 +205,13 @@ class PodiumPlaybackEngine(
         },
         scope = scope,
         blocked = { player.pauseAtEndOfMediaItems },
+        onCarrying = { uid -> onCarrying(QueueUid(uid)) },
+        onCarryEnded = ::onCarryEnded,
+        soundAlignment = {
+            val song = deps.audioMeter
+            val copy = helperMeter
+            if (song != null && copy != null) SoundAlignment(song, copy) else null
+        },
     )
 
     /** What crossfade's rules need of the song at a position in the player's playlist. */
@@ -195,14 +230,22 @@ class PodiumPlaybackEngine(
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                 val uid = mediaItem?.mediaId?.let(::QueueUid) ?: return
                 queue.onCurrentChanged(uid)
+                // A copy found for a song that has since stopped playing streams from there next time (D-92).
+                pendingSwitch.keys.filter { it != uid }.forEach { other -> pendingSwitch.remove(other)?.let { switchTo(other, it, null) } }
                 preResolveAround(uid)
                 publishExtras()
+            }
+
+            override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int) {
+                // The listener sought: the song may as well reload from the copy found for it (D-92).
+                if (reason == Player.DISCONTINUITY_REASON_SEEK) switchPendingCurrent()
             }
 
             override fun onPlaybackStateChanged(playbackState: Int) {
                 if (playbackState == Player.STATE_READY) {
                     consecutiveErrors = 0
                     refreshedAfterError.clear()
+                    reopened.clear()
                     if (recovery != null) {
                         recovery = null
                         publishExtras()
@@ -221,6 +264,8 @@ class PodiumPlaybackEngine(
             }
 
             override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+                // Paused: the song switches to the copy found for it, unheard (D-92).
+                if (!playWhenReady) switchPendingCurrent()
                 val timer = deps.sleepTimer ?: return
                 if (playWhenReady) {
                     timer.resumed()
@@ -300,17 +345,189 @@ class PodiumPlaybackEngine(
      */
     private fun forgetStreamsOfSourcesThatStop() {
         scope.launch {
-            deps.registry.connectedSources
-                .map { all -> all.filter { it.enabled && it.authenticationState.serves() }.mapTo(HashSet()) { it.sourceId } }
+            combine(
+                deps.registry.connectedSources.map { all -> all.filter { it.enabled && it.authenticationState.serves() }.map { it.sourceId } },
+                deps.streamProviders.serving,
+            ) { registered, custom -> registered.toHashSet() to custom }
                 .distinctUntilChanged()
-                .collect { serving ->
+                .collect { (registered, custom) ->
+                    val serving = registered + custom
                     val state = queue.state.value
                     state.items
                         .filter { it.uid != state.current?.uid && it.selection?.servedBy?.let { s -> s !in serving } == true }
                         .forEach { queue.unpin(it.uid) }
+                    // A custom source added or turned on (D-92): the songs about to play may be there.
+                    if (!knownCustom.containsAll(custom)) {
+                        customAnswered.clear()
+                        lastUpgradeTry.clear()
+                        val index = state.currentIndex
+                        if (index >= 0) state.items.drop(index).take(UPGRADE_AHEAD).forEach { item ->
+                            item.selection?.let { considerUpgrade(item.uid, ResolveOutcome.Resolved(it, reused = true, attempts = emptyList())) }
+                        }
+                    }
+                    knownCustom = custom
                 }
         }
     }
+
+    // --- Custom sources first (D-92) ---------------------------------------------------------------------
+
+    /**
+     * An online song resolved to its own source while custom sources are there: when they ran out
+     * of time or failed — rather than all answering that they haven't got it — they're asked again
+     * in the background, and a copy that turns up takes over ([applyUpgrade]).
+     */
+    private fun considerUpgrade(uid: QueueUid, outcome: ResolveOutcome.Resolved) {
+        val item = queue.item(uid) ?: return
+        if (outcome.selection.path == app.podium.sources.api.ResolutionPath.PREFERRED_SOURCE) return
+        if (item.track.kind == app.podium.core.model.MediaKind.LIVE) return
+        if (item.fallbackPolicy != app.podium.sources.api.resolve.FallbackPolicy.EXACT_ONLY) return
+        val environment = deps.registry.get(item.track.source.sourceId)?.descriptor?.environment ?: return
+        if (deps.streamProviders.ordered(environment).isEmpty() || uid in customAnswered) return
+        if (!outcome.reused && outcome.attempts.any { it.step == app.podium.sources.api.ResolutionPath.PREFERRED_SOURCE } &&
+            !app.podium.sources.api.resolve.StreamResolver.mayStillAnswer(outcome.attempts)
+        ) {
+            customAnswered += uid
+            return
+        }
+        upgradeLater(uid)
+    }
+
+    /**
+     * Keeps asking the custom sources for [uid]'s song in the background until they say (D-96): at
+     * once, then after 15 s, 30 s, 1, 2 and 4 minutes. While every one of them is resting (asked too
+     * often, or not answering lately) it waits for the rest to end instead of asking; a source
+     * answering again (a check in Settings, another song) cuts any wait short. It stops when a copy
+     * turns up ([applyUpgrade]), when every source answers that it hasn't got the song, or when the
+     * song has played or left the queue. One song is asked for at a time.
+     */
+    private fun upgradeLater(uid: QueueUid) {
+        if (upgradeJobs[uid]?.isActive == true) return
+        lastUpgradeTry[uid]?.let { if (deps.clock.nowMillis() - it < UPGRADE_RETRY_MS) return }
+        upgradeJobs[uid] = scope.launch {
+            for (attempt in 0..UPGRADE_BACKOFF_MS.size) {
+                if (attempt > 0) restOrRecovery(UPGRADE_BACKOFF_MS[attempt - 1])
+                while (true) {
+                    val environment = upgradeWanted(uid) ?: return@launch
+                    val rest = deps.resolver.preferredRestEndsAt(environment)?.minus(deps.clock.nowMillis()) ?: break
+                    if (rest <= 0) break
+                    restOrRecovery(rest.coerceAtMost(UPGRADE_MAX_WAIT_MS))
+                }
+                val outcome = upgradeGate.withLock {
+                    val track = queue.item(uid)?.takeIf { upgradeWanted(uid) != null }?.track ?: return@launch
+                    runCatching { deps.resolver.preferredCopy(track) }.getOrNull()
+                }
+                when (outcome) {
+                    is ResolveOutcome.Resolved -> return@launch applyUpgrade(uid, outcome.selection)
+                    is ResolveOutcome.Miss -> {
+                        customAnswered += uid
+                        return@launch
+                    }
+                    else -> Log.d(TAG, "custom sources couldn't say for $uid yet (ask ${attempt + 1})")
+                }
+            }
+            // Still no answer: asked again when the song comes round, after a while.
+            lastUpgradeTry[uid] = deps.clock.nowMillis()
+        }
+    }
+
+    /** The environment whose custom sources [uid]'s song is still worth asking for, or null. */
+    private fun upgradeWanted(uid: QueueUid): app.podium.sources.api.MusicEnvironment? {
+        val state = queue.state.value
+        val index = state.items.indexOfFirst { it.uid == uid }
+        if (index < 0 || index < state.currentIndex || uid in customAnswered) return null
+        val item = state.items[index]
+        if (item.selection?.path == app.podium.sources.api.ResolutionPath.PREFERRED_SOURCE) return null
+        val environment = deps.registry.get(item.track.source.sourceId)?.descriptor?.environment ?: return null
+        return environment.takeIf { deps.streamProviders.ordered(it).isNotEmpty() }
+    }
+
+    /** Waits [millis], or until one of the custom sources answers again, whichever comes first. */
+    private suspend fun restOrRecovery(millis: Long) {
+        val before = deps.health.states.value
+        withTimeoutOrNull(millis) {
+            deps.health.states.first { now ->
+                now.any { (id, health) ->
+                    health == app.podium.sources.api.SourceHealth.Healthy && before[id] != health && deps.streamProviders.get(id) != null
+                }
+            }
+        }
+    }
+
+    /**
+     * A custom source's copy of [uid]'s song, found after it was resolved elsewhere (D-92). A song
+     * not playing just streams from there; one that is paused, or hasn't started, switches now,
+     * unheard; one that is playing is carried over to it mid-song by crossfade's second player, or —
+     * when that can't be done just now — switches at the next pause or seek.
+     */
+    private fun applyUpgrade(uid: QueueUid, selection: Selection) {
+        val item = queue.item(uid) ?: return
+        if (item.selection?.path == app.podium.sources.api.ResolutionPath.PREFERRED_SOURCE) return
+        val index = indexInPlayer(uid) ?: return
+        if (index != player.currentMediaItemIndex) return switchTo(uid, selection, null)
+        val started = player.playbackState == Player.STATE_READY && player.currentPosition >= NOT_STARTED_MS
+        if (!player.playWhenReady || !started) return switchTo(uid, selection, player.currentPosition)
+        carrySelections[uid] = selection
+        if (crossfader.carry(QueueMediaItems.carryItem(uid, StreamKind.of(selection.media)))) {
+            Log.d(TAG, "carrying $uid over to ${selection.servedBy}")
+        } else {
+            carrySelections.remove(uid)
+            pendingSwitch[uid] = selection
+        }
+    }
+
+    private fun onCarrying(uid: QueueUid) {
+        val selection = carrySelections[uid] ?: return
+        carried = uid to selection
+        Log.d(TAG, "$uid is now heard from ${selection.servedBy}")
+        publishExtras()
+    }
+
+    private fun onCarryEnded(end: Crossfader.CarryEnd) {
+        if (released) return
+        val uid = QueueUid(end.uid)
+        val selection = carrySelections[uid] ?: return
+        carried = null
+        Log.d(TAG, "carrying $uid ended: ${end.reason}")
+        when (end.reason) {
+            // Paused: [main] switches to the copy where it was heard, unheard.
+            Crossfader.CarryReason.PAUSED -> switchTo(uid, selection, if (end.heard) end.positionMs else player.currentPosition)
+            Crossfader.CarryReason.SOUGHT -> switchTo(uid, selection, player.currentPosition)
+            // The song is over (or another plays): next time it streams from the copy.
+            Crossfader.CarryReason.ENDED, Crossfader.CarryReason.MOVED_ON ->
+                switchTo(uid, selection, if (indexInPlayer(uid) == player.currentMediaItemIndex) 0L else null)
+            Crossfader.CarryReason.GAVE_UP, Crossfader.CarryReason.FAILED, Crossfader.CarryReason.CANCELLED -> pendingSwitch[uid] = selection
+        }
+        publishExtras()
+    }
+
+    private fun switchPendingCurrent() {
+        val uid = queue.state.value.current?.uid ?: return
+        val selection = pendingSwitch.remove(uid) ?: return
+        switchTo(uid, selection, player.currentPosition)
+    }
+
+    /**
+     * Pin [selection] to [uid] and rebuild its media item for it, so the player opens the new stream
+     * and never one it had already started loading. A song playing carries on at [positionMs].
+     */
+    private fun switchTo(uid: QueueUid, selection: Selection, positionMs: Long?) {
+        pendingSwitch.remove(uid)
+        queue.item(uid) ?: return
+        queue.pin(uid, selection)
+        val index = indexInPlayer(uid)
+        if (index != null) {
+            val playing = index == player.currentMediaItemIndex
+            val position = if (playing) positionMs ?: player.currentPosition else 0L
+            Log.d(TAG, "$uid streams from ${selection.servedBy} from here on")
+            player.replaceMediaItem(index, QueueMediaItems.withKind(player.getMediaItemAt(index), StreamKind.of(selection.media), selection.servedBy))
+            if (playing && position > 0) player.seekTo(index, position)
+        }
+        publishExtras()
+    }
+
+    private fun indexInPlayer(uid: QueueUid): Int? =
+        (0 until player.mediaItemCount).firstOrNull { player.getMediaItemAt(it).mediaId == uid.value }
 
     private fun AuthState.serves() = this !is AuthState.SignedOut && this !is AuthState.Rejected && this !is AuthState.Expired
 
@@ -494,9 +711,9 @@ class PodiumPlaybackEngine(
         inFlight[uid]?.let { if (it.isActive) return it }
         val item = queue.item(uid)
         if (item?.selection != null && item.selection!!.isUsableAt(deps.clock.nowMillis())) {
-            return CompletableDeferred(
-                ResolveOutcome.Resolved(item.selection!!, reused = true, attempts = emptyList()),
-            )
+            val reused = ResolveOutcome.Resolved(item.selection!!, reused = true, attempts = emptyList())
+            considerUpgrade(uid, reused)
+            return CompletableDeferred(reused)
         }
         val deferred = CompletableDeferred<ResolveOutcome>()
         inFlight[uid] = deferred
@@ -505,6 +722,9 @@ class PodiumPlaybackEngine(
                 .getOrElse { ResolveOutcome.Failed(app.podium.sources.api.HealthOutcome.UNKNOWN, it.message, emptyList()) }
             if (outcome is ResolveOutcome.Resolved) {
                 Log.d(TAG, "resolved $uid via ${outcome.selection.path} from ${outcome.selection.servedBy}")
+                // Before the loader waiting on this hears of it: its item may need rebuilding first.
+                matchStreamKind(uid, outcome.selection)
+                considerUpgrade(uid, outcome)
             } else {
                 Log.w(TAG, "could not resolve $uid: $outcome")
             }
@@ -528,17 +748,53 @@ class PodiumPlaybackEngine(
         } ?: throw PodiumResolveException(app.podium.sources.api.HealthOutcome.NETWORK_FAILURE, "Timed out resolving $uid")
         return when (outcome) {
             is ResolveOutcome.Resolved -> outcome.selection
-            is ResolveOutcome.Miss -> throw PodiumResolveException(null, "No playable copy for $uid (${outcome.reason})")
+            is ResolveOutcome.Miss -> throw PodiumResolveException(null, "No playable copy for $uid (${outcome.reason})", outcome.reason)
             is ResolveOutcome.Failed -> throw PodiumResolveException(outcome.outcome, "Resolution failed for $uid")
         }
     }
 
+    /**
+     * The player opens a manifest with a different kind of source than a file (D-91): when [uid]'s
+     * stream is another kind than its item was built for, the item is rebuilt for it. Live stations
+     * are built as live HLS from the start (D-90) and never change. A song already playing resumes
+     * where it was.
+     */
+    private fun matchStreamKind(uid: QueueUid, selection: Selection) {
+        if (queue.item(uid)?.track?.kind == app.podium.core.model.MediaKind.LIVE) return
+        val index = (0 until player.mediaItemCount).firstOrNull { player.getMediaItemAt(it).mediaId == uid.value } ?: return
+        val held = player.getMediaItemAt(index)
+        if (QueueMediaItems.fits(held.localConfiguration?.uri ?: return, selection)) return
+        val kind = StreamKind.of(selection.media)
+        val playing = index == player.currentMediaItemIndex
+        val position = if (playing) player.currentPosition else 0L
+        Log.d(TAG, "rebuilding $uid to open a $kind stream")
+        val tagged = QueueMediaItems.servedByOf(held.localConfiguration!!.uri)?.let { selection.servedBy }
+        player.replaceMediaItem(index, QueueMediaItems.withKind(held, kind, tagged))
+        if (playing && position > 0) player.seekTo(index, position)
+    }
+
     private inner class QueueDataSpecResolver : ResolvingDataSource.Resolver {
         override fun resolveDataSpec(dataSpec: DataSpec): DataSpec {
+            // The copy crossfade's second player carries a song from (D-92).
+            QueueMediaItems.carryUidOf(dataSpec.uri)?.let { uid ->
+                val selection = carrySelections[uid] ?: throw PodiumResolveException(HealthOutcome.MISS, "Nothing to carry $uid from")
+                return open(dataSpec, selection.target as? PlaybackTarget.DirectStream ?: throw PodiumResolveException(null, "Not a stream"))
+            }
             val uid = QueueMediaItems.uidOf(dataSpec.uri) ?: return dataSpec
             val selection = resolveForLoader(uid)
             val target = selection.target as? PlaybackTarget.DirectStream
                 ?: throw PodiumResolveException(null, "Route ${selection.target::class.simpleName} needs another engine")
+            // A manifest read as a file (or the other way round) would fail as bad media, and a stream
+            // from another source than the item was rebuilt for isn't the one it started loading: the
+            // item is rebuilt for its stream instead (D-91, D-92). Live stations are always built as
+            // live HLS (D-90).
+            if (!QueueMediaItems.fits(dataSpec.uri, selection) && queue.item(uid)?.track?.kind != app.podium.core.model.MediaKind.LIVE) {
+                throw PodiumReopenException(uid, StreamKind.of(target.media))
+            }
+            return open(dataSpec, target)
+        }
+
+        private fun open(dataSpec: DataSpec, target: PlaybackTarget.DirectStream): DataSpec {
             // The platform allows cleartext only so the listener's own server can be reached; every
             // source is held to that here, whatever it hands over (D-09). A per-item refusal.
             if (!NetworkPolicy.permits(target.media.uri)) {
@@ -555,6 +811,18 @@ class PodiumPlaybackEngine(
      * pause (SkipAfter). Three consecutive failures halt instead of skipping through the whole queue.
      */
     private fun handleError(error: PlaybackException) {
+        // Not a failure: the item was built for another kind of stream than it resolved to (D-91).
+        // Rebuilt for its stream (if that hasn't happened already), it plays from where it was.
+        // Twice at most per song: a stream that keeps changing kind is a failure like any other.
+        PlaybackErrors.reopenOf(error)?.let { reopen ->
+            val times = (reopened[reopen.uid] ?: 0) + 1
+            reopened[reopen.uid] = times
+            if (times <= MAX_REOPENS) {
+                queue.item(reopen.uid)?.selection?.let { matchStreamKind(reopen.uid, it) }
+                if (player.playerError != null) player.prepare()
+                return
+            }
+        }
         val current = queue.state.value.current
         val refused = PlaybackErrors.isRefusedStream(error) && current?.selection?.media != null
         // A stream URL that's refused (expired after a long pause, revoked) is asked for afresh from
@@ -593,6 +861,9 @@ class PodiumPlaybackEngine(
     /** Items whose refused stream was asked for afresh; cleared once playback is going again. */
     private val refreshedAfterError = HashSet<QueueUid>()
 
+    /** How often each item was rebuilt for another kind of stream (D-91); cleared once playback is going again. */
+    private val reopened = HashMap<QueueUid, Int>()
+
     /** What the engine is doing about the current song's problem, for the session (and Now Playing). */
     private var recovery: app.podium.player.api.Recovery? = null
 
@@ -618,25 +889,39 @@ class PodiumPlaybackEngine(
 
     private fun publishExtras() {
         val current = queue.state.value.current
-        val selection = current?.selection
+        // While a copy carries the song (D-92), that copy is what's heard: it serves it.
+        val carriedNow = carried?.takeIf { it.first == current?.uid }
+        val selection = carriedNow?.second ?: current?.selection
         val claimed = selection?.media?.claimedQuality
+        val heard = carriedNow?.let { crossfader.helperPlayer?.currentTracks?.let(AudioQualityMapper::fromTracks) }
         val extras = Bundle().apply {
             putString(PodiumExtras.CURRENT_UID, current?.uid?.value)
-            putString(PodiumExtras.SERVED_BY, selection?.servedBy?.let { deps.registry.get(it)?.descriptor?.displayName })
+            putString(PodiumExtras.SERVED_BY, selection?.servedBy?.let { (deps.registry.get(it) ?: deps.streamProviders.get(it))?.descriptor?.displayName })
             putString(PodiumExtras.SERVED_BY_ID, selection?.servedBy?.value)
             putString(PodiumExtras.RESOLUTION_PATH, selection?.path?.name)
             putString(PodiumExtras.CLAIMED_CODEC, claimed?.codec?.name)
             claimed?.bitrateKbps?.let { putInt(PodiumExtras.CLAIMED_BITRATE, it) }
             claimed?.sampleRateHz?.let { putInt(PodiumExtras.CLAIMED_SAMPLE_RATE, it) }
             claimed?.bitDepth?.let { putInt(PodiumExtras.CLAIMED_BIT_DEPTH, it) }
+            heard?.codec?.let { codec ->
+                putString(PodiumExtras.HEARD_CODEC, codec.name)
+                heard.container?.let { putString(PodiumExtras.HEARD_CONTAINER, it) }
+                heard.bitrateKbps?.let { putInt(PodiumExtras.HEARD_BITRATE, it) }
+                heard.sampleRateHz?.let { putInt(PodiumExtras.HEARD_SAMPLE_RATE, it) }
+                heard.bitDepth?.let { putInt(PodiumExtras.HEARD_BIT_DEPTH, it) }
+                heard.channels?.let { putInt(PodiumExtras.HEARD_CHANNELS, it) }
+            }
             putString(PodiumExtras.CONTEXT_LABEL, queue.state.value.context?.label)
-            putString(PodiumExtras.LAST_ERROR, lastError?.let { it::class.simpleName })
+            putString(PodiumExtras.LAST_ERROR, lastError?.let(PlaybackErrors::kindOf))
             putString(PodiumExtras.RECOVERY, recovery?.name)
         }
         onExtrasChanged(extras)
     }
 
+    private var released = false
+
     fun release() {
+        released = true
         // The last word on where playback stood; brief, and only when the service goes away.
         deps.queueStore?.let { store ->
             val index = queue.state.value.currentIndex
@@ -653,6 +938,24 @@ class PodiumPlaybackEngine(
         private const val RESOLVE_TIMEOUT_MS = 25_000L
         private const val SKIP_AFTER_MS = 1_500L
         private const val MAX_CONSECUTIVE_ERRORS = 3
+
+        /** Rebuilds of one item for another kind of stream before its error counts (D-91). */
+        private const val MAX_REOPENS = 2
+
+        /** Custom sources asked again for a song that ran out of asks, no sooner than this (D-92, D-96). */
+        private const val UPGRADE_RETRY_MS = 5 * 60_000L
+
+        /** The waits between background asks for one song (D-96). */
+        private val UPGRADE_BACKOFF_MS = listOf(15_000L, 30_000L, 60_000L, 120_000L, 240_000L)
+
+        /** The longest wait for a resting custom source before looking again. */
+        private const val UPGRADE_MAX_WAIT_MS = 5 * 60_000L
+
+        /** The song playing and the next few: asked again when a custom source is added (D-92). */
+        private const val UPGRADE_AHEAD = 4
+
+        /** A song this little way in hasn't really started: it can switch streams outright (D-92). */
+        private const val NOT_STARTED_MS = 1_500L
         private const val SAVE_DEBOUNCE_MS = 750L
         private const val POSITION_SAVE_INTERVAL_MS = 10_000L
         private const val RECENT_WINDOW_MS = 6 * 60 * 60 * 1000L

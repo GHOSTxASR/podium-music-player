@@ -485,6 +485,29 @@ class YouTubeMusicSourceTest {
     }
 
     @Test
+    fun `channels only the music page's own switcher lists are found too (issue #4)`() = runTest {
+        credentials.write(YouTubeMusicSource.SOURCE_ID, mapOf("session" to session, "account-name" to "crowdstrike", "account-key" to YouTubeMusicSource.accountKeyOf("@crowdstrike")))
+        service.answer = { s ->
+            when {
+                s.url.contains("account/accounts_list") -> ok(Fixtures.accountsListOwnOnly)
+                s.url.endsWith("/getAccountSwitcherEndpoint") -> ok(Fixtures.accountSwitcher)
+                else -> HttpResponse(404, ByteArray(0))
+            }
+        }
+        val channels = (source.auth!!.refreshIdentities() as Outcome.Success).value
+        assertEquals(listOf("crowdstrike", "ishmaboy"), channels.map { it.name })
+        assertEquals(listOf(true, false), channels.map { it.selected })
+        val switcher = service.sent.last { it.url.endsWith("/getAccountSwitcherEndpoint") }
+        assertEquals("GET", switcher.method)
+        assertNotNull(switcher.headers["Cookie"], "asked with the session")
+        // When the first list already has several, the second isn't asked.
+        signedInWithChannels()
+        val before = service.sent.size
+        source.auth!!.refreshIdentities()
+        assertTrue(service.sent.drop(before).none { it.url.endsWith("/getAccountSwitcherEndpoint") })
+    }
+
+    @Test
     fun `choosing a channel acts as it from then on, and its library is its own`() = runTest {
         signedInWithChannels()
         val before = assertIs<AuthState.SignedIn>(source.auth!!.state.value)

@@ -16,6 +16,7 @@ import app.podium.sources.api.ArtworkResolver
 import app.podium.sources.api.SourceHealthMonitor
 import app.podium.sources.api.SourceRegistry
 import app.podium.sources.api.resolve.EquivalenceStore
+import app.podium.sources.api.resolve.StreamProviders
 import app.podium.sources.api.resolve.StreamResolver
 
 /**
@@ -53,6 +54,9 @@ interface PlaybackDependencies {
 
     /** Copies already known to be the same recording on other sources (D-35), for autoplay's de-duplication. */
     val equivalence: EquivalenceStore? get() = null
+
+    /** The listener's custom sources (D-91), the same ones the [resolver] asks: for their names and whether they serve. */
+    val streamProviders: StreamProviders get() = StreamProviders.None
 
     /** Songs played since a time (for avoid-repeats), from ONLINE history. */
     suspend fun playedSince(sinceMillis: Long): Set<TrackId> = emptySet()

@@ -18,6 +18,7 @@ DeviceAppearance
 └── screen: VirtualDisplay              the display's dress (§2)
         ├── font: DisplayFont           (§3)
         ├── lyricsFont, lyricsTheme     (§3; the lyrics theme, D-81)
+        ├── lyricsBackground            (§3; Classic's paper, D-100)
         ├── background, solidArgb, imageUri, imageOpacity   (§4)
         └── contrast: TextContrast      (§5)
 ```
@@ -80,6 +81,9 @@ font or a colour on its own.
   (UnifrakturMaguntia), Pirata (Pirata One), Jacquard (Jacquard 24, a pixel blackletter).
   `LyricsTypeface` picks the family per line with the same whole-string fallback to Inter; in
   Settings each is set in itself (`LyricsTypeface.specimen`).
+- **Lyrics background (D-100)**, Classic only: Automatic (default: the paper turns with every line),
+  Black or White (it stays that one; the words take the other). Shown only while the lyrics theme
+  is Classic; the choice is kept and returns with it.
 - **Lyrics theme (D-81)**, Classic (default: one line at a time, inverting the display) or
   Continuous line (one ivory line writing the words by hand on black, LYRICS_ARCHITECTURE.md §12).
   Continuous line writes with Podium's own single-stroke hand, so the lyrics font doesn't apply to
@@ -164,7 +168,7 @@ font or a colour on its own.
 ## 7. Persistence
 
 `SharedPrefsDeviceSettings` (private `device` preferences): every field of `DeviceAppearance`
-(the lyrics theme as `lyrics_theme`, D-81), read defensively (unknown enum names → defaults, levels clamped to 0–1, colours forced opaque). It
+(the lyrics theme as `lyrics_theme`, D-81; Classic's paper as `lyrics_background`, D-100), read defensively (unknown enum names → defaults, levels clamped to 0–1, colours forced opaque). It
 survives force stop, restart and reboot; it is independent of the library database, so database
 migrations can't touch it. The picture is stored only as its URI. Tested by
 `DeviceSettingsPersistenceTest` (round trip, fresh install, damaged values).
@@ -189,6 +193,7 @@ Settings
         ├── Lyrics font ▸ (Same as the display, the display faces, Typewriter italic, Calligraphy,
         │                 French script, Loopy, Fraktur, Pirata, Jacquard)
         ├── Lyrics theme ▸ (Classic, Continuous line)
+        ├── Lyrics background ▸ (Automatic: turns with each line, Always black, Always white; Classic only)
         ├── Background ▸ (None, Solid, Picture / Choose a picture, Choose another picture)
         ├── Background color ▸ (hex, or hue / saturation / brightness bars, D-51)
         ├── Background opacity ▸ (level; only with a picture)

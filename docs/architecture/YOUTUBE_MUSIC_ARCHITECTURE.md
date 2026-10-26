@@ -124,14 +124,69 @@ Podium plays YouTube Music audio natively in its own Media3 audio engine:
   - Stable cache key
 - **Background Playback:** Managed natively by Android's `MediaLibraryService` foreground service with media session notifications, lock-screen controls, and Bluetooth integration.
 
-### 8.2 Stream Extraction Pipeline (BitChord Reference)
+### 8.2 Stream Extraction Pipeline (BitChord Reference, D-97, D-98)
 
-To obtain valid progressive audio stream URLs, `sources:youtubemusic` implements a stream extraction pipeline informed by BitChord and established extraction practices:
-1. **Player Endpoint Request:** Requesting the video metadata and adaptive streaming formats from InnerTube (`/youtubei/v1/player`).
-2. **Client Identity Management:** Using supported client configurations (e.g., Android, Web Remix, iOS) capable of retrieving audio streams.
-3. **Cipher & Throttle Deobfuscation:** Extracting and executing signature deciphering and anti-throttle ("n" parameter) algorithms derived from the active YouTube player JavaScript.
-4. **Token Minting (PoToken / BotGuard):** Providing Proof-of-Origin tokens where required to prevent bot detection and 403 playback refusals.
-5. **URL Caching and Pre-expiry Refresh:** Caching resolved URLs with consideration for their TTL (typically ~6 hours) and refreshing proactively before expiry.
+Built like BitChord's resolver: several of YouTube's own apps asked in turn, a stream proven to
+serve audio before the player gets it, NewPipeExtractor as the failsafe
+(`YouTubeMusicStreamResolver`, `YouTubeStreamWalker`, `PlayerIdentities`, `StreamHttp`).
+
+1. **The walk.** `/youtubei/v1/player` is asked as each app in `PlayerIdentities`, in turn:
+   `VISIONOS`, then the backup `TVHTML5` (below), `ANDROID_VR`, `IOS`, and `ANDROID` as the last
+   resort (always last; it answered with no audio formats on 2026-10-26). `VISIONOS`, `ANDROID_VR`,
+   `IOS` and `ANDROID` get plain stream addresses. Each request carries the app's own client context
+   and user agent, and a guest visitor id (`/youtubei/v1/visitor_id`, asked as a plain app, kept six
+   hours).
+   - **Backups that need the player's script (D-98).** `TVHTML5` (as yt-dlp's `tv_samsung`) gets
+     enciphered addresses: its player request carries the player's signature timestamp, and each
+     signature and `n` is solved by yt-dlp's challenge solver (yt-dlp-ejs 0.8.0) run on YouTube's own
+     player script (`PlayerScripts`, `EjsChallengeSolver`). The script engine is JavaScriptSandbox, or
+     a hidden WebView where the phone doesn't offer it (`AndroidScriptEngine`). The player is
+     prepared once per player id and kept in the cache. A backup is asked only after the app that
+     last served fails. When one serves, it goes first for ten minutes, then the usual apps again.
+   - **The listener's session (D-98).** When they're signed in, `TVHTML5_SIGNED_IN` (after the
+     signed-out TV app) and `WEB_REMIX_SIGNED_IN` (YouTube Music's web player, from their browser,
+     after `IOS`) are asked with their session. It is sent only with the player request, to YouTube's
+     own hosts: cookies, a fresh SAPISIDHASH, and the chosen channel as `onBehalfOfUser`. Never to a
+     stream's server, never to the player. Signed out, they're passed over.
+2. **Bot checks.** When an app is asked to confirm it isn't a bot, a fresh visitor id is fetched
+   and that app is asked once more.
+3. **Proven before it plays (D-98).** The best audio formats (Opus, then AAC, higher bitrate first;
+   no DRC variants) are checked as the app, two formats per app at most, with two requests at once:
+   the open-ended request the player itself sends (`Range: bytes=0-`, two bytes read, then closed)
+   and the stream's last two bytes (size from the address's `clen`, else the format's
+   `contentLength`). A stream counts only when both answer 2xx. `ANDROID_VR`'s and `IOS`'s streams
+   serve only their first part without a PoToken; a check of the first bytes alone passed them and
+   the player was refused seconds later. A refused stream (HTTP 403) is never handed to the player:
+   the next app is asked. The app's user agent goes with the stream (`PlayableMedia.headers`), so
+   the player asks for it as that app too. The app that last served a stream is asked first next
+   time, after a restart too (`StreamWalkMemory`, usual apps only). One whose stream was refused while
+   playing goes last, before the last resort (`forget`).
+   An answer with a pre-roll ad (`adPlacements`, `adSlots`) serves its streams only once the ad could
+   be skipped: the check waits for that (checked 1.5 s early, then once more just after; an ad
+   longer than 6 s is a refusal).
+4. **Verdicts.** A song gone, private or age-restricted for every app is a miss at once
+   (`NOT_FOUND`, `NOT_PERMITTED`). One app's "not available" isn't the last word: the others are
+   asked. An answer about another video (a stand-in) isn't used. HTTP 429 stops the walk (rate
+   limited, with `Retry-After`).
+5. **The failsafe.** When no app's stream played (all refused, bot checks everywhere, the service
+   unreachable, or the 12 s walk budget spent), NewPipeExtractor is asked. Its stream is proven the
+   same way before it is used. Live stations (§8.3) come from it.
+6. **Watching it (debug builds).** `StreamWalkDebug.trace` logs each app's verdict to logcat
+   (`PodiumStreams`): HTTP code, playability status, YouTube's reason, the check's codes and times.
+   Never an address, a cookie or a visitor id. `stream-skip` (`--es podium.apps VISIONOS,…`) passes
+   over chosen apps, to prove the others serve. Release builds set neither.
+7. **What the listener is told.** Every stream refused gives a miss "not streamable": Now Playing
+   says the song can't play right now. Bot checks everywhere rest the source for 30 s as rate
+   limited: "The music source is busy". The service unreachable is a network failure.
+8. **PoTokens (D-98), built, not used by default.** BotGuard runs in a hidden WebView at YouTube's
+   origin (`BotGuardMinter`, `OriginPage`, `HiddenOriginPage`). Podium sends `jnn/v1/Create` and
+   `GenerateIT` itself, and tokens are minted per binding (guest visitor, else video). They go on
+   stream addresses as `pot=`; a refused one is re-bound, then minted afresh (at most every 5
+   minutes). Measured on 2026-10-26, solved `WEB_REMIX` streams and `ANDROID_VR`/`IOS` streams
+   refused web tokens: the phone's, and desktop Chrome's, with or without a player token. So
+   `WEB_REMIX` (signed out) is a trial app, asked only when a debug build names it
+   (`stream-pot WEB_REMIX`); the default walk never opens the page.
+   - `WEB` isn't usable: it hands out streaming-protocol (SABR) audio only.
 
 ### 8.3 Live Radio (D-90)
 
@@ -163,9 +218,13 @@ To obtain valid progressive audio stream URLs, `sources:youtubemusic` implements
 `sources:youtubemusic` maps errors to `PodiumError`:
 - `Offline`: No internet connectivity.
 - `AuthExpired`: Account session invalid or expired; requires re-authentication.
-- `RateLimited`: Backoff with `Retry-After`.
-- `StreamUnavailable`: Extraction or playback failure (e.g., region-locked track, content unavailable).
-- `Server`: Transient remote failure.
+- `RateLimited`: Backoff with `Retry-After` (HTTP 429, or bot checks for every app, §8.2).
+- `NotPlayable`: every stream refused, or not allowed here (region, Premium, age).
+- `NotFound`: the song is gone or private.
+- `Server`: Transient remote failure, or the source resting.
+
+The engine sends its classification to Now Playing by a stable name (`PlaybackErrors.kindOf`),
+never a class's own name: release builds rename classes (issue #5, D-97).
 
 A circuit breaker in `SourceHealthMonitor` distinguishes between transport failures (which open the breaker) and content misses (empty searches or deleted tracks, which never trip the breaker).
 
@@ -174,7 +233,7 @@ A circuit breaker in `SourceHealthMonitor` distinguishes between transport failu
 ## 10. Open Technical Implementation Decisions
 
 The following technical questions pertain to the upcoming implementation phase and represent engineering tradeoffs rather than product ambiguities:
-1. **Extractor Integration Strategy:** Choosing between leveraging an established standalone library (e.g., NewPipeExtractor, InnerTubeX) or implementing a dedicated Kotlin extraction pipeline within `sources:youtubemusic`.
-2. **Cipher Execution Engine:** Deciding whether to evaluate player JavaScript via a lightweight embedded engine (e.g., QuickJS) or via AST-derived pattern matching.
-3. **BotGuard PoToken Strategy:** Establishing the most resilient mechanism for generating Proof-of-Origin tokens on Android (e.g., headless WebView helper or equivalent).
+1. **Extractor Integration Strategy:** decided (D-97): Podium's own walk over YouTube's apps, with NewPipeExtractor as the failsafe (§8.2).
+2. **Cipher Execution Engine:** decided (D-98): yt-dlp's challenge solver (yt-dlp-ejs) run on the player's own script in JavaScriptSandbox, or a hidden WebView where it isn't offered (§8.2).
+3. **BotGuard PoToken Strategy:** built (D-98): a hidden WebView at YouTube's origin, after NewPipe's helper. Open: plain web streams refuse web tokens today (§8.2); SABR would be needed for the web apps.
 4. **Seeking & Buffer Configuration:** Tuning Media3 `DefaultLoadControl` and OkHttp data source buffer sizes for progressive audio streams.

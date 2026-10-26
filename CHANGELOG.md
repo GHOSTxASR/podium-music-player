@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-10-26
+
+Release notes: [docs/releases/v0.1.4.md](docs/releases/v0.1.4.md).
+
+### Added
+- **A still background for Classic lyrics (D-100):** Settings ▸ Appearance ▸ Virtual display ▸ Lyrics background keeps the lyrics on black or on white, instead of turning between them with every line (Automatic, still the default).
+- **Updates from inside Podium (D-99):** Podium checks GitHub for a new version by itself and shows what's new in a short notice. Download and install it right there (Android asks you to confirm), open it on GitHub, or ignore that version. Settings ▸ Software update has Check now and turns automatic checks off.
+- **A backup for online songs (D-98):** when YouTube stops serving a song's stream to the app Podium asks first, Podium now asks as YouTube's TV app too, working out its streams with YouTube's own player code on the phone. Songs still play, about five seconds later to start, until the usual app serves again. When you're signed in, it can also ask with your account.
+- **Lossless mid-song (D-92):** when your custom sources are slow, a song starts from YouTube Music and moves to the lossless copy once it has loaded, with a short crossfade, like Apple Music stepping up its quality. Songs in Up Next move to it before they play.
+- **Switch channel (D-93):** Settings ▸ YouTube Music always shows Channel when you're signed in, and the account menu has Switch channel. Podium now also finds the channels YouTube lists only in its own switcher.
+- **Custom sources (D-91):** add your own stream sources in Settings ▸ Custom sources: addons that speak the BitChord addon protocol (type or paste its https address, like `https://addon.example.com`). When one of them has the exact same recording of an online song, the song plays from it, lossless if that's what it serves; otherwise it plays from YouTube Music as before. Sources are asked in your order. You can turn each one on or off, change its settings (its quality, say), check it and remove it. Explicit songs play from it too. Addresses are kept sealed on the phone, and only the host is shown.
+
+### Fixed
+- **Custom sources show all their settings (D-98):** an addon's quality options now appear even when its manifest doesn't say what kind of setting they are, and settings of kinds Podium doesn't know are kept. Addresses ending in any `.json` file work, and an address with a token (`?token=…`) keeps it for every request.
+- **The first online song after opening Podium no longer stalls (D-98):** Podium checks a song's stream the way the player asks for it, start and end, so streams that would stop after a moment are never chosen. It also remembers which of YouTube's apps served last, after a restart too.
+- **Online songs that wouldn't play (D-97, issue #5):** Podium now finds a YouTube Music song's stream the way BitChord does. It asks as several of YouTube's own apps in turn, checks that each stream really plays before starting it, and keeps the old extractor as a fallback. When a song still can't play, Now Playing says why instead of "Something went wrong" (release builds always showed that message).
+- **Custom sources keep working by themselves (D-96):** a source that stops answering or was asked too often is tried again in the background, and songs move to it as soon as it's back. No more Check now. Requests that hang are sent again, so a slow addon no longer looks down.
+- **Lossless mid-song, reliably (D-96):** the lossless copy loads a few seconds ahead and joins only once it's ready where the song is, lined up by its sound, so the switch is clean even on a slow network.
+- **ALAC files (D-94, issue #6):** Podium's own Apple Lossless decoder now comes first, so phones whose own ALAC decoder fails no longer stop the song.
+- **Cover Flow (D-95):** opens and closes without the pause; large libraries are ordered about ten times faster, away from the screen's drawing.
+
 ## [0.1.3] - 2026-10-19
 
 Release notes: [docs/releases/v0.1.3.md](docs/releases/v0.1.3.md).

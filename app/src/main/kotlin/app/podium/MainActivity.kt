@@ -108,6 +108,8 @@ class MainActivity : ComponentActivity() {
         graph.recheckPermissions()
         if (graph.localSource.hasPermission()) asks.onGranted(graph.localSource.permission)
         graph.remotePlayback.refresh()
+        // Back from Android's page that lets Podium install its update (D-99).
+        graph.updates.resumed()
     }
 
     override fun onSaveInstanceState(outState: Bundle) {

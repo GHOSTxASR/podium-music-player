@@ -33,6 +33,7 @@ import java.security.MessageDigest
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 /**
  * Podium's ALAC decoder (D-87) against FFmpeg's: ALAC is lossless, so every file must decode to
@@ -115,6 +116,21 @@ class AlacDecoderTest {
         assertEquals(C.FORMAT_HANDLED, renderer.supportsFormat(alac) and 0b111)
         assertEquals(C.FORMAT_UNSUPPORTED_SUBTYPE, renderer.supportsFormat(alac.buildUpon().setInitializationData(null).build()) and 0b111)
         assertEquals(C.FORMAT_UNSUPPORTED_TYPE, renderer.supportsFormat(alac.buildUpon().setSampleMimeType(MimeTypes.AUDIO_AAC).build()) and 0b111)
+    }
+
+    @Test
+    fun `Podium's ALAC decoder comes before the phone's, whatever the phone has (issue #6)`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val factory = app.podium.player.service.EffectsRenderersFactory(
+            context, app.podium.player.service.EqualizerProcessor(), app.podium.player.service.SoundEffectProcessor(),
+        )
+        val handler = Handler(android.os.Looper.getMainLooper())
+        val renderers = factory.createRenderers(handler, object : androidx.media3.exoplayer.video.VideoRendererEventListener {}, object : androidx.media3.exoplayer.audio.AudioRendererEventListener {}, {}, {})
+        val alac = renderers.indexOfFirst { it is AlacAudioRenderer }
+        val platform = renderers.indexOfFirst { it is androidx.media3.exoplayer.audio.MediaCodecAudioRenderer }
+        assertTrue(alac >= 0 && platform >= 0, renderers.joinToString { it.name })
+        assertTrue(alac < platform, "a phone decoder that claims ALAC and then fails must never be chosen first")
+        renderers.forEach { it.release() }
     }
 
     /** What reached the audio output, byte for byte. */

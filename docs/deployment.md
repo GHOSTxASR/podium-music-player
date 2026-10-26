@@ -24,7 +24,7 @@ Common commands:
 ## 3. Build variants
 | Variant | Purpose | Notes |
 |---|---|---|
-| `debug` | Development and the phone's daily build | `sources:fixture` included; debug overlay; user CAs trusted; applicationIdSuffix `.debug` (installs beside release). **Not debuggable** by default (D-67) so ART compiles it and every open is as smooth as a warm one; `-Ppodium.debuggable=true` for a debugger |
+| `debug` | Development and the phone's daily build | `sources:fixture` included; debug overlay; user CAs trusted; applicationIdSuffix `.debug` (installs beside release). **Not debuggable** by default (D-67) so ART compiles it and every open is as smooth as a warm one; `-Ppodium.debuggable=true` for a debugger; `-Ppodium.applicationIdSuffix=.walktest` (any suffix, release too) installs a separate copy beside the phone's own app, for testing when that one was signed with another key (D-98); `-Ppodium.minifyDebug=true` runs R8 on a debug build, so its debug commands can prove a release's paths under minification (D-99) |
 | `release` | Distribution | R8 full mode, resource shrinking, no fixture source, no debug overlay, logs redacted, baseline profiles |
 | `benchmark` | Macrobenchmark target | release-like, debuggable=false, signed with debug key |
 
@@ -70,6 +70,15 @@ SemVer `versionName` (`0.x` until v1.0); `versionCode` = `major*1_000_000 + mino
    `releases/latest/download/podium.apk` (the website's and README's download link) always serves
    the newest one. Its notes are `docs/releases/v<versionName>.md` (committed with the version
    bump), plus the APK's size and SHA-256. Never commit APKs (`.gitignore`).
+   - **Podium's own update check reads this release (D-99)**, so keep its shape:
+     - the tag `v<versionName>`, and `versionCode` above the last release's;
+     - the asset named `podium.apk`, signed with the release key (Android refuses an update signed
+       otherwise, and so does Podium before handing it over);
+     - notes that open with a one-line summary in bold, `**Podium x.y.z** adds …`, then `###`
+       sections of `- **Headline:** …` bullets.
+
+     The notice shows that summary and the first four headlines, What's new first. Publish as a
+     draft until it's ready: drafts and pre-releases are never offered.
 3. The website is served by Vercel from `site/`. In Vercel, import
    `GHOSTxASR/podium-music-player`, leave the Root Directory at the repository root, and deploy
    `main`. The repository's `vercel.json` selects the no-build **Other** framework and sets

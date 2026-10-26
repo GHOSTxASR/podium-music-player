@@ -29,6 +29,22 @@ enum class LyricsTheme(val label: String) {
     CONTINUOUS_LINE("Continuous line"),
 }
 
+/**
+ * The Classic lyrics screen's paper (D-100): turning between Bone's light paper and Carbon's black
+ * with every line, as it always has, or staying one of them. Continuous line keeps its own black
+ * sheet.
+ */
+enum class LyricsBackground(val label: String) {
+    /** Light, then dark, then light: every new line turns the display over (D-39). */
+    AUTOMATIC("Automatic"),
+
+    /** Always Carbon's black, with light words. */
+    BLACK("Black"),
+
+    /** Always Bone's light paper, with dark words. */
+    WHITE("White"),
+}
+
 /** How far secondary text steps back from primary text. High brings it forward. */
 enum class TextContrast(val label: String) {
     STANDARD("Standard"),
@@ -51,6 +67,8 @@ data class VirtualDisplay(
     val lyricsFont: LyricsFont = LyricsFont.SAME_AS_DISPLAY,
     /** How the lyrics screen draws (D-81): Classic unless the listener chooses otherwise. */
     val lyricsTheme: LyricsTheme = LyricsTheme.CLASSIC,
+    /** Classic's paper (D-100): turning with every line, or always black, or always white. */
+    val lyricsBackground: LyricsBackground = LyricsBackground.AUTOMATIC,
     val background: DisplayBackground = DisplayBackground.NONE,
     /** The solid colour (opaque ARGB): the background itself, or the base under an image. */
     val solidArgb: Int = DEFAULT_SOLID,
@@ -91,6 +109,8 @@ data class DisplaySurface(val solid: Color, val image: ImageBitmap?, val imageAl
 
 /** The lyrics theme the listener chose (D-81), provided by `PodiumTheme`. */
 val LocalLyricsTheme = staticCompositionLocalOf { LyricsTheme.CLASSIC }
+
+val LocalLyricsBackground = staticCompositionLocalOf { LyricsBackground.AUTOMATIC }
 
 /** The resolved surface, or null when the theme's own canvas is shown. Read by `VirtualScreen`. */
 val LocalDisplaySurface = staticCompositionLocalOf<DisplaySurface?> { null }

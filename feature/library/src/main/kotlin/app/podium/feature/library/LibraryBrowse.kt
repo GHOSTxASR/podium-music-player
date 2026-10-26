@@ -2,6 +2,7 @@ package app.podium.feature.library
 
 import androidx.compose.runtime.derivedStateOf
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Dispatchers
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.spring
@@ -74,6 +75,7 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.math.sign
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
@@ -90,9 +92,24 @@ private fun rememberTracks(repository: LibraryRepository): Pair<List<Track>, Boo
 private class Loaded<T>(val value: T)
 
 @Composable
-private fun <T> rememberLoaded(vararg keys: Any?, flow: () -> Flow<T>): Loaded<T>? {
+private fun <T> rememberLoaded(vararg keys: Any?, initial: Loaded<T>? = null, flow: () -> Flow<T>): Loaded<T>? {
     val loaded = remember(*keys) { flow().map { Loaded(it) } }
-    return loaded.collectAsStateWithLifecycle(initialValue = null).value
+    return loaded.collectAsStateWithLifecycle(initialValue = initial).value
+}
+
+/**
+ * Cover Flow's last order, so opening it again (or coming back from an album) shows the covers at
+ * once while the library is read and ordered afresh off the main thread.
+ */
+private object CoverFlowMemo {
+    @Volatile
+    private var last: Pair<java.lang.ref.WeakReference<LibraryRepository>, List<LibraryAlbum>>? = null
+
+    fun get(repository: LibraryRepository): List<LibraryAlbum>? = last?.takeIf { it.first.get() === repository }?.second
+
+    fun put(repository: LibraryRepository, albums: List<LibraryAlbum>) {
+        last = java.lang.ref.WeakReference(repository) to albums
+    }
 }
 
 @Composable
@@ -339,10 +356,15 @@ fun FavoritesScreen(
  */
 @Composable
 fun CoverFlowScreen(repository: LibraryRepository, onOpen: (AlbumId) -> Unit) {
-    val loaded = rememberLoaded(repository) { repository.albums() }
+    // By artist, then album (D-84), like an iPod's Cover Flow; the Albums list stays by title. Ordered
+    // off the main thread, so opening and closing never wait on it; the last order shows meanwhile.
+    val loaded = rememberLoaded(repository, initial = CoverFlowMemo.get(repository)?.let(::Loaded)) {
+        repository.albums()
+            .map { coverFlowOrder(it).also { ordered -> CoverFlowMemo.put(repository, ordered) } }
+            .flowOn(Dispatchers.Default)
+    }
     val loading = loaded == null
-    // By artist, then album (D-84), like an iPod's Cover Flow; the Albums list stays by title.
-    val albums = remember(loaded?.value) { coverFlowOrder(loaded?.value.orEmpty()) }
+    val albums = loaded?.value.orEmpty()
     val insets = LocalScreenInsets.current
     val colors = PodiumTheme.colors
     val type = PodiumTheme.type

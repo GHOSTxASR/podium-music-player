@@ -10,6 +10,7 @@ Foundation written 2026-10-02 (Phases 0–2 and source research S0). Read in thi
    - [architecture/PLAYBACK_TARGETS.md](architecture/PLAYBACK_TARGETS.md) — direct streams vs remote providers vs embedded players (updated for D-48)
    - [architecture/SOURCE_CAPABILITY_MATRIX.md](architecture/SOURCE_CAPABILITY_MATRIX.md) — provider capability matrix and D-48 positions
    - [architecture/YOUTUBE_MUSIC_ARCHITECTURE.md](architecture/YOUTUBE_MUSIC_ARCHITECTURE.md) — Authoritative YouTube Music specification (D-48): sole online provider, direct Media3 streaming, BitChord reference
+   - [architecture/CUSTOM_SOURCES.md](architecture/CUSTOM_SOURCES.md) — custom sources (D-91): user-added BitChord-protocol stream sources, asked first for an EXACT copy; YouTube Music the default and fallback
    - [architecture/YOUTUBE_MUSIC_TRANSITION.md](architecture/YOUTUBE_MUSIC_TRANSITION.md) — architectural transition roadmap (historical context)
    - [research/YOUTUBE_MUSIC_IMPLEMENTATION_NOTES.md](research/YOUTUBE_MUSIC_IMPLEMENTATION_NOTES.md) — what was observed live, what is assumed, what needs the phone
    - [testing/YOUTUBE_MUSIC_DEVICE_ACCEPTANCE.md](testing/YOUTUBE_MUSIC_DEVICE_ACCEPTANCE.md) — device acceptance plan
@@ -27,7 +28,7 @@ Foundation written 2026-10-02 (Phases 0–2 and source research S0). Read in thi
 
 Subsystems: [audio-architecture.md](audio-architecture.md) · [playback-state-machine.md](playback-state-machine.md) · [queue-and-autoplay.md](queue-and-autoplay.md) · [data-model.md](data-model.md) · [offline-architecture.md](offline-architecture.md) · [download-system.md](download-system.md) · [animation-system.md](animation-system.md) (the motion language; its audit: [research/2026-10-08-motion-audit.md](research/2026-10-08-motion-audit.md))
 
-Releases: [releases/](releases/) — the notes published with each release ([v0.1.3](releases/v0.1.3.md), [v0.1.2](releases/v0.1.2.md))
+Releases: [releases/](releases/) — the notes published with each release ([v0.1.4](releases/v0.1.4.md), [v0.1.3](releases/v0.1.3.md), [v0.1.2](releases/v0.1.2.md))
 
 Quality: [accessibility.md](accessibility.md) · [performance.md](performance.md) · [security.md](security.md) (incl. privacy) · [testing-strategy.md](testing-strategy.md) · [deployment.md](deployment.md)
 

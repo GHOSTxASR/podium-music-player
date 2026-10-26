@@ -35,8 +35,16 @@ class AppOnlineServiceSettings(private val graph: AppGraph) : OnlineServiceSetti
     private val context: Context get() = graph.context
     private fun service(): MusicSource? = graph.registry.registered(MusicEnvironment.ONLINE).firstOrNull()
 
-    /** A channel switch under way, or why the last one didn't happen (D-86). */
-    private data class Switch(val to: String? = null, val problem: String? = null)
+    /**
+     * A channel switch under way, or why the last one didn't happen (D-86); and the channel list
+     * being asked for, or why it couldn't be (issue #4).
+     */
+    private data class Switch(
+        val to: String? = null,
+        val problem: String? = null,
+        val listing: Boolean = false,
+        val listProblem: String? = null,
+    )
 
     private val switch = MutableStateFlow(Switch())
 
@@ -72,6 +80,8 @@ class AppOnlineServiceSettings(private val graph: AppGraph) : OnlineServiceSetti
             channels = if (signedIn) channels.map { ServiceChannel(it.id, it.name, it.detail, it.selected) } else emptyList(),
             switchingTo = sw.to,
             channelProblem = sw.problem,
+            channelsLoading = sw.listing,
+            channelListProblem = sw.listProblem,
         )
     }.stateIn(graph.appScope, SharingStarted.Eagerly, null)
 
@@ -100,8 +110,21 @@ class AppOnlineServiceSettings(private val graph: AppGraph) : OnlineServiceSetti
 
     override fun refreshChannels() {
         val auth = service()?.auth ?: return
-        if (auth.state.value !is AuthState.SignedIn) return
-        graph.appScope.launch { auth.refreshIdentities() }
+        if (auth.state.value !is AuthState.SignedIn || switch.value.listing) return
+        switch.value = switch.value.copy(listing = true, listProblem = null)
+        graph.appScope.launch {
+            val result = auth.refreshIdentities()
+            val problem = (result as? Outcome.Failure)?.error?.let(::listProblem)
+            switch.value = switch.value.copy(listing = false, listProblem = problem)
+        }
+    }
+
+    /** Why the account's channels couldn't be listed, and what to do next. */
+    private fun listProblem(error: PodiumError): String = when (error) {
+        PodiumError.Offline, is PodiumError.Network -> "Couldn't reach the service to list your channels. Check the connection, then come back."
+        is PodiumError.RateLimited -> "The service asked Podium to wait. Come back in a minute to see your channels."
+        is PodiumError.AuthExpired, is PodiumError.AuthRequired -> "The service wouldn't list your channels. Sign in again from Account, then come back."
+        else -> "Couldn't list your channels just now. Come back in a moment."
     }
 
     override fun selectChannel(id: String) {
@@ -109,10 +132,10 @@ class AppOnlineServiceSettings(private val graph: AppGraph) : OnlineServiceSetti
         if (switch.value.to != null) return
         val name = auth.identities.value.firstOrNull { it.id == id }?.name ?: return
         val stayingOn = auth.identities.value.firstOrNull { it.selected }?.name
-        switch.value = Switch(to = id)
+        switch.value = switch.value.copy(to = id, problem = null)
         graph.appScope.launch {
             val result = auth.selectIdentity(id)
-            switch.value = Switch(problem = (result as? Outcome.Failure)?.error?.let { channelProblem(it, name, stayingOn) })
+            switch.value = switch.value.copy(to = null, problem = (result as? Outcome.Failure)?.error?.let { channelProblem(it, name, stayingOn) })
         }
     }
 

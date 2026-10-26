@@ -218,7 +218,7 @@ class MediaControllerPlaybackController(
             shuffleEnabled = c.shuffleModeEnabled,
             quality = QualityReport(
                 sourceClaimed = if (sameItem) claimedQuality(extras) else null,
-                actualMedia = AudioQualityMapper.fromTracks(c.currentTracks),
+                actualMedia = (if (sameItem) heardQuality(extras) else null) ?: AudioQualityMapper.fromTracks(c.currentTracks),
             ),
             recovery = recovery,
         )
@@ -260,6 +260,20 @@ class MediaControllerPlaybackController(
             origin = md.extras?.getString(PodiumExtras.ORIGIN)?.let { runCatching { QueueOrigin.valueOf(it) }.getOrNull() }
                 ?: QueueOrigin.CONTEXT,
             isCurrent = isCurrent,
+        )
+    }
+
+    /** What the engine measured from the player that is heard, when that isn't the session's own (D-92). */
+    private fun heardQuality(extras: Bundle): AudioQuality? {
+        val codec = extras.getString(PodiumExtras.HEARD_CODEC)?.let { runCatching { Codec.valueOf(it) }.getOrNull() } ?: return null
+        fun int(key: String) = if (extras.containsKey(key)) extras.getInt(key) else null
+        return AudioQuality(
+            codec = codec,
+            container = extras.getString(PodiumExtras.HEARD_CONTAINER),
+            bitrateKbps = int(PodiumExtras.HEARD_BITRATE),
+            sampleRateHz = int(PodiumExtras.HEARD_SAMPLE_RATE),
+            bitDepth = int(PodiumExtras.HEARD_BIT_DEPTH),
+            channels = int(PodiumExtras.HEARD_CHANNELS),
         )
     }
 

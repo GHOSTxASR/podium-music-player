@@ -1158,6 +1158,7 @@ internal fun remoteNote(remote: RemoteStatus, owner: String): String = when {
 /** An error, and that the next song is on its way. */
 internal fun skippingCopy(error: PodiumError): String = when (error) {
     is PodiumError.Network, PodiumError.Offline -> "Can't reach the music source. Skipping to the next song."
+    is PodiumError.RateLimited, is PodiumError.Server -> "The music source isn't answering right now. Skipping to the next song."
     is PodiumError.NotFound -> "This song isn't available right now. Skipping to the next one."
     else -> "This song can't play right now. Skipping to the next one."
 }
@@ -1170,5 +1171,7 @@ internal fun errorCopy(error: PodiumError): String = when (error) {
     is PodiumError.Network, PodiumError.Offline -> "Can't reach the music source. Check your connection."
     is PodiumError.AuthRequired -> "Sign in to this source again to keep listening."
     is PodiumError.PermissionRequired -> "Allow music access from Home to play this song."
+    is PodiumError.RateLimited -> "The music source is busy. Try again in a few minutes."
+    is PodiumError.Server -> "The music source isn't answering right now. Try again in a moment."
     else -> "Something went wrong playing this song."
 }

@@ -25,6 +25,15 @@ internal fun applyDebugWindowCommand(intent: Intent?, activity: android.app.Acti
     }
 }
 
+/**
+ * Debug builds: how each online song's stream was found, in logcat under `PodiumStreams` (D-98) —
+ * per app asked, its HTTP code, playability status and the check's codes. Never an address, a cookie
+ * or a visitor id.
+ */
+internal fun installDebugDiagnostics() {
+    app.podium.sources.youtubemusic.StreamWalkDebug.trace = { android.util.Log.i("PodiumStreams", it) }
+}
+
 internal fun handleDebugIntent(intent: Intent?, graph: AppGraph) {
     when (intent?.getStringExtra("podium.debug")) {
         "play-test-tones" -> graph.appScope.launch {
@@ -136,6 +145,40 @@ internal fun handleDebugIntent(intent: Intent?, graph: AppGraph) {
         "lyrics-theme" -> app.podium.core.designsystem.theme.LyricsTheme.entries.firstOrNull { it.name == intent.getStringExtra("podium.theme") }?.let { theme ->
             val current = graph.deviceSettings.appearance.value
             graph.deviceSettings.setAppearance(current.copy(screen = current.screen.copy(lyricsTheme = theme)))
+        }
+        // Apps the online stream walk passes over (D-98), to prove the others serve songs:
+        // --es podium.apps VISIONOS,ANDROID_VR (none: every app again). In memory until a restart.
+        "stream-skip" -> app.podium.sources.youtubemusic.StreamWalkDebug.skipped =
+            intent.getStringExtra("podium.apps").orEmpty().split(',').map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+        // Give a PoToken to apps not known to need one (D-98), to see if it helps:
+        // --es podium.apps ANDROID_VR,IOS (none: back to those that need one).
+        "stream-pot" -> app.podium.sources.youtubemusic.StreamWalkDebug.potFor =
+            intent.getStringExtra("podium.apps").orEmpty().split(',').map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+        // Where the backup apps' player script runs (D-98): --es podium.engine webview | sandbox.
+        "script-engine" -> {
+            ScriptEngineDebug.forceWebView = intent.getStringExtra("podium.engine") == "webview"
+            graph.scriptEngine.reset()
+        }
+        // Podium's update notice (D-99) on demand: --es podium.as 0.1.0 checks as if this were 0.1.0;
+        // --ez podium.install true offers the install here too (a debug build is another package,
+        // so Android refuses the release's app: the download and its checks are what's tested).
+        "update-check" -> graph.updates.checkNow(
+            pretend = intent.getStringExtra("podium.as")?.let(app.podium.update.Version::of),
+            forceInstall = intent.getBooleanExtra("podium.install", false),
+        )
+        // The install path from an APK already in the app's files (a debuggable test copy, via run-as):
+        // --es podium.file update-test.apk --es podium.version 0.1.4
+        "update-file" -> intent.getStringExtra("podium.file")?.let { name ->
+            val version = app.podium.update.Version.of(intent.getStringExtra("podium.version") ?: "0.0.0") ?: return@let
+            graph.updates.installFile(
+                java.io.File(graph.context.filesDir, name),
+                app.podium.update.Release(version, "v$version", "", app.podium.update.UpdateCenter.RELEASES_PAGE, null),
+            )
+        }
+        // Classic lyrics' paper, as Settings sets it (D-100): --es podium.background AUTOMATIC | BLACK | WHITE
+        "lyrics-background" -> app.podium.core.designsystem.theme.LyricsBackground.entries.firstOrNull { it.name == intent.getStringExtra("podium.background") }?.let { choice ->
+            val current = graph.deviceSettings.appearance.value
+            graph.deviceSettings.setAppearance(current.copy(screen = current.screen.copy(lyricsBackground = choice)))
         }
         "pause" -> graph.playbackController.pause()
         "play" -> if (graph.playbackController.snapshot.value.intent != PlayIntent.PLAY) graph.playbackController.play()

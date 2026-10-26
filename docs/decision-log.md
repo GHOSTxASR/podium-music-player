@@ -1021,3 +1021,468 @@ Every significant decision, newest at the bottom. Major ones have an ADR in `adr
   resolved to their audio-only AAC-LC playlists, and ExoPlayer loaded one as live HLS with
   AAC-LC 44.1 kHz stereo (Robolectric, which has no AAC decoder to play it). Unit tests cover the
   search parser, the playlist choice, the source and the media item. Not yet on the phone.
+
+### D-91 · Custom sources: the listener's own stream sources, YouTube Music the default and fallback
+- **Context:** the owner wants multi-source playback like BitChord's custom addons. YouTube Music
+  stays the default, always present, and the fallback. Listeners add their own sources (for
+  lossless or any other quality) under a separate "Custom sources" option, each with its own menu.
+  The owner supplied an addon to test with. CLAUDE.md made YouTube Music the sole online provider.
+- **Decision:**
+  - **Catalogue vs streams.** YouTube Music remains the only online *catalogue*. A custom source is
+    a *stream* source only: never browsed, never searched by the listener, never in Online, the
+    library, autoplay or recommendations, and never in the `SourceRegistry`. A new provider-neutral
+    seam, `StreamProviders` (in `sources:api`), hands the resolver the listener's sources.
+    CLAUDE.md is amended accordingly.
+  - **Resolution.** For an online song (not for downloads, not with `FallbackPolicy.NONE`), the
+    resolver first asks the custom sources that are on, in the listener's order, after the pinned
+    and owned-copy steps and before the song's own source.
+    - Only an **EXACT** match plays, and only the **same edition** (the edition rule is superseded by D-92): where either side names explicit
+      or clean, the other must name the same one.
+    - All custom sources together get 8 s. After that, or when none has the song, YouTube Music plays
+      it. The path is `ResolutionPath.PREFERRED_SOURCE`.
+    - Health, pins and refresh after a refused stream work as for any source. One that is turned off
+      or removed takes its pinned streams with it, except the song playing (D-18).
+  - **Protocol.** The BitChord addon protocol: `manifest.json`, `search?q=`, `stream/{id}`, with the
+    listener's settings as query parameters. It is implemented independently in a new pure-JVM
+    `sources:addon` module, with lenient parsing, caps, no address in any error and the network
+    policy on every hop.
+    - DASH, HLS and file streams are played. Encrypted or DRM streams are refused.
+    - The addon's quality text is kept as a claim only. Labels come from the decoder.
+  - **Engine.** A queue item's placeholder URI carries the kind of stream it was built for. An item
+    whose stream turns out to be DASH or HLS is rebuilt for it before it opens. A mismatch the loader
+    still sees (`PodiumReopenException`) is a rebuild, never an error or a skip.
+    - Live stations, local music and YouTube Music items are unchanged.
+    - `media3-exoplayer-dash` is added.
+  - **App.** The sources are kept sealed in the Keystore `CredentialStore`. Settings ▸ Custom
+    sources has the list, **Add a source** (type or paste; the manifest is fetched first; http on
+    the own network asks first) and, per source: on or off, its declared settings, move up or down,
+    check now, its host and its problem, and Remove (confirmed).
+  - Details: [architecture/CUSTOM_SOURCES.md](architecture/CUSTOM_SOURCES.md).
+- **Consequences:**
+  - With an addon that doesn't mark explicit songs (the test addon doesn't), songs YouTube Music marks
+    explicit always play from YouTube Music.
+  - Album titles must agree where both sides give one, so a deluxe-edition copy doesn't count for the
+    standard album's song.
+  - Custom sources apply only to songs Podium plays itself, not to songs handed to another app.
+- **Verified:**
+  - The test addon's manifest, search and stream answers were read from this machine (metadata only,
+    no audio downloaded). Its plain https address (no `/manifest.json`) adds as is.
+  - Its stream answers were a static DASH manifest with one FLAC representation on one read, and a
+    direct FLAC file on a later one. Both kinds are handled.
+  - Fixtures follow those shapes. Unit tests cover the protocol, the source against scripted HTTP
+    and against a local HTTP server, the resolver step and the store.
+  - Engine tests play a generated FLAC-in-fMP4 DASH stream through real DASH parsing and extraction,
+    and measure FLAC. Layout tests cover every screen.
+  - Not yet on the phone.
+
+### D-92 · Custom sources first, and lossless mid-song once it has loaded
+- **Context:** the owner: custom sources should play any song they have, explicit or not; songs in
+  Up Next should stream from them too; YouTube Music only when a song isn't there or the network is
+  slow, and then "start on YouTube Music and shift to lossless midway once it has loaded, like Apple
+  Music".
+- **Decision:**
+  - **Any EXACT copy plays.** D-91's extra edition rule is dropped. The matcher's own rule stays: a
+    copy marked clean is never the explicit song, and the reverse; one that doesn't say plays.
+  - **Slow or failing custom sources are asked again.** The first ask keeps its 8 s. When they ran
+    out of time or failed (`StreamResolver.mayStillAnswer`), the engine asks them again in the
+    background (`StreamResolver.preferredCopy`, 30 s, at most every 2 minutes per song). When every
+    one answered that it hasn't got the song, it isn't asked again until the sources change. Adding
+    or turning on a custom source re-asks for the song playing and the next three.
+  - **A copy found later takes over** (`PodiumPlaybackEngine.applyUpgrade`):
+    - A queued song is pinned to it and its media item rebuilt. The item's placeholder now names the
+      source it was rebuilt for, so the player never reuses a period it had started loading.
+    - The song playing switches outright when it is paused or hasn't started.
+    - Otherwise crossfade's second player carries it (`Crossfader.carry`). The copy is loaded ahead
+      (5, 10, 20, 40 s), started as the song reaches that point, brought level, and crossfaded to in
+      0.4 s. The first player plays on silently and is kept level, so the queue, position,
+      notification and lyrics stay with it. It switches to the copy at the next pause or seek. While
+      the copy is heard, the session names its source and the label is measured from that player's
+      decoder (`PodiumExtras.HEARD_*`).
+  - This amends D-18 ("never mid-track"): the one exception is an EXACT custom-source copy of the
+    song the listener chose. CLAUDE.md is amended.
+- **Verified:**
+  - Unit tests: the resolver (15) and the addon (36).
+  - Engine tests with Media3's test players on generated audio:
+    - a song started from the lossy stream is carried to the FLAC copy mid-song (heard FLAC, level
+      within 250 ms) and switches for good at a pause (where it was heard, within 500 ms);
+    - a queued song moves before it plays;
+    - a song no source has isn't asked for again.
+  - Not yet on the phone. Two copies from different masters can differ by a fraction of a second;
+    the crossfade covers that, but it hasn't been heard on a real network.
+
+### D-93 · Channels under one Google account, found and always offered (issue #4)
+- **Context:** issue #4 again: on 0.1.3 the reporter's account shows no Channel row, so the channel
+  with their music can't be chosen. The owner wants channel switching under one account, as on
+  YouTube.
+- **Decision:**
+  - The channels are asked from both of the service's lists. When `account/accounts_list` gives
+    fewer than two, the music page's own switcher (`getAccountSwitcherEndpoint`, a GET answered
+    behind a `)]}'` guard) is asked too, and the two are merged.
+  - A Google account without a channel of its own is no longer left out: the music service can be
+    used as it.
+  - Settings shows the **Channel** row whenever the account is signed in, and the account menu has
+    **Switch channel**. The picker says when it is asking, why it couldn't list the channels, or
+    that only one came back, with what to check.
+- **Verified:** fixture tests for both lists and their merge, and for an account without a channel
+  of its own. Not with a real brand account; the reporter is asked to confirm.
+
+### D-94 · Podium's ALAC decoder first (issue #6)
+- **Context:** issue #6: ALAC still doesn't play on 0.1.3. D-87 put Podium's decoder after the
+  phone's. A track goes to the first renderer that claims it, so on a phone whose own ALAC decoder
+  claims the format and then fails on the file's configuration, Podium's never got the chance.
+- **Decision:** Podium's renderer now comes before the phone's audio decoders. It takes nothing but
+  ALAC, so every other format goes to the phone exactly as before. It is bit-exact (D-87).
+- **Verified:** the renderer order is tested; the D-87 decoding tests still pass. CAF files still
+  aren't read. Not yet on the reporter's phone.
+
+### D-95 · Cover Flow opens and closes without the wait
+- **Context:** the owner: Cover Flow lags a little when opening or closing it.
+- **Decision:**
+  - Cover Flow's order (D-84) made both sort keys again in every comparison of the sort, each with
+    three freshly compiled regexes, on the main thread, every time the screen appeared, coming back
+    from an album included. Each album's keys are now made once, the regexes are compiled once, and
+    the order is made off the main thread.
+  - The last order shows at once while the library is read again, so reopening never waits.
+- **Verified:** 3,000 albums ordered in 80 ms instead of 819 ms on the development machine (a test
+  now bounds it); phones are slower, so the saving there is larger. Not yet timed on the phone.
+
+
+### D-96 · Custom sources: asked again by themselves, and a race-free switch mid-song
+- **Context:** the owner had never seen a song move to lossless mid-song. Their custom source often
+  showed "Not answering" or "Asked too often", and only Check now in Settings brought it back. They
+  asked for Podium to keep trying in the background, and for the lossless copy to load a few seconds
+  ahead so the switch is clean. Probing their addon showed why it "stopped answering": about one
+  request in seven hangs for 20 s or more, while the same request sent again answers in about a
+  second. Three hangs in a row opened the source's circuit.
+- **Decision:**
+  - **The addon client asks politely and gets an answer.** Requests start at least 200 ms apart, in
+    order. One with no answer after 2.5 s is sent once more, and the first answer wins. One that
+    fails at once (a dropped connection, a 502/503/504) is sent once more straight away. After a 429
+    nothing is sent until its `Retry-After` (30 s when it doesn't say, 10 minutes at most).
+  - **A resting source is never taken for not having the song.** The resolver skips a source whose
+    circuit is open or that was asked too often, records that it was resting, and the song counts as
+    "may still be there" (before, it counted as a miss and was never asked again). A custom source's
+    search may use the whole budget, so a slow first answer no longer counts as a failure. The
+    budget for all custom sources together is now 5 s, down from 8 s: a song starts promptly from
+    YouTube Music and the copy takes over once it has loaded.
+  - **The player keeps asking.** For each song that started from YouTube Music while a custom source
+    might have it, the custom sources are asked again at once, then after 15 s, 30 s, 1, 2 and
+    4 minutes. While every one is resting it waits for the rest to end instead. A source answering
+    again (another song, or a background check) cuts any wait short. It stops when a copy turns up,
+    when every source answers that it hasn't got the song, or when the song has played or left the
+    queue. One song is asked for at a time.
+  - **Settings checks by itself.** A source that isn't answering is asked for its manifest quietly,
+    20 s after it stopped, then after 40 s, 80 s and so on, up to every 5 minutes. An answer puts it
+    straight back to work. A source asked too often isn't asked until its rest is over. The status
+    is how the source is doing now, so a rest that has run out reads as over. "Not answering" now
+    says Podium keeps trying it.
+  - **The switch can't lose the race.** The copy loads 6 s ahead of the song and waits there,
+    paused and silent. It joins only once it's ready where the song is. If the song gets there first,
+    the copy keeps loading and jumps forward inside what it has already loaded (3 s beyond the song
+    is enough), instead of starting over further on. It starts over from further ahead only if it
+    can't catch up within 12 s (twice at most), and gives up only near the end of the song.
+  - **Lined up by sound.** Two copies of one recording can start their audio a little apart. Each
+    player's meter records the loudness of every 10 ms it decodes, and the copy's onsets are compared
+    with the song's over two seconds, at offsets of up to ±0.5 s. A clear match sets where the copy
+    is brought level, so the 0.4 s crossfade doesn't play anything twice. With nothing clear to go by
+    (silence, a steady sound), equal positions are used as before.
+  - **YouTube Music still drives everything.** Autoplay, radio and recommendations ask only the
+    registered sources about the queue's own songs. Custom sources are never registered, so they're
+    never asked, whichever copy is heard. Likes and history are the YouTube Music song's, with the
+    serving source noted.
+- **Verified:** addon client tests for hedging, the immediate retry, the hold after a 429 and
+  pacing (40 in `sources:addon`). Resolver tests for a resting source and a slow search (174 in
+  `sources:api`). Player tests: a copy whose first bytes take 9 s joins from inside what it has
+  loaded, 9–12 s after it was asked for, where the song is. A source that was resting is asked again
+  as soon as it answers, without a check. Alignment tests on music-like envelopes: offsets found,
+  quieter copies placed, other music and silence left unsure. App tests for background checks and
+  a rest running out. Autoplay test: a custom source holding the seed is never asked. Not yet heard
+  on the phone.
+
+### D-97 · YouTube Music streams found like BitChord: several apps, proven streams (issue #5)
+- **Context:** issue #5. Signed-in listeners on 0.1.2 and 0.1.3 got "Something went wrong playing
+  this song" for online songs. The owner asked for resolution done the way BitChord does it, if
+  that resists these failures better.
+- **Findings (2026-10-26):**
+  - **The message was wrong.** The engine sent its error to Now Playing as the class's own name
+    (`::class.simpleName`). Release builds rename classes (R8), so Now Playing couldn't read it
+    back. It fell back to the raw player error code: a refused stream (HTTP 403) read as
+    "Something went wrong".
+  - **Streams were refused.** Podium got streams from NewPipeExtractor only. That means one route
+    (YouTube's visionOS app), with no check that the stream plays. NewPipeExtractor v0.26.5's
+    signature solver also no longer reads YouTube's current player, so no app that needs one can
+    be used through it.
+  - From this development machine's address YouTube refuses nearly every stream (HTTP 403, for
+    every app), so a phone's results couldn't be reproduced here.
+- **Decision:**
+  - **Errors by a stable name** (`PlaybackErrors.kindOf`), with a refused stream read as such even
+    without it. Misses now say why: "not streamable" or "not permitted" read as "can't play right
+    now", and a resting source as "isn't answering". "Busy" and "isn't answering" have their own
+    words.
+  - **The walk** (`YouTubeStreamWalker`). The player is asked as `ANDROID_VR`, `VISIONOS`, `IOS`
+    and `ANDROID` in turn (apps whose streams need no signature), with a guest visitor id that is
+    renewed after a bot check.
+  - **Proven streams.** Every stream is checked with a two-byte request as its app before the
+    player gets it, and the app's user agent goes with it. The app that last served a stream goes
+    first; one whose stream was refused while playing goes last.
+  - **What can't play, and what can't play yet.** Gone, private and age-restricted songs are misses
+    at once; one app's "not available" isn't final. An answer about another video isn't used.
+    HTTP 429 stops the walk.
+  - **NewPipeExtractor as the failsafe**, its stream proven the same way. Live stations still come
+    from it.
+  - **Not built:** signature and "n" solving, BotGuard PoTokens and the listener's session for the
+    web and TV apps. Each needs YouTube's player JavaScript run on the phone. Running it in the
+    development sandbox, to check a solver, was refused. These are the next tier when wanted.
+- **Verified:**
+  - Walker tests (12) with scripted YouTube answers: order and memory, bot-check renewal, refusals,
+    verdicts, 429, stand-in answers, the failsafe proven before use.
+  - Error-kind tests (3).
+  - Live from this machine: a song whose stream serves was found through `ANDROID_VR` in 1.6 s; a
+    song whose every stream is refused came back "refused", not handed over; a missing video was a
+    miss in 0.35 s.
+  - Not yet on a phone, and not verified in a release build. (Both done in D-98.)
+
+### D-98 · Online streams measured on a phone: a check that matches the player, and backups for VISIONOS (issue #5)
+- **Context:** D-97 couldn't be tried from a normal connection. The owner asked for it to be measured
+  on a phone first, then for the missing BitChord tiers as backups.
+- **Measured (2026-10-26, Nothing Phone (3a), home Wi-Fi, a debug copy signed out):**
+  - Ten songs, label songs among them (Queen, Ed Sheeran, Arijit Singh's "Kesariya" and "Tum Hi Ho",
+    "Chaleya", The Weeknd, Taylor Swift, Dua Lipa, Debussy, Adele), and the ten radio songs after
+    them, all played. Each walk took 0.3–0.9 s. There were no bot checks and no 429s, and NewPipe
+    was never needed.
+  - Every song was served by `VISIONOS`. `ANDROID_VR` and `IOS` streams serve only their first part
+    (at least 256 KB). The player's own request (`bytes=0-`), the end of the stream and anything past
+    that part get HTTP 403. `ANDROID` answers with no audio formats. This laptop's home connection
+    showed the same.
+  - **D-97's check had a flaw.** It asked for a stream's first two bytes, which `ANDROID_VR` and `IOS`
+    serve. Their streams passed the check, then the player was refused about 4 s later (after
+    Media3's retries). On the phone the first song after every start lost those seconds and needed a
+    fresh stream. If `VISIONOS` stopped serving, `IOS` would pass the check and fail, and the song would
+    fail after its one refresh.
+  - **The R8 fix (D-97) holds in a release build.** `mapping.txt` renames `PodiumError` and all 15
+    subclasses (`NotPlayable` → `ep3`, `NotFound` → `dp3` …), which is why 0.1.3 always read "Something
+    went wrong". A minified release copy installed beside 0.1.3 played an age-restricted video and
+    Now Playing said "This song can't play right now. Skipping to the next one."
+- **Decision (the check):**
+  - A stream counts only when it answers as the player asks for it: the open-ended request
+    (`Range: bytes=0-`, two bytes read, then closed) and the stream's last two bytes (from the
+    address's `clen`, else the format's `contentLength`), so seeks are covered. Both are asked at once,
+    so the working path doesn't wait twice. The failsafe's stream is checked the same way.
+  - `VISIONOS` is first by default. The app that last served is kept across restarts
+    (`StreamWalkMemory`, one short name in the app's preferences). `ANDROID` is a last resort: always
+    asked last, never moved up.
+  - Debug builds log each app's verdict to logcat (`PodiumStreams`: HTTP code, playability status,
+    YouTube's reason, the check's codes, times; never an address, a cookie or a visitor id), and
+    `stream-skip` passes over chosen apps so a device test can prove the others serve.
+  - `-Ppodium.applicationIdSuffix=.walktest` builds a copy that installs beside the phone's own app,
+    for testing when the installed one was signed with another key.
+- **Custom sources: settings and addresses (the owner's report).** An addon added by its `.json`
+  address showed none of its quality options. Its deployment
+  (`qobuz-addon.vercel.app`) now answers 402 `DEPLOYMENT_DISABLED`, so its manifest couldn't be read.
+  A public addon of the same family declares
+  `{"key":"quality","default":"LOSSLESS","options":[{"value":"LOSSLESS"},…]}`, with **no `type`**.
+  Podium dropped any setting without a known type. BitChord reads only defaults and options and has
+  no settings screen, so addons leave the type out. Both possible drops are fixed:
+  - A setting of an unknown kind, or none, is kept: with options a choice, without them text. Its
+    default travels like any other. A value-only option is named from its value.
+  - An address ending in any `.json` file is trimmed to its folder. A query typed with it (a token)
+    is kept and sent with every request, manifest, search and stream, instead of the address being
+    refused.
+  - An addon already added picks up its settings when its manifest is read again (Check now, or the
+    background checks of D-96).
+- **Tier a: the player's script, and the TV app (2026-10-26).** `VISIONOS` was the only app serving,
+  so backups were added, each tried only after the app that last served fails and inside the walk's
+  12 s:
+  - **The solver.** yt-dlp's challenge solver (yt-dlp-ejs 0.8.0: Unlicense; it bundles meriyah, ISC,
+    and astring, MIT) runs YouTube's player script (`player_ias…/base.js`; current player from
+    `iframe_api`, rechecked every six hours) on the phone (`PlayerScripts`, `EjsChallengeSolver`).
+    The player is prepared once per player id and the prepared form kept in the cache, with its
+    signature timestamp. All of a walk's `n` and signature challenges go in one batch. An engine
+    that fails is reset and asked once more; a second failure moves the walk on.
+  - **Where it runs** (`AndroidScriptEngine`): JavaScriptSandbox when the phone offers it with large
+    scripts, else a hidden WebView. The WebView never goes online, and it refuses every navigation
+    the page starts. YouTube's player script navigated the page, which wiped the solver's context;
+    found on the phone through the debug switch `script-engine` that forces the WebView. Both close
+    after three minutes unused.
+  - **`TVHTML5`, as yt-dlp's `tv_samsung`** (Samsung TV browser, client version `5.20260707`). The TV
+    page's own config (version `7.20261021…`, its visitor data, and its cookies) was refused ("The
+    page needs to be reloaded"); this one answers. Its streams are enciphered, and they serve only
+    once the pre-roll ad could be skipped (`adPlacements`, skip after 5 s: measured, the addresses
+    turned from 403 to 206 about 3.7–4.3 s after the answer). The walk checks them 1.5 s early and
+    once more just after the skip point. An ad longer than 6 s is a refusal, not a wait. Its
+    visitor id is asked as `ANDROID_VR` (`visitor_id` refuses the TV client with HTTP 400).
+  - **A backup that served goes first for ten minutes only**, then the usual apps are asked first
+    again. Only the usual apps are remembered across restarts, so the working path doesn't stay
+    slow once `VISIONOS` serves again.
+  - **`WEB` isn't a tier.** It hands out streaming-protocol (SABR) audio only, no addresses, which
+    Media3 can't play. `WEB_REMIX`'s solved streams serve only their first part without a PoToken,
+    like `ANDROID_VR`'s and `IOS`'s (tier b).
+  - **Measured on the phone** (`stream-skip VISIONOS` forcing the backup): the ten songs and their
+    radio songs, 26 walks, were all served by `TVHTML5`. Each walk took 4.1–6.8 s, mostly the ad's
+    wait. The first solve took 1.4 s with the player prepared from scratch, later ones 17–137 ms.
+    In the forced WebView, six walks were all served; the first solve took 600 ms (the prepared
+    player reloaded from the cache), later ones 28–41 ms. Songs then start about 5 s later than from
+    `VISIONOS`. None was refused while playing.
+- **Tier a2: the listener's session (2026-10-26).** Two apps are asked with the listener's session
+  when they're signed in, and passed over when they aren't:
+  - `TVHTML5_SIGNED_IN`: the TV app above, with the session.
+  - `WEB_REMIX_SIGNED_IN`: YouTube Music's web player on `music.youtube.com`, from the browser they
+    signed in with.
+
+  The session (cookies, a fresh SAPISIDHASH per request, the chosen channel as `onBehalfOfUser`) goes
+  only with the player request, only to YouTube's own hosts. It never goes to a stream's server or
+  the player, and never into the trace.
+  - **Measured** (the owner signed in on the test copy; every other app skipped):
+    - `TVHTML5_SIGNED_IN` served all 9 walks in 4.3–4.8 s, the same 5 s ad as signed out. It isn't
+      faster, so it goes after the signed-out TV app: a backup for when guests are refused.
+    - `WEB_REMIX_SIGNED_IN` was refused: solved, its streams serve only their first part, as without
+      a PoToken (the account has no Premium). It goes after `ANDROID_VR` and `IOS`, since its answers
+      can make the walk wait out an ad first. Those songs played from the NewPipe failsafe in
+      2.4–4.2 s.
+- **Tier b: PoTokens (2026-10-26).** Built after NewPipe's BotGuard helper (GPL-3.0, as Podium; the
+  one Metrolist and BitChord use):
+  - The pieces: `BotGuardMinter` and `OriginPage`, with `HiddenOriginPage` as the hidden WebView. The
+    WebView sits at YouTube's origin, never goes online, and refuses navigation. Podium sends
+    `jnn/v1/Create` and `GenerateIT` itself. The page runs the challenge and mints tokens from the
+    integrity token, kept per binding.
+  - Tokens are bound to the visitor the player was asked as, or the video. A refused token is tried
+    bound the other way, then BotGuard is asked afresh, at most every 5 minutes. A page that lost
+    BotGuard starts over once.
+  - **Measured.**
+    - On the phone, BotGuard was ready in 0.55–0.64 s and minted tokens. Solved `WEB_REMIX` streams
+      (signed out) were refused with them, bound to the guest visitor or to the video, on 6 walks.
+    - `ANDROID_VR` and `IOS` were refused with them too, on 4 walks (they likely need their apps'
+      own attestation, not a web token). So no token goes on them.
+    - The cause isn't the WebView. Tokens minted in desktop Chrome at youtube.com, bound to YouTube
+      Music's own visitor id in either form, with or without a player token in the request
+      (`serviceIntegrityDimensions`), were refused by the same solved streams.
+    - Plain (https) web streams don't take a web PoToken today. yt-dlp's web clients have moved to
+      the streaming protocol (SABR), which Media3 doesn't play.
+  - **Decision.** The minter stays, tested and ready. The signed-out `WEB_REMIX` is a trial app,
+    asked only when a debug build names it (`stream-pot WEB_REMIX`). `WEB_REMIX_SIGNED_IN` is asked
+    without a token (Premium needs none). The default walk never opens the BotGuard page: on the
+    phone, `VISIONOS` still served in 0.45–1.05 s with nothing else touched.
+- **Verified:** walker tests with a scripted YouTube whose `ANDROID_VR`/`IOS` streams serve only their
+  first 256 KB (the walk skips them), both checks and the size fallbacks, the default order, the
+  remembered app, the last resort and the debug skip. On the phone, the first song after a cold start
+  played without a stall (11.8 s heard after 15 s, as for the songs after it; 5.8 s before), and the
+  two checks at once kept a walk at 0.5–0.8 s. Addon tests: a type-less quality setting with
+  value-only options is a choice whose default travels; unknown kinds are kept as text; `.json`
+  addresses are trimmed and their query goes with the manifest, search and stream. Tier a tests
+  (`PlayerScriptsTest`): enciphered streams solved in one batch then checked, a failing solver
+  retried once then moved past, no engine means no TV app, the ad's wait and its limit, the
+  prepared player kept across starts, the cache's eviction, and a backup's ten minutes first. An
+  opt-in live test (`PODIUM_LIVE_NETWORK=1`, node) solved and served a TV stream for "Kesariya" from
+  this laptop in 5.8 s. Tier a2 tests (`SignedInWalkTest`): the session apps passed over when signed
+  out; signed in, the session sent on the right host only (`www` for the TV app, `music` for the web
+  player), as the chosen channel, with the browser's agent for the web player, never with a check;
+  a refusal while playing names the signed-in app. Tier b tests (`PoTokensTest`): minting from
+  BotGuard's integrity token (both shapes of challenge, the service headers, kept per binding), a
+  lost page started over once, the token on the web player's streams bound to the guest visitor (or
+  the video, signed in), a refused token bound the other way and then minted afresh no more often
+  than every 5 minutes, the trial app asked only when named, and BotGuard never needed signed in.
+  Suites: `sources:youtubemusic` 120 (2 opt-in live tests skipped), `sources:addon` 43,
+  `feature:nowplaying` 116 and the app's 114 pass. In `player:service` (66), `PlaybackPipelineTest`
+  (5) and `CrossfadeTest` (1) fail when the whole suite runs ("Non-fatal errors detected" from
+  Media3's test runner) and pass alone. They fail the same way on the commit before D-98 (`3d62643`),
+  so the cause is older: some state shared between test classes.
+- **Still open:**
+  - Signed out, one app serves on its own (`VISIONOS`). The TV backup serves but starts songs about
+    5 s later (the pre-roll ad's skip point), and isn't faster signed in.
+  - The web apps (`WEB`, `WEB_REMIX`) would need YouTube's streaming protocol (SABR) in Media3: their
+    plain streams take no web PoToken today. `ANDROID_VR`/`IOS` would need their apps' own
+    attestation. Neither is built.
+  - `WEB_REMIX_SIGNED_IN` should serve for an account with Premium; not tried (the owner's account
+    has none).
+  - Measured on home Wi-Fi only, not on mobile data.
+  - The owner's own custom source couldn't be checked: its deployment is disabled. The settings fix
+    follows a public addon of the same family.
+  - `PlaybackPipelineTest` and `CrossfadeTest` fail together with the rest of `player:service`
+    (above).
+
+### D-99 · Podium updates itself: GitHub's newest release, offered in a notice
+- **Context:** the owner asked for an update checker. It checks by itself, shows a notice with the
+  changelog in short from GitHub, and offers to download and install from there, to open GitHub
+  instead, or to ignore the update.
+- **Decision:**
+  - **Where releases come from.** GitHub's `releases/latest` for `GHOSTxASR/podium-music-player`
+    (public; no token). Drafts and pre-releases never show. A release is newer when its tag
+    (`v0.1.4`) is above `BuildConfig.VERSION_NAME`.
+  - **When.** Release builds check by themselves once the display is on and the hands-on tour
+    isn't showing, 2.5 s after switching on. They check at most every 6 hours, reusing the last
+    answer in between (GitHub allows 60 anonymous requests an hour). Settings ▸ Software update ▸
+    Automatic checks turns this off. Check now always asks and says what it found, or why it
+    couldn't ("GitHub asked for fewer checks…" on a 403/429). Debug builds never check by
+    themselves: they're another package, which a release can't update.
+  - **The notice** (`GlassNotice`, a new design-system component beside `GlassMenu`: glass, in the
+    functional layer, Wheel-driven):
+    - Title "Podium 0.1.4 is here", then the notes in short: the one-line summary the release notes
+      open with, then the headline of each change, What's new first, four at most (`ReleaseNotes`).
+    - Choices: Download and install (with its size), Open on GitHub, Ignore this version.
+    - Menu (or back) is "not now": the offer returns a day later. An ignored version never returns;
+      a newer one does.
+  - **Installing in the app.** Podium downloads the release's `podium.apk` into its cache (Menu puts
+    the notice away and the download carries on; it comes back when there's something to say).
+    Then three checks, in order:
+    1. The file's SHA-256 must match the digest GitHub publishes for the asset.
+    2. Android must read it as this very app (package), newer (version code), signed by the same
+       key.
+    3. Only then is it handed to Android's installer, through a session; Android asks the listener
+       to confirm. Android also has to let Podium install apps, once (`REQUEST_INSTALL_PACKAGES`,
+       Android's own page). The notice says so, opens the page, and carries on when Podium is back
+       in front.
+
+    A file that fails a check is never handed over. The notice says why, with Try again and Open on
+    GitHub.
+  - **The network.** https only, and only GitHub: `api.github.com`, `github.com`, and
+    `*.githubusercontent.com` where downloads are served. Redirects are followed by hand so every
+    hop is checked. Nothing about the listener is sent; nothing is logged. A small preferences file
+    keeps when it last checked, the last answer, the ignored version and "not now".
+  - **Debug commands:** `update-check --es podium.as 0.1.0 [--ez podium.install true]` checks as if
+    older. `update-file --es podium.file x.apk --es podium.version 0.1.4` runs the install path from
+    a file in the app's files. Test builds can be made "newer" with `-Ppodium.versionCode` and
+    `-Ppodium.versionName`.
+- **Verified:**
+  - Tests (13, `UpdatesTest`): versions; the API answer; drafts and pre-releases ignored; a page off
+    GitHub refused; the v0.1.3 notes shortened to their summary and four headlines; the host
+    allowlist; offers only when newer; the 6-hour rhythm; quiet failures and no checks in test
+    builds or when turned off; ignore and not-now; Check now's three answers; download, checksum,
+    hand-over and the file reused; mismatched or foreign files never handed over; the permission
+    round trip; put away mid-download; the notice's choices.
+  - On the phone (a debuggable copy installed beside Podium, checking as if 0.1.0): the notice
+    showed 0.1.3's summary and four headlines. Download and install fetched the real 39 MB release
+    from GitHub with live progress, matched its checksum, and refused it as another app (correct:
+    the copy is another package), offering GitHub.
+  - Then a "0.1.4" copy of the test app, placed in its own files, went through the same checks:
+    Android's permission page, back to Podium, Android's confirmation. Android updated it in place
+    to 0.1.4 (version code 5). Settings ▸ Software update showed 0.1.4, and Check now said it was up
+    to date.
+  - Before release 0.1.4, R8 on a debug test copy (`-Ppodium.minifyDebug=true`): the TV backup
+    served through JavaScriptSandbox, and the lyrics background held black and white.
+
+### D-100 · Classic lyrics can keep one background: black, white or turning
+- **Context:** the owner asked for a way to stop the Classic lyrics screen turning between black and
+  white with every line. It should offer static black or white beside the automatic switching there
+  is now, for the normal (Classic) mode only, with everything else unchanged.
+- **Decision:**
+  - `LyricsBackground` (Automatic, Black, White), kept with the lyrics theme in the screen's
+    appearance (`VirtualDisplay.lyricsBackground`, stored as `lyrics_background`; an unknown value
+    reads as Automatic).
+  - Automatic is the default and draws as before: Bone's light paper, then Carbon's black, line by
+    line (D-39).
+  - Black and White keep the paper still, the words in the other colour, from the first message to
+    the last line. The paper is the only thing that changes (`lyricInverted`): the words, their
+    timing, the bass swell, the orb, the Wheel and the details stay as they are.
+  - Settings ▸ Appearance ▸ Virtual display ▸ Lyrics background opens a menu: "Automatic: turns with
+    each line", "Always black", "Always white".
+  - The row shows only while the lyrics theme is Classic. Continuous line keeps its own black sheet
+    and never reads the setting.
+  - Debug: `lyrics-background --es podium.background AUTOMATIC | BLACK | WHITE`.
+- **Verified:**
+  - Rendered lyrics screens (Robolectric, sampled paper): Black stays dark on a line Automatic draws
+    light, and before the first line. White stays light on a line Automatic draws dark. Automatic is
+    unchanged.
+  - The rule itself, including the line theme never turning.
+  - The choice kept across a restart, and a damaged value read as Automatic.
+  - Not yet on the phone (it was away).
+

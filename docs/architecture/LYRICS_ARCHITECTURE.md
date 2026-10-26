@@ -178,6 +178,12 @@ fades — the whole virtual display is the lyric.
   with light words. The colours are the two display finishes' own tokens, nothing else. The change is
   a 90 ms colour tween, or instant with reduced motion. The display's finish colours are not changed
   (D-26): this is content drawn inside the screen.
+- **Lyrics background (D-100):** Settings ▸ Appearance ▸ Virtual display ▸ Lyrics background keeps
+  the paper still instead. Automatic (the default) turns it with every line as above. Black is
+  always Carbon's black with light words; White is always Bone's paper with dark words. That covers
+  the messages before the words too. Only the paper changes: the words, their timing, the orb and
+  the Wheel are the same. The row shows only with the Classic theme: Continuous line keeps its own
+  black sheet (§12).
 - **The Wheel:** turning reads one line back or ahead (synced lyrics pause following; it resumes after
   5 s). Center: while reading, jumps playback to the line read — **only if the player can seek**
   (`controls.seek`; otherwise a reject haptic and following resumes); while following, play/pause;
