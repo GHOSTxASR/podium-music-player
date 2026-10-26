@@ -8,3 +8,6 @@ internal fun handleDebugIntent(intent: Intent?, graph: AppGraph) = Unit
 
 @Suppress("UNUSED_PARAMETER")
 internal fun applyDebugWindowCommand(intent: Intent?, activity: android.app.Activity) = Unit
+
+/** Release builds keep no diagnostics. */
+internal fun installDebugDiagnostics() = Unit

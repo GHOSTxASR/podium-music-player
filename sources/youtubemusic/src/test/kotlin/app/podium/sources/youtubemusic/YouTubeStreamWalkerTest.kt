@@ -23,18 +23,25 @@ import kotlin.test.assertTrue
 
 /**
  * Finding a song's stream like BitChord (D-97, issue #5): several of YouTube's apps asked in turn,
- * every stream proven before the player gets it, refusals and bot checks never handed over.
+ * every stream proven before the player gets it (as the player asks, and at its end, D-98), refusals
+ * and bot checks never handed over.
  */
 class YouTubeStreamWalkerTest {
 
     private val video = "vid00000001"
 
-    /** YouTube, scripted: the player's answer per app, and which stream addresses serve bytes. */
+    /**
+     * YouTube, scripted: the player's answer per app, and which stream addresses serve bytes —
+     * [serving] all of them, [firstPart] only their first 256 KB (ANDROID_VR's and IOS's streams
+     * without a PoToken, measured on a phone 2026-10-26).
+     */
     private class Script : StreamHttp {
         val players = mutableMapOf<String, () -> HttpResponse>()
         val serving = mutableSetOf<String>()
+        val firstPart = mutableSetOf<String>()
         val asked = mutableListOf<String>()
         val probed = mutableListOf<Pair<String, String?>>()
+        val ranges = mutableListOf<String>()
         var visitors = 0
         val visitorSeen = mutableListOf<String?>()
 
@@ -52,15 +59,25 @@ class YouTubeStreamWalkerTest {
             return players[app]?.invoke() ?: HttpResponse(200, unavailable("UNPLAYABLE", "This video is unavailable"))
         }
 
-        override suspend fun probe(url: String, headers: Map<String, String>): Int {
+        override suspend fun probe(url: String, headers: Map<String, String>, range: String): Int {
             probed += url to headers["User-Agent"]
-            return if (url in serving) 206 else 403
+            ranges += range
+            if (url in serving) return 206
+            if (url !in firstPart) return 403
+            // Open-ended ("0-") runs to the end of the stream; only ranges inside the first part serve.
+            val end = range.substringAfter('-').toLongOrNull() ?: ((YouTubeStreamWalker.clenOf(url) ?: Long.MAX_VALUE) - 1)
+            return if (end < FIRST_PART) 206 else 403
         }
     }
 
     private val script = Script()
 
-    private fun walker() = YouTubeStreamWalker(script, region = { "IN" }, now = { 1_000_000L })
+    /** The order D-97 shipped with, so these tests read as they were written; [defaultWalker] has today's. */
+    private val scriptedOrder = listOf(PlayerIdentities.ANDROID_VR, PlayerIdentities.VISIONOS, PlayerIdentities.IOS, PlayerIdentities.ANDROID)
+
+    private fun walker() = YouTubeStreamWalker(script, region = { "IN" }, now = { 1_000_000L }, identities = scriptedOrder)
+
+    private fun defaultWalker() = YouTubeStreamWalker(script, region = { "IN" }, now = { 1_000_000L })
 
     private fun ok(app: String, vararg itags: Int, videoId: String = video): ByteArray {
         val formats = itags.joinToString(",") { itag ->
@@ -72,9 +89,12 @@ class YouTubeStreamWalkerTest {
             "streamingData":{"expiresInSeconds":"21540","adaptiveFormats":[{"itag":136,"url":"https://v.googlevideo.com/video","mimeType":"video/mp4"},$formats]}}""".toByteArray()
     }
 
-    private fun url(app: String, itag: Int) = "https://rr1.googlevideo.com/videoplayback?expire=1021600&itag=$itag&c=$app"
+    private fun url(app: String, itag: Int) = "https://rr1.googlevideo.com/videoplayback?expire=1021600&itag=$itag&c=$app&clen=$CLEN"
 
     private companion object {
+        const val CLEN = 4_695_894L
+        const val FIRST_PART = 262_144L
+
         fun unavailable(status: String, reason: String) = """{"playabilityStatus":{"status":"$status","reason":"$reason"}}""".toByteArray()
     }
 
@@ -90,7 +110,8 @@ class YouTubeStreamWalkerTest {
         assertEquals(213_000L, found.durationMs)
         assertEquals(1_021_600_000L, found.expiresAtMillis)
         assertEquals(PlayerIdentities.ANDROID_VR.userAgent, found.userAgent, "asked as the app it was handed to")
-        assertEquals(listOf<Pair<String, String?>>(url("ANDROID_VR", 251) to PlayerIdentities.ANDROID_VR.userAgent), script.probed)
+        assertEquals(List<Pair<String, String?>>(2) { url("ANDROID_VR", 251) to PlayerIdentities.ANDROID_VR.userAgent }, script.probed)
+        assertEquals(listOf("0-", "${CLEN - 2}-${CLEN - 1}"), script.ranges, "as the player asks, then the end of the stream")
         assertEquals(listOf<String?>("visitor1"), script.visitorSeen, "a guest visitor id goes with the request")
     }
 
@@ -102,7 +123,8 @@ class YouTubeStreamWalkerTest {
         val walker = walker()
         val found = assertIs<YouTubeStreamWalker.Result.Found>(walker.walk(video)).stream
         assertEquals("VISIONOS", found.identity)
-        assertEquals(listOf(url("ANDROID_VR", 251), url("ANDROID_VR", 140), url("VISIONOS", 251)), script.probed.map { it.first })
+        // Both checks for every format tried (asked at once).
+        assertEquals(listOf(url("ANDROID_VR", 251), url("ANDROID_VR", 140), url("VISIONOS", 251)).flatMap { listOf(it, it) }, script.probed.map { it.first })
         assertEquals("VISIONOS", walker.order().first())
         script.asked.clear()
         walker.walk(video)
@@ -138,7 +160,7 @@ class YouTubeStreamWalkerTest {
     }
 
     @Test
-    fun `one app's "not available" isn't the last word`() = runTest {
+    fun `one app's not-available answer isn't the last word`() = runTest {
         script.players["ANDROID_VR"] = { HttpResponse(200, unavailable("UNPLAYABLE", "This video is not available")) }
         script.players["VISIONOS"] = { HttpResponse(200, ok("VISIONOS", 251)) }
         script.serving += url("VISIONOS", 251)
@@ -172,10 +194,104 @@ class YouTubeStreamWalkerTest {
     }
 
     @Test
-    fun `an app whose stream was refused while playing goes last`() {
+    fun `an app whose stream was refused while playing goes last, but never behind the last resort`() {
         val walker = walker()
         walker.demote("ANDROID_VR")
-        assertEquals(listOf("VISIONOS", "IOS", "ANDROID", "ANDROID_VR"), walker.order())
+        assertEquals(listOf("VISIONOS", "IOS", "ANDROID_VR", "ANDROID"), walker.order())
+    }
+
+    // --- D-98: proven as the player asks, the order, the memory --------------------------------------
+
+    @Test
+    fun `a stream that serves only its first part is never handed over`() = runTest {
+        // ANDROID_VR and IOS: the first bytes come back, the player's own request and the end don't.
+        listOf("ANDROID_VR", "IOS").forEach { app ->
+            script.players[app] = { HttpResponse(200, ok(app, 251, 250)) }
+            script.firstPart += listOf(url(app, 251), url(app, 250))
+        }
+        script.players["VISIONOS"] = { HttpResponse(200, ok("VISIONOS", 251)) }
+        script.serving += url("VISIONOS", 251)
+        val walker = YouTubeStreamWalker(
+            script, region = { "IN" }, now = { 1_000_000L },
+            identities = listOf(PlayerIdentities.ANDROID_VR, PlayerIdentities.IOS, PlayerIdentities.VISIONOS, PlayerIdentities.ANDROID),
+        )
+        val found = assertIs<YouTubeStreamWalker.Result.Found>(walker.walk(video)).stream
+        assertEquals("VISIONOS", found.identity)
+        assertEquals(listOf("ANDROID_VR", "IOS", "VISIONOS"), script.asked)
+        // Every first-part stream was asked as the player asks it, and refused there.
+        assertEquals(8, script.probed.count { (u, _) -> u in script.firstPart })
+    }
+
+    @Test
+    fun `a short stream inside the first part passes both checks`() = runTest {
+        val short = "https://rr1.googlevideo.com/videoplayback?itag=251&c=IOS&clen=200000"
+        script.players["IOS"] = {
+            HttpResponse(200, """{"playabilityStatus":{"status":"OK"},"videoDetails":{"videoId":"$video"},"streamingData":{"adaptiveFormats":[
+                {"itag":251,"url":"$short","mimeType":"audio/webm","bitrate":135000}]}}""".toByteArray())
+        }
+        script.firstPart += short
+        val walker = YouTubeStreamWalker(script, now = { 1_000_000L }, identities = listOf(PlayerIdentities.IOS))
+        assertIs<YouTubeStreamWalker.Result.Found>(walker.walk(video))
+        assertEquals(listOf("0-", "199998-199999"), script.ranges)
+    }
+
+    @Test
+    fun `without clen the size the app gave is used, and without either the player's request decides`() = runTest {
+        val bare = "https://rr1.googlevideo.com/videoplayback?itag=251&c=VISIONOS"
+        script.players["VISIONOS"] = {
+            HttpResponse(200, """{"playabilityStatus":{"status":"OK"},"videoDetails":{"videoId":"$video"},"streamingData":{"adaptiveFormats":[
+                {"itag":251,"url":"$bare","mimeType":"audio/webm","bitrate":135000,"contentLength":"1000000"}]}}""".toByteArray())
+        }
+        script.serving += bare
+        assertIs<YouTubeStreamWalker.Result.Found>(YouTubeStreamWalker(script, now = { 1L }, identities = listOf(PlayerIdentities.VISIONOS)).walk(video))
+        assertEquals(listOf("0-", "999998-999999"), script.ranges)
+
+        script.ranges.clear()
+        assertTrue(YouTubeStreamWalker(script, now = { 1L }).serves(bare, null), "the failsafe's stream, no size known")
+        assertEquals(listOf("0-"), script.ranges)
+    }
+
+    @Test
+    fun `VISIONOS goes first by default and the last resort stays last`() {
+        val walker = defaultWalker()
+        assertEquals(listOf("VISIONOS", "ANDROID_VR", "IOS", "ANDROID"), walker.order())
+        walker.demote("VISIONOS")
+        assertEquals(listOf("ANDROID_VR", "IOS", "VISIONOS", "ANDROID"), walker.order())
+    }
+
+    @Test
+    fun `the app that served last is asked first after a restart`() = runTest {
+        var kept: String? = "IOS"
+        val memory = object : StreamWalkMemory {
+            override fun lastServed() = kept
+            override fun served(identity: String) { kept = identity }
+        }
+        script.players["IOS"] = { HttpResponse(200, ok("IOS", 251)) }
+        script.serving += url("IOS", 251)
+        val walker = YouTubeStreamWalker(script, now = { 1L }, memory = memory)
+        assertEquals("IOS", walker.order().first())
+        assertIs<YouTubeStreamWalker.Result.Found>(walker.walk(video))
+        assertEquals(listOf("IOS"), script.asked, "nothing asked before it")
+
+        // A refusal while playing: the new first app is what a restart starts with.
+        walker.demote("IOS")
+        assertEquals("VISIONOS", kept)
+        // An app this build doesn't know is ignored.
+        kept = "SOMETHING_ELSE"
+        assertEquals(listOf("VISIONOS", "ANDROID_VR", "IOS", "ANDROID"), YouTubeStreamWalker(script, memory = memory).order())
+    }
+
+    @Test
+    fun `apps skipped for a device test aren't asked`() = runTest {
+        script.players["IOS"] = { HttpResponse(200, ok("IOS", 251)) }
+        script.serving += url("IOS", 251)
+        StreamWalkDebug.skipped = setOf("VISIONOS", "ANDROID_VR")
+        try {
+            assertEquals("IOS", assertIs<YouTubeStreamWalker.Result.Found>(defaultWalker().walk(video)).stream.identity)
+            assertEquals(listOf("IOS"), script.asked)
+        } finally {
+            StreamWalkDebug.skipped = emptySet()
+        }
     }
 
     // --- In the resolver: what the player gets ------------------------------------------------------
@@ -211,7 +327,7 @@ class YouTubeStreamWalkerTest {
         assertEquals(0, resolver.failsafeAsked)
         // Refused while playing: that app goes last, and the song is asked for afresh.
         resolver.forget(song())
-        assertTrue(resolver.walkOrder().last() == "ANDROID_VR")
+        assertEquals(listOf("VISIONOS", "IOS", "ANDROID_VR", "ANDROID"), resolver.walkOrder())
     }
 
     @Test

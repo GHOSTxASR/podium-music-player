@@ -88,17 +88,20 @@ class YouTubeMusicSource internal constructor(
     region: () -> String,
     private val now: () -> Long,
     streamResolver: YouTubeMusicStreamResolver? = null,
+    streamMemory: StreamWalkMemory = StreamWalkMemory.None,
 ) : MusicSource {
 
     /**
      * [userAgent] is the device's own web browser user agent (the same one Google's sign-in page
-     * saw); [region] the listener's country.
+     * saw); [region] the listener's country; [streamMemory] keeps the app that last served a stream
+     * across restarts (D-98).
      */
     constructor(
         credentials: CredentialStore,
         userAgent: () -> String,
         region: () -> String = { "US" },
-    ) : this(credentials, UrlConnectionTransport(), userAgent, region, System::currentTimeMillis)
+        streamMemory: StreamWalkMemory = StreamWalkMemory.None,
+    ) : this(credentials, UrlConnectionTransport(), userAgent, region, System::currentTimeMillis, streamMemory = streamMemory)
 
     private val id = SOURCE_ID
     private val mapper = YouTubeMusicMapper(id)
@@ -110,6 +113,7 @@ class YouTubeMusicSource internal constructor(
         downloader = YouTubeMusicDownloader(userAgent),
         region = region,
         now = now,
+        memory = streamMemory,
     )
 
     @Volatile private var session: WebSession? = credentials.read(id)?.get(KEY_SESSION)?.let(WebSession::parse)

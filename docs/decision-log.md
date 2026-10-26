@@ -1240,5 +1240,45 @@ Every significant decision, newest at the bottom. Major ones have an ADR in `adr
   - Live from this machine: a song whose stream serves was found through `ANDROID_VR` in 1.6 s; a
     song whose every stream is refused came back "refused", not handed over; a missing video was a
     miss in 0.35 s.
-  - Not yet on a phone, and not verified in a release build.
+  - Not yet on a phone, and not verified in a release build. (Both done in D-98.)
+
+### D-98 · Online streams measured on a phone: a check that matches the player, and backups for VISIONOS (issue #5)
+- **Context:** D-97 couldn't be tried from a normal connection. The owner asked for it to be measured
+  on a phone first, then for the missing BitChord tiers as backups.
+- **Measured (2026-10-26, Nothing Phone (3a), home Wi-Fi, a debug copy signed out):**
+  - Ten songs, label songs among them (Queen, Ed Sheeran, Arijit Singh's "Kesariya" and "Tum Hi Ho",
+    "Chaleya", The Weeknd, Taylor Swift, Dua Lipa, Debussy, Adele), and the ten radio songs after
+    them, all played. Each walk took 0.3–0.9 s. There were no bot checks and no 429s, and NewPipe
+    was never needed.
+  - Every song was served by `VISIONOS`. `ANDROID_VR` and `IOS` streams serve only their first part
+    (at least 256 KB). The player's own request (`bytes=0-`), the end of the stream and anything past
+    that part get HTTP 403. `ANDROID` answers with no audio formats. This laptop's home connection
+    showed the same.
+  - **D-97's check had a flaw.** It asked for a stream's first two bytes, which `ANDROID_VR` and `IOS`
+    serve. Their streams passed the check, then the player was refused about 4 s later (after
+    Media3's retries). On the phone the first song after every start lost those seconds and needed a
+    fresh stream. If `VISIONOS` stopped serving, `IOS` would pass the check and fail, and the song would
+    fail after its one refresh.
+  - **The R8 fix (D-97) holds in a release build.** `mapping.txt` renames `PodiumError` and all 15
+    subclasses (`NotPlayable` → `ep3`, `NotFound` → `dp3` …), which is why 0.1.3 always read "Something
+    went wrong". A minified release copy installed beside 0.1.3 played an age-restricted video and
+    Now Playing said "This song can't play right now. Skipping to the next one."
+- **Decision (the check):**
+  - A stream counts only when it answers as the player asks for it: the open-ended request
+    (`Range: bytes=0-`, two bytes read, then closed) and the stream's last two bytes (from the
+    address's `clen`, else the format's `contentLength`), so seeks are covered. Both are asked at once,
+    so the working path doesn't wait twice. The failsafe's stream is checked the same way.
+  - `VISIONOS` is first by default. The app that last served is kept across restarts
+    (`StreamWalkMemory`, one short name in the app's preferences). `ANDROID` is a last resort: always
+    asked last, never moved up.
+  - Debug builds log each app's verdict to logcat (`PodiumStreams`: HTTP code, playability status,
+    YouTube's reason, the check's codes, times; never an address, a cookie or a visitor id), and
+    `stream-skip` passes over chosen apps so a device test can prove the others serve.
+  - `-Ppodium.applicationIdSuffix=.walktest` builds a copy that installs beside the phone's own app,
+    for testing when the installed one was signed with another key.
+- **Verified:** walker tests with a scripted YouTube whose `ANDROID_VR`/`IOS` streams serve only their
+  first 256 KB (the walk skips them), both checks and the size fallbacks, the default order, the
+  remembered app, the last resort and the debug skip. On the phone, the first song after a cold start
+  played without a stall (11.8 s heard after 15 s, as for the songs after it; 5.8 s before), and the
+  two checks at once kept a walk at 0.5–0.8 s.
 

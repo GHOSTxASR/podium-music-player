@@ -24,7 +24,7 @@ Common commands:
 ## 3. Build variants
 | Variant | Purpose | Notes |
 |---|---|---|
-| `debug` | Development and the phone's daily build | `sources:fixture` included; debug overlay; user CAs trusted; applicationIdSuffix `.debug` (installs beside release). **Not debuggable** by default (D-67) so ART compiles it and every open is as smooth as a warm one; `-Ppodium.debuggable=true` for a debugger |
+| `debug` | Development and the phone's daily build | `sources:fixture` included; debug overlay; user CAs trusted; applicationIdSuffix `.debug` (installs beside release). **Not debuggable** by default (D-67) so ART compiles it and every open is as smooth as a warm one; `-Ppodium.debuggable=true` for a debugger; `-Ppodium.applicationIdSuffix=.walktest` (any suffix, release too) installs a separate copy beside the phone's own app, for testing when that one was signed with another key (D-98) |
 | `release` | Distribution | R8 full mode, resource shrinking, no fixture source, no debug overlay, logs redacted, baseline profiles |
 | `benchmark` | Macrobenchmark target | release-like, debuggable=false, signed with debug key |
 

@@ -124,24 +124,30 @@ Podium plays YouTube Music audio natively in its own Media3 audio engine:
   - Stable cache key
 - **Background Playback:** Managed natively by Android's `MediaLibraryService` foreground service with media session notifications, lock-screen controls, and Bluetooth integration.
 
-### 8.2 Stream Extraction Pipeline (BitChord Reference, D-97)
+### 8.2 Stream Extraction Pipeline (BitChord Reference, D-97, D-98)
 
 Built like BitChord's resolver: several of YouTube's own apps asked in turn, a stream proven to
 serve audio before the player gets it, NewPipeExtractor as the failsafe
 (`YouTubeMusicStreamResolver`, `YouTubeStreamWalker`, `PlayerIdentities`, `StreamHttp`).
 
 1. **The walk.** `/youtubei/v1/player` is asked as each app in `PlayerIdentities`, in turn:
-   `ANDROID_VR`, `VISIONOS`, `IOS`, `ANDROID`. These apps get plain stream addresses, with no
-   signature to work out. Each request carries the app's own client context and user agent, and a
-   guest visitor id (`/youtubei/v1/visitor_id`, kept six hours).
+   `VISIONOS`, `ANDROID_VR`, `IOS`, then `ANDROID` as the last resort (always last; it answered with
+   no audio formats on 2026-10-26). These apps get plain stream addresses, with no signature to work
+   out. Each request carries the app's own client context and user agent, and a guest visitor id
+   (`/youtubei/v1/visitor_id`, kept six hours).
 2. **Bot checks.** When an app is asked to confirm it isn't a bot, a fresh visitor id is fetched
    and that app is asked once more.
-3. **Proven before it plays.** The best audio formats (Opus, then AAC, higher bitrate first; no
-   DRC variants) are checked with a two-byte ranged request as the app (two formats per app at
-   most). A refused stream (HTTP 403) is never handed to the player: the next app is asked. The
-   app's user agent goes with the stream (`PlayableMedia.headers`), so the player asks for it as
-   that app too. The app that last served a stream is asked first next time. One whose stream was
-   refused while playing goes last (`forget`).
+3. **Proven before it plays (D-98).** The best audio formats (Opus, then AAC, higher bitrate first;
+   no DRC variants) are checked as the app, two formats per app at most, with two requests at once:
+   the open-ended request the player itself sends (`Range: bytes=0-`, two bytes read, then closed)
+   and the stream's last two bytes (size from the address's `clen`, else the format's
+   `contentLength`). A stream counts only when both answer 2xx. `ANDROID_VR`'s and `IOS`'s streams
+   serve only their first part without a PoToken; a check of the first bytes alone passed them and
+   the player was refused seconds later. A refused stream (HTTP 403) is never handed to the player:
+   the next app is asked. The app's user agent goes with the stream (`PlayableMedia.headers`), so
+   the player asks for it as that app too. The app that last served a stream is asked first next
+   time, after a restart too (`StreamWalkMemory`). One whose stream was refused while playing goes
+   last, before the last resort (`forget`).
 4. **Verdicts.** A song gone, private or age-restricted for every app is a miss at once
    (`NOT_FOUND`, `NOT_PERMITTED`). One app's "not available" isn't the last word: the others are
    asked. An answer about another video (a stand-in) isn't used. HTTP 429 stops the walk (rate
@@ -149,10 +155,14 @@ serve audio before the player gets it, NewPipeExtractor as the failsafe
 5. **The failsafe.** When no app's stream played (all refused, bot checks everywhere, the service
    unreachable, or the 12 s walk budget spent), NewPipeExtractor is asked. Its stream is proven the
    same way before it is used. Live stations (§8.3) come from it.
-6. **What the listener is told.** Every stream refused gives a miss "not streamable": Now Playing
+6. **Watching it (debug builds).** `StreamWalkDebug.trace` logs each app's verdict to logcat
+   (`PodiumStreams`): HTTP code, playability status, YouTube's reason, the check's codes and times.
+   Never an address, a cookie or a visitor id. `stream-skip` (`--es podium.apps VISIONOS,…`) passes
+   over chosen apps, to prove the others serve. Release builds set neither.
+7. **What the listener is told.** Every stream refused gives a miss "not streamable": Now Playing
    says the song can't play right now. Bot checks everywhere rest the source for 30 s as rate
    limited: "The music source is busy". The service unreachable is a network failure.
-7. **Not built yet** (needs YouTube's player JavaScript run on the phone):
+8. **Not built yet** (needs YouTube's player JavaScript run on the phone):
    - signature and "n" solving for the web and TV apps (NewPipeExtractor v0.26.5's solver no longer
      reads the current player; checked 2026-10-26);
    - PoTokens minted by BotGuard in a WebView;

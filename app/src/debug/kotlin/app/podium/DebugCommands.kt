@@ -25,6 +25,15 @@ internal fun applyDebugWindowCommand(intent: Intent?, activity: android.app.Acti
     }
 }
 
+/**
+ * Debug builds: how each online song's stream was found, in logcat under `PodiumStreams` (D-98) —
+ * per app asked, its HTTP code, playability status and the check's codes. Never an address, a cookie
+ * or a visitor id.
+ */
+internal fun installDebugDiagnostics() {
+    app.podium.sources.youtubemusic.StreamWalkDebug.trace = { android.util.Log.i("PodiumStreams", it) }
+}
+
 internal fun handleDebugIntent(intent: Intent?, graph: AppGraph) {
     when (intent?.getStringExtra("podium.debug")) {
         "play-test-tones" -> graph.appScope.launch {
@@ -137,6 +146,10 @@ internal fun handleDebugIntent(intent: Intent?, graph: AppGraph) {
             val current = graph.deviceSettings.appearance.value
             graph.deviceSettings.setAppearance(current.copy(screen = current.screen.copy(lyricsTheme = theme)))
         }
+        // Apps the online stream walk passes over (D-98), to prove the others serve songs:
+        // --es podium.apps VISIONOS,ANDROID_VR (none: every app again). In memory until a restart.
+        "stream-skip" -> app.podium.sources.youtubemusic.StreamWalkDebug.skipped =
+            intent.getStringExtra("podium.apps").orEmpty().split(',').map { it.trim() }.filter { it.isNotEmpty() }.toSet()
         "pause" -> graph.playbackController.pause()
         "play" -> if (graph.playbackController.snapshot.value.intent != PlayIntent.PLAY) graph.playbackController.play()
         "next" -> graph.playbackController.next()

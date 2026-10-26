@@ -15,6 +15,8 @@ internal data class PlayerIdentity(
     val userAgent: String,
     /** The app's own description of the device it runs on, sent in the request's client context. */
     val device: Map<String, Any> = emptyMap(),
+    /** Asked only when every other app has failed, and never moved up (D-98). */
+    val lastResort: Boolean = false,
 )
 
 internal object PlayerIdentities {
@@ -48,10 +50,16 @@ internal object PlayerIdentities {
         version = "21.03.36",
         userAgent = "com.google.android.youtube/21.03.36 (Linux; U; Android 15; US) gzip",
         device = mapOf("androidSdkVersion" to 35, "osName" to "Android", "osVersion" to "15"),
+        // Answers with no audio formats at all for most songs (measured 2026-10-26): one request, last.
+        lastResort = true,
     )
 
-    /** In the order first tried, until one has served a stream (then that one goes first). */
-    val ALL = listOf(ANDROID_VR, VISIONOS, IOS, ANDROID)
+    /**
+     * In the order first tried, until one has served a stream (then that one goes first). VISIONOS
+     * first: on a phone, on 2026-10-26, it was the only app whose streams served past their first part
+     * (ANDROID_VR's and IOS's stop after about 256 KB without a PoToken, D-98).
+     */
+    val ALL = listOf(VISIONOS, ANDROID_VR, IOS, ANDROID)
 
     /** The app a stream address was handed to, from its `c=` parameter. */
     fun of(streamUrl: String): PlayerIdentity? {

@@ -106,6 +106,7 @@ class AppGraph(val context: Context) {
         credentials,
         userAgent = { webUserAgent },
         region = { java.util.Locale.getDefault().country.takeIf { it.length == 2 } ?: "US" },
+        streamMemory = PrefsStreamWalkMemory(context),
     )
 
     @Volatile
@@ -114,6 +115,7 @@ class AppGraph(val context: Context) {
 
     init {
         BuildConfigFlags.checkMirror = BuildConfig.DEBUG
+        installDebugDiagnostics()
         registry.register(localSource)
         registry.register(youtubeMusic)
         buildVariantSources(context).forEach { registry.register(it) }

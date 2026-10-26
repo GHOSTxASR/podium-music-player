@@ -58,8 +58,10 @@ internal open class YouTubeMusicStreamResolver(
     private val downloader: YouTubeMusicDownloader,
     private val region: () -> String = { "US" },
     private val now: () -> Long = System::currentTimeMillis,
+    /** The app that last served, kept across restarts (D-98). */
+    memory: StreamWalkMemory = StreamWalkMemory.None,
     /** The walk; null leaves NewPipe alone (tests that script extraction themselves). */
-    private val walker: YouTubeStreamWalker? = YouTubeStreamWalker(OkHttpStreamHttp(), region, now),
+    private val walker: YouTubeStreamWalker? = YouTubeStreamWalker(OkHttpStreamHttp(), region, now, memory = memory),
 ) {
     private val initialized = AtomicBoolean(false)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -116,7 +118,9 @@ internal open class YouTubeMusicStreamResolver(
     fun forget(track: Track) {
         val refused = synchronized(inFlight) { recent.remove(track.id.value) }?.first
         val uri = ((refused?.target as? PlaybackTarget.DirectStream)?.media?.uri)
-        uri?.let(PlayerIdentities::of)?.let { walker?.demote(it.key) }
+        val identity = uri?.let(PlayerIdentities::of)
+        identity?.let { walker?.demote(it.key) }
+        StreamWalkDebug.note { "forget ${track.source.providerKey}: refused while playing (${identity?.key ?: "app unknown"})" }
     }
 
     /** Kept a few minutes, and never past the stream's own expiry (less a margin). */
@@ -138,10 +142,15 @@ internal open class YouTubeMusicStreamResolver(
             else -> Unit
         }
         // The failsafe: NewPipe, its stream proven like the walk's before the player gets it.
+        val started = now()
         val fallback = failsafe(track, videoId, quality)
         if (fallback is FacetResolution.Resolved) {
             val media = (fallback.target as? PlaybackTarget.DirectStream)?.media
-            if (media != null && runBlocking { walk.serves(media.uri, media.headers["User-Agent"]) }) return fallback
+            val serves = media != null && runBlocking { walk.serves(media.uri, media.headers["User-Agent"]) }
+            StreamWalkDebug.note { "failsafe $videoId: a stream, ${if (serves) "serves" else "refused"} in ${now() - started} ms" }
+            if (serves) return fallback
+        } else {
+            StreamWalkDebug.note { "failsafe $videoId: $fallback in ${now() - started} ms" }
         }
         return when (walked) {
             YouTubeStreamWalker.Result.Refused -> FacetResolution.Miss(MissReason.NOT_STREAMABLE)

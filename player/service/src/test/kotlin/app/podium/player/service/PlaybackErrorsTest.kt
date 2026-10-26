@@ -48,7 +48,7 @@ class PlaybackErrorsTest {
     }
 
     @Test
-    fun `a refused stream without the engine's word is still a refusal, not "something went wrong"`() {
+    fun `a refused stream without the engine's word is still a refusal, not something-went-wrong`() {
         assertIs<PodiumError.NotPlayable>(PlaybackErrors.fromCode(PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS))
     }
 }

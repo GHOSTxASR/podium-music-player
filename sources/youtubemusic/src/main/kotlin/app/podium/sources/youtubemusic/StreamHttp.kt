@@ -23,8 +23,11 @@ internal interface StreamHttp {
     /** One request to YouTube's own API. */
     suspend fun post(url: String, headers: Map<String, String>, body: ByteArray): HttpResponse
 
-    /** The status of the first two bytes of a stream: whether it really serves audio. */
-    suspend fun probe(url: String, headers: Map<String, String>): Int
+    /**
+     * The status of one range of a stream (`0-`, open-ended as the player asks, or `from-to`), with
+     * two bytes read at most: whether it really serves audio there.
+     */
+    suspend fun probe(url: String, headers: Map<String, String>, range: String): Int
 }
 
 /**
@@ -45,9 +48,9 @@ internal class OkHttpStreamHttp(
         return execute(request, MAX_ANSWER_BYTES)
     }
 
-    override suspend fun probe(url: String, headers: Map<String, String>): Int {
-        val request = Request.Builder().url(checked(url)).headers((headers + ("Range" to "bytes=0-1")).toHeaders()).get().build()
-        return execute(request, MAX_PROBE_BYTES).code
+    override suspend fun probe(url: String, headers: Map<String, String>, range: String): Int {
+        val request = Request.Builder().url(checked(url)).headers((headers + ("Range" to "bytes=$range")).toHeaders()).get().build()
+        return execute(request, PROBE_BYTES).code
     }
 
     private fun checked(url: String): String {
@@ -79,7 +82,7 @@ internal class OkHttpStreamHttp(
             val out = java.io.ByteArrayOutputStream()
             val buffer = ByteArray(16 * 1024)
             while (out.size() < cap) {
-                val n = input.read(buffer)
+                val n = input.read(buffer, 0, minOf(buffer.size, cap - out.size()))
                 if (n < 0) break
                 out.write(buffer, 0, n)
             }
@@ -92,7 +95,8 @@ internal class OkHttpStreamHttp(
     private companion object {
         val JSON = "application/json".toMediaType()
         const val MAX_ANSWER_BYTES = 4 * 1024 * 1024
-        const val MAX_PROBE_BYTES = 64 * 1024
+        /** A check reads this much and closes, even from an open-ended range. */
+        const val PROBE_BYTES = 2
 
         /** YouTube's API, and the servers its streams come from. */
         val ALLOWED_HOST_SUFFIXES = listOf("youtube.com", "googlevideo.com")

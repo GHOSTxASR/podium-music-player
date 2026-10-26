@@ -44,9 +44,13 @@ android {
             }
         }
     }
+    // A build installed beside the phone's own (D-98): -Ppodium.applicationIdSuffix=.walktest gives
+    // another package, so a test needs no uninstall (which would wipe the listener's data) when the
+    // installed app was signed with another key.
+    val sideBySide = providers.gradleProperty("podium.applicationIdSuffix").orNull
     buildTypes {
         debug {
-            applicationIdSuffix = ".debug"
+            applicationIdSuffix = sideBySide ?: ".debug"
             // This is the build that lives on the phone (D-65). A debuggable app is never compiled
             // ahead of time and loses its JIT-compiled code whenever its process ends, so every
             // fresh open started cold and stuttered until it warmed up. Not debuggable, ART compiles
@@ -57,6 +61,7 @@ android {
             isDebuggable = providers.gradleProperty("podium.debuggable").orNull == "true"
         }
         release {
+            sideBySide?.let { applicationIdSuffix = it }
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
