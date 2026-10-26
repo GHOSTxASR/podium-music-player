@@ -28,7 +28,7 @@ Foundation written 2026-10-02 (Phases 0–2 and source research S0). Read in thi
 
 Subsystems: [audio-architecture.md](audio-architecture.md) · [playback-state-machine.md](playback-state-machine.md) · [queue-and-autoplay.md](queue-and-autoplay.md) · [data-model.md](data-model.md) · [offline-architecture.md](offline-architecture.md) · [download-system.md](download-system.md) · [animation-system.md](animation-system.md) (the motion language; its audit: [research/2026-10-08-motion-audit.md](research/2026-10-08-motion-audit.md))
 
-Releases: [releases/](releases/) — the notes published with each release ([v0.1.3](releases/v0.1.3.md), [v0.1.2](releases/v0.1.2.md))
+Releases: [releases/](releases/) — the notes published with each release ([v0.1.4](releases/v0.1.4.md), [v0.1.3](releases/v0.1.3.md), [v0.1.2](releases/v0.1.2.md))
 
 Quality: [accessibility.md](accessibility.md) · [performance.md](performance.md) · [security.md](security.md) (incl. privacy) · [testing-strategy.md](testing-strategy.md) · [deployment.md](deployment.md)
 

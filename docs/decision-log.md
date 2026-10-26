@@ -1457,6 +1457,8 @@ Every significant decision, newest at the bottom. Major ones have an ADR in `adr
     Android's permission page, back to Podium, Android's confirmation. Android updated it in place
     to 0.1.4 (version code 5). Settings ▸ Software update showed 0.1.4, and Check now said it was up
     to date.
+  - Before release 0.1.4, R8 on a debug test copy (`-Ppodium.minifyDebug=true`): the TV backup
+    served through JavaScriptSandbox, and the lyrics background held black and white.
 
 ### D-100 · Classic lyrics can keep one background: black, white or turning
 - **Context:** the owner asked for a way to stop the Classic lyrics screen turning between black and

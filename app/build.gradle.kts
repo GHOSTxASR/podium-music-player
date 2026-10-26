@@ -20,8 +20,8 @@ android {
         // Provisional: the product name is pending trademark clearance (docs/repository-audit.md §5).
         applicationId = "app.podium"
         // A device test of the updater (D-99) builds a "newer" copy: -Ppodium.versionCode=5 -Ppodium.versionName=0.1.4
-        versionCode = providers.gradleProperty("podium.versionCode").orNull?.toInt() ?: 4
-        versionName = providers.gradleProperty("podium.versionName").orNull ?: "0.1.3"
+        versionCode = providers.gradleProperty("podium.versionCode").orNull?.toInt() ?: 5
+        versionName = providers.gradleProperty("podium.versionName").orNull ?: "0.1.4"
     }
     buildFeatures {
         buildConfig = true
@@ -60,6 +60,12 @@ android {
             // test tones and the package (app.podium.debug, the listener's data) are unchanged.
             // For a debugger: ./gradlew installDebug -Ppodium.debuggable=true
             isDebuggable = providers.gradleProperty("podium.debuggable").orNull == "true"
+            // R8 on a debug build, so its debug commands can prove a release's paths under
+            // minification (D-99): -Ppodium.minifyDebug=true
+            if (providers.gradleProperty("podium.minifyDebug").orNull == "true") {
+                isMinifyEnabled = true
+                proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            }
         }
         release {
             sideBySide?.let { applicationIdSuffix = it }

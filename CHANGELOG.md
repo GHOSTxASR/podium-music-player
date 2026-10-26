@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-10-26
+
+Release notes: [docs/releases/v0.1.4.md](docs/releases/v0.1.4.md).
+
 ### Added
 - **A still background for Classic lyrics (D-100):** Settings ▸ Appearance ▸ Virtual display ▸ Lyrics background keeps the lyrics on black or on white, instead of turning between them with every line (Automatic, still the default).
 - **Updates from inside Podium (D-99):** Podium checks GitHub for a new version by itself and shows what's new in a short notice. Download and install it right there (Android asks you to confirm), open it on GitHub, or ignore that version. Settings ▸ Software update has Check now and turns automatic checks off.
