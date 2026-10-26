@@ -102,6 +102,22 @@ class AppGraph(val context: Context) {
      * ONLINE (D-38, D-48): YouTube Music — its catalogue and the listener's account read here, its
      * songs played by Podium itself. The device's own browser user agent, warmed off the main thread.
      */
+    /**
+     * Podium's own updates (D-99): GitHub's newest release, offered in a notice; installed through
+     * Android's installer once it's checked to be this app, newer, and signed by the same key. Release
+     * builds check by themselves; debug builds (another package) only open the release's page.
+     */
+    internal val updates = app.podium.update.UpdateCenter(
+        net = app.podium.update.HttpsUpdateNet("Podium/${BuildConfig.VERSION_NAME} (update check)"),
+        store = app.podium.update.PrefsUpdateStore(context),
+        installer = app.podium.update.PackageUpdateInstaller(context),
+        current = app.podium.update.Version.of(BuildConfig.VERSION_NAME) ?: app.podium.update.Version(listOf(0), "0"),
+        downloads = java.io.File(context.cacheDir, "updates"),
+        scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.IO),
+        checksByItself = !BuildConfig.DEBUG,
+        canInstallReleases = !BuildConfig.DEBUG,
+    )
+
     /** Runs the online source's player script for its backup apps (D-98), off the app's own process. */
     internal val scriptEngine = AndroidScriptEngine(context)
 

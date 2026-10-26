@@ -159,6 +159,22 @@ internal fun handleDebugIntent(intent: Intent?, graph: AppGraph) {
             ScriptEngineDebug.forceWebView = intent.getStringExtra("podium.engine") == "webview"
             graph.scriptEngine.reset()
         }
+        // Podium's update notice (D-99) on demand: --es podium.as 0.1.0 checks as if this were 0.1.0;
+        // --ez podium.install true offers the install here too (a debug build is another package,
+        // so Android refuses the release's app: the download and its checks are what's tested).
+        "update-check" -> graph.updates.checkNow(
+            pretend = intent.getStringExtra("podium.as")?.let(app.podium.update.Version::of),
+            forceInstall = intent.getBooleanExtra("podium.install", false),
+        )
+        // The install path from an APK already in the app's files (a debuggable test copy, via run-as):
+        // --es podium.file update-test.apk --es podium.version 0.1.4
+        "update-file" -> intent.getStringExtra("podium.file")?.let { name ->
+            val version = app.podium.update.Version.of(intent.getStringExtra("podium.version") ?: "0.0.0") ?: return@let
+            graph.updates.installFile(
+                java.io.File(graph.context.filesDir, name),
+                app.podium.update.Release(version, "v$version", "", app.podium.update.UpdateCenter.RELEASES_PAGE, null),
+            )
+        }
         "pause" -> graph.playbackController.pause()
         "play" -> if (graph.playbackController.snapshot.value.intent != PlayIntent.PLAY) graph.playbackController.play()
         "next" -> graph.playbackController.next()

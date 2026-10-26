@@ -6,6 +6,10 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
+    <!-- Podium's own updates (D-99): a release downloaded from GitHub, handed to Android's installer
+         (which asks the listener to confirm) once it's checked to be this app, signed by the same key. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
     <!-- Remote playback (YOUTUBE_MUSIC_ARCHITECTURE §8): Podium needs to see whether the app that
          plays online songs is installed, and to open it on a song. -->
     <queries>
@@ -40,5 +44,10 @@
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode"
             android:exported="false"
             android:windowSoftInputMode="adjustResize" />
+
+        <!-- What Android's installer says about an update (D-99); only the installer's own intent reaches it. -->
+        <receiver
+            android:name=".update.UpdateInstallReceiver"
+            android:exported="false" />
     </application>
 </manifest>

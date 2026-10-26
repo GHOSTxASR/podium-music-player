@@ -1400,3 +1400,61 @@ Every significant decision, newest at the bottom. Major ones have an ADR in `adr
   - `PlaybackPipelineTest` and `CrossfadeTest` fail together with the rest of `player:service`
     (above).
 
+### D-99 · Podium updates itself: GitHub's newest release, offered in a notice
+- **Context:** the owner asked for an update checker. It checks by itself, shows a notice with the
+  changelog in short from GitHub, and offers to download and install from there, to open GitHub
+  instead, or to ignore the update.
+- **Decision:**
+  - **Where releases come from.** GitHub's `releases/latest` for `GHOSTxASR/podium-music-player`
+    (public; no token). Drafts and pre-releases never show. A release is newer when its tag
+    (`v0.1.4`) is above `BuildConfig.VERSION_NAME`.
+  - **When.** Release builds check by themselves once the display is on and the hands-on tour
+    isn't showing, 2.5 s after switching on. They check at most every 6 hours, reusing the last
+    answer in between (GitHub allows 60 anonymous requests an hour). Settings ▸ Software update ▸
+    Automatic checks turns this off. Check now always asks and says what it found, or why it
+    couldn't ("GitHub asked for fewer checks…" on a 403/429). Debug builds never check by
+    themselves: they're another package, which a release can't update.
+  - **The notice** (`GlassNotice`, a new design-system component beside `GlassMenu`: glass, in the
+    functional layer, Wheel-driven):
+    - Title "Podium 0.1.4 is here", then the notes in short: the one-line summary the release notes
+      open with, then the headline of each change, What's new first, four at most (`ReleaseNotes`).
+    - Choices: Download and install (with its size), Open on GitHub, Ignore this version.
+    - Menu (or back) is "not now": the offer returns a day later. An ignored version never returns;
+      a newer one does.
+  - **Installing in the app.** Podium downloads the release's `podium.apk` into its cache (Menu puts
+    the notice away and the download carries on; it comes back when there's something to say).
+    Then three checks, in order:
+    1. The file's SHA-256 must match the digest GitHub publishes for the asset.
+    2. Android must read it as this very app (package), newer (version code), signed by the same
+       key.
+    3. Only then is it handed to Android's installer, through a session; Android asks the listener
+       to confirm. Android also has to let Podium install apps, once (`REQUEST_INSTALL_PACKAGES`,
+       Android's own page). The notice says so, opens the page, and carries on when Podium is back
+       in front.
+
+    A file that fails a check is never handed over. The notice says why, with Try again and Open on
+    GitHub.
+  - **The network.** https only, and only GitHub: `api.github.com`, `github.com`, and
+    `*.githubusercontent.com` where downloads are served. Redirects are followed by hand so every
+    hop is checked. Nothing about the listener is sent; nothing is logged. A small preferences file
+    keeps when it last checked, the last answer, the ignored version and "not now".
+  - **Debug commands:** `update-check --es podium.as 0.1.0 [--ez podium.install true]` checks as if
+    older. `update-file --es podium.file x.apk --es podium.version 0.1.4` runs the install path from
+    a file in the app's files. Test builds can be made "newer" with `-Ppodium.versionCode` and
+    `-Ppodium.versionName`.
+- **Verified:**
+  - Tests (13, `UpdatesTest`): versions; the API answer; drafts and pre-releases ignored; a page off
+    GitHub refused; the v0.1.3 notes shortened to their summary and four headlines; the host
+    allowlist; offers only when newer; the 6-hour rhythm; quiet failures and no checks in test
+    builds or when turned off; ignore and not-now; Check now's three answers; download, checksum,
+    hand-over and the file reused; mismatched or foreign files never handed over; the permission
+    round trip; put away mid-download; the notice's choices.
+  - On the phone (a debuggable copy installed beside Podium, checking as if 0.1.0): the notice
+    showed 0.1.3's summary and four headlines. Download and install fetched the real 39 MB release
+    from GitHub with live progress, matched its checksum, and refused it as another app (correct:
+    the copy is another package), offering GitHub.
+  - Then a "0.1.4" copy of the test app, placed in its own files, went through the same checks:
+    Android's permission page, back to Podium, Android's confirmation. Android updated it in place
+    to 0.1.4 (version code 5). Settings ▸ Software update showed 0.1.4, and Check now said it was up
+    to date.
+

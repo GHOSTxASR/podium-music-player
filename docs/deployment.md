@@ -70,6 +70,15 @@ SemVer `versionName` (`0.x` until v1.0); `versionCode` = `major*1_000_000 + mino
    `releases/latest/download/podium.apk` (the website's and README's download link) always serves
    the newest one. Its notes are `docs/releases/v<versionName>.md` (committed with the version
    bump), plus the APK's size and SHA-256. Never commit APKs (`.gitignore`).
+   - **Podium's own update check reads this release (D-99)**, so keep its shape:
+     - the tag `v<versionName>`, and `versionCode` above the last release's;
+     - the asset named `podium.apk`, signed with the release key (Android refuses an update signed
+       otherwise, and so does Podium before handing it over);
+     - notes that open with a one-line summary in bold, `**Podium x.y.z** adds …`, then `###`
+       sections of `- **Headline:** …` bullets.
+
+     The notice shows that summary and the first four headlines, What's new first. Publish as a
+     draft until it's ready: drafts and pre-releases are never offered.
 3. The website is served by Vercel from `site/`. In Vercel, import
    `GHOSTxASR/podium-music-player`, leave the Root Directory at the repository root, and deploy
    `main`. The repository's `vercel.json` selects the no-build **Other** framework and sets

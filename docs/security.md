@@ -43,6 +43,7 @@
 | `READ_MEDIA_AUDIO` (33+) / `READ_EXTERNAL_STORAGE` (≤ 32) | On This Device source | Once by itself when Podium first switches on without it; then from "Allow music access" on Home or Music. If Android stops showing the question, that row opens Podium's page in the system settings (D-47). |
 | `POST_NOTIFICATIONS` (33+) | Download progress/completion | First download, with rationale |
 | `WAKE_LOCK` | Media3 wake mode | install-time |
+| `REQUEST_INSTALL_PACKAGES` | Installing Podium's own update (D-99) | Android's own page, once, from the update notice, the first time the listener chooses Download and install |
 No location, contacts, microphone, or phone permissions.
 
 ## 5. Privacy
@@ -100,6 +101,16 @@ Scope: `sources:youtubemusic`, `player:remote`, the sign-in WebView, the online 
 | Repository | no API keys, tokens, cookies, signing keys, local paths with secrets, personal data or databases in the tree or history; test values are invented (`sapi-secret/123`) | OK |
 | Remaining risks | the unofficial basis (D-19) can change without notice; a WebView session grants Podium the account's YouTube Music session (necessary for the library — documented to the listener: "You sign in on the service's own page. Podium never sees your password."); debug builds accept debug intents from any app on the device | Accepted |
 
+## 10. Custom sources (D-91, 2026-10-19)
+
+- **What the listener adds is theirs.** A custom source is an address the listener types or pastes. Podium doesn't vet sources or what they serve; it asks them for streams of songs the listener chose, and nothing else.
+- **Sealed at rest.** Addresses (which can carry a token), manifests and settings are kept in the Keystore-backed `CredentialStore`. A source's id is a hash of its address; Settings shows only the host.
+- **Nothing leaks.** No address appears in an error, a log, an attempt record or the UI. HTTP errors become Podium's own classified errors.
+- **The network policy (D-09) holds on every hop.** https anywhere; http only on the listener's own network, after they agree. Redirects are followed by hand (at most three) and each hop is checked; so is every stream address an addon hands over, and the engine checks it again before opening it.
+- **Bounded input.** Answers are capped at 2 MB and parsed leniently without throwing. Ids, names, settings and headers are capped; a header with a bad name, or a value with a line break, is dropped. Only settings the addon declared are sent, with values it declared.
+- **Open media only.** A stream marked encrypted or DRM-protected is refused. Podium never works around protection.
+- **Identity rules.** EXACT only, never across environments; the one move mid-track is to an EXACT custom-source copy of the same song (CLAUDE.md, D-17, D-18, D-36, D-92).
+
 ## 11. YouTube Music's backup apps: running the player's script (D-98, 2026-10-26)
 
 - **What runs.** yt-dlp's challenge solver (yt-dlp-ejs 0.8.0, shipped unchanged with its notices,
@@ -127,13 +138,16 @@ Scope: `sources:youtubemusic`, `player:remote`, the sign-in WebView, the online 
 - **Logged.** Debug builds only (`PodiumStreams`, `PodiumScripts`, `PodiumPage`): app names, codes, times, and the
   solver's error class and JavaScript message. Never an address, a cookie or a visitor id.
 
-## 10. Custom sources (D-91, 2026-10-19)
+## 12. Podium's own updates (D-99, 2026-10-26)
 
-- **What the listener adds is theirs.** A custom source is an address the listener types or pastes. Podium doesn't vet sources or what they serve; it asks them for streams of songs the listener chose, and nothing else.
-- **Sealed at rest.** Addresses (which can carry a token), manifests and settings are kept in the Keystore-backed `CredentialStore`. A source's id is a hash of its address; Settings shows only the host.
-- **Nothing leaks.** No address appears in an error, a log, an attempt record or the UI. HTTP errors become Podium's own classified errors.
-- **The network policy (D-09) holds on every hop.** https anywhere; http only on the listener's own network, after they agree. Redirects are followed by hand (at most three) and each hop is checked; so is every stream address an addon hands over, and the engine checks it again before opening it.
-- **Bounded input.** Answers are capped at 2 MB and parsed leniently without throwing. Ids, names, settings and headers are capped; a header with a bad name, or a value with a line break, is dropped. Only settings the addon declared are sent, with values it declared.
-- **Open media only.** A stream marked encrypted or DRM-protected is refused. Podium never works around protection.
-- **Identity rules.** EXACT only, never across environments; the one move mid-track is to an EXACT custom-source copy of the same song (CLAUDE.md, D-17, D-18, D-36, D-92).
-
+- **What's fetched.** GitHub's `releases/latest` for Podium's public repository, then (only when the
+  listener chooses Download and install) its `podium.apk`. https only, to `api.github.com`,
+  `github.com` and `*.githubusercontent.com`. Every redirect hop is checked. Nothing about the
+  listener goes with the requests, and nothing is logged.
+- **What's installed.** Only a file whose SHA-256 matches the digest GitHub publishes for the asset,
+  that Android reads as this very app, newer, and signed by the same key. Android's installer then
+  asks the listener to confirm; Podium never installs anything silently. A file that fails a check
+  is never handed over.
+- **What's kept.** One preferences file: when it last checked, GitHub's last answer, the ignored
+  version, when to offer again, and whether to check by itself. The download stays in the app's
+  cache until the next.

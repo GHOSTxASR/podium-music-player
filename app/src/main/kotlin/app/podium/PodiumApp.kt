@@ -480,6 +480,13 @@ fun PodiumApp(graph: AppGraph, onSourceAction: (CapabilityAction) -> Unit, onTur
                 guide.offer()
             }
         }
+        // Podium's own updates (D-99): a quiet check once the display is on and the tour isn't showing.
+        LaunchedEffect(power, guide.step) {
+            if (power == Power.ON && guide.step == null) {
+                delay(UPDATE_DELAY_MS)
+                graph.updates.autoCheck()
+            }
+        }
         val pickPicture = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
             if (uri != null) makingFrom = uri
         }
@@ -809,6 +816,8 @@ private fun ScreenOs(
                     GlassMenu(spec, onDismiss = overlay::dismiss, panelPadding = PaddingValues(top = ScreenHeaderHeight))
                     BackHandler { overlay.dismiss() }
                 }
+                // Podium's update notice (D-99), above menus.
+                app.podium.update.UpdatePrompt(graph.updates, PaddingValues(top = ScreenHeaderHeight))
             },
         )
     }
@@ -988,6 +997,7 @@ private fun ScreenContent(
             onSleepTimer = { overlay.show(sleepTimerMenu(graph.sleepTimer)) },
             customSources = graph.customSources,
             onCustomSources = { navigator.push(Dest.CustomSources) },
+            softwareUpdate = remember(graph) { app.podium.update.SoftwareUpdate(graph.updates, checksByItself = !BuildConfig.DEBUG) },
         )
         Dest.Equalizer -> app.podium.feature.settings.EqualizerScreen(settings, onBand = { navigator.push(Dest.EqualizerBand(it)) })
         is Dest.EqualizerBand -> app.podium.feature.settings.EqualizerBandScreen(settings, screen.band, onDone = { navigator.pop() })
@@ -1461,6 +1471,9 @@ private const val OUTPUT_REFRESH_MS = 4_000L
 
 /** The guide waits a moment after switching on, for the display to settle (and any first question). */
 private const val GUIDE_DELAY_MS = 900L
+
+/** The update check waits this long after the display switches on: the screen settles first. */
+private const val UPDATE_DELAY_MS = 2_500L
 
 /** The slab's edge for the Glass finish (its body is the artwork's atmosphere, not a colour). */
 private val GlassEdge = Color(0xFF1C1E22)

@@ -46,6 +46,8 @@ Album/playlist ─► Play, Shuffle, Add all to a playlist, songs
 ```
 Only rows the online sources support are shown (Search needs SEARCH, Home/Explore need BROWSE, Radio needs RECOMMENDATIONS). Each of these asks every enabled online source and shows the answers as one list, without naming the sources (D-35). Artist and album/playlist places carry their source in their id, so they always open on the source they came from.
 
+**Settings ▸ Software update (D-99):** the last row, valued with Podium's version. It opens a menu: Check now, and (release builds) Automatic checks On/Off. The update notice itself is an overlay over whatever screen is up, not a destination.
+
 **Settings ▸ Online sources (D-35):** `Dest.OnlineSources`. It's a row in Settings, shown only when the build registers online sources, valued "On" / "Off" / "n of m on". The page lists each online source: Center turns it on or off, and with more than one source, holding Center moves it up or down. When every online source is off, Home hides Online.
 
 Home order (iPod-like, most-used first): Music, Playlists, Liked Songs, Downloads, Recently Played, Search, Settings, Shuffle Songs, Now Playing. Focus restores to the last used item.

@@ -311,6 +311,7 @@ ONLINE uses the same paper, themes and Wheel — no new paradigm. Menus are pape
 
 ### 6.9 Overlays
 - `GlassMenu` (context menus): `GlassRegular`, r22, rows 48dp, max 8 items then scroll; anchored to the focused row or the invoking control; wheel navigates it (focus lens inside).
+- `GlassNotice` (D-99): a notice that asks for a decision. `GlassRegular`, r22 (r3 industrial), a title, a few lines of body text, an optional progress bar, then its choices as rows. The Wheel moves between choices, Center chooses, Menu dismisses (when it may). Unlike a menu, choosing doesn't close it: a choice like a download keeps it up to show progress. Used for Podium's update notice.
 - `GlassSheet`: inset 8dp, top radius display − 8; half height default; becomes more opaque (+20% tint) when expanded to full (HIG). Implemented with the Backdrop-documented pattern to avoid the RenderThread crash class.
 - `HudToast` (`GlassFloating`, capsule, centered above the MiniPlayer): "Playing next", "Added to queue", "Added to Late Nights" — 1.6s, no stacking (replace).
 - `IndexGlyph`: 96dp rounded square `GlassFloating` centered in the readable region; shows the current initial letter during fast rotation in sorted lists; fades out 600ms after rotation slows.
