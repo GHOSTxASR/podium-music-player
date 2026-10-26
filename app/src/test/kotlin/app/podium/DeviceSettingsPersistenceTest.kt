@@ -8,6 +8,7 @@ import app.podium.core.designsystem.shell.FinishPreset
 import app.podium.core.designsystem.shell.Glitter
 import app.podium.core.designsystem.theme.DisplayBackground
 import app.podium.core.designsystem.theme.DisplayTheme
+import app.podium.core.designsystem.theme.LyricsBackground
 import app.podium.core.designsystem.theme.LyricsTheme
 import app.podium.core.designsystem.theme.TextContrast
 import app.podium.core.designsystem.theme.VirtualDisplay
@@ -32,6 +33,7 @@ class DeviceSettingsPersistenceTest {
             screen = VirtualDisplay(
                 font = DisplayFont.PIXEL,
                 lyricsTheme = LyricsTheme.CONTINUOUS_LINE,
+                lyricsBackground = LyricsBackground.BLACK,
                 background = DisplayBackground.IMAGE,
                 solidArgb = 0xFF305060.toInt(),
                 imageUri = "content://media/picker/0/com.android.providers.media.photopicker/media/1000",
@@ -56,8 +58,10 @@ class DeviceSettingsPersistenceTest {
         assertFalse(fresh.glitter.enabled)
         assertEquals(DisplayFont.CLASSIC, fresh.screen.font)
         assertEquals(DisplayBackground.NONE, fresh.screen.background)
-        // The lyrics keep their classic look until the listener chooses another (D-81).
+        // The lyrics keep their classic look until the listener chooses another (D-81), turning
+        // with each line (D-100).
         assertEquals(LyricsTheme.CLASSIC, fresh.screen.lyricsTheme)
+        assertEquals(LyricsBackground.AUTOMATIC, fresh.screen.lyricsBackground)
     }
 
     @Test
@@ -82,6 +86,7 @@ class DeviceSettingsPersistenceTest {
             .putString("display_font", "COMIC")
             .putString("display_background", "VIDEO")
             .putString("lyrics_theme", "NEON")
+            .putString("lyrics_background", "PURPLE")
             .putFloat("glitter_opacity", 7f)
             .putInt("display_solid", 0x00112233)
             .commit()
@@ -89,6 +94,7 @@ class DeviceSettingsPersistenceTest {
         assertEquals(DisplayFont.CLASSIC, read.screen.font)
         assertEquals(DisplayBackground.NONE, read.screen.background)
         assertEquals(LyricsTheme.CLASSIC, read.screen.lyricsTheme)
+        assertEquals(LyricsBackground.AUTOMATIC, read.screen.lyricsBackground)
         assertEquals(1f, read.glitter.opacity)
         assertEquals(0xFF112233.toInt(), read.screen.solidArgb, "always opaque")
     }

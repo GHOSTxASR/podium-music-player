@@ -175,6 +175,11 @@ internal fun handleDebugIntent(intent: Intent?, graph: AppGraph) {
                 app.podium.update.Release(version, "v$version", "", app.podium.update.UpdateCenter.RELEASES_PAGE, null),
             )
         }
+        // Classic lyrics' paper, as Settings sets it (D-100): --es podium.background AUTOMATIC | BLACK | WHITE
+        "lyrics-background" -> app.podium.core.designsystem.theme.LyricsBackground.entries.firstOrNull { it.name == intent.getStringExtra("podium.background") }?.let { choice ->
+            val current = graph.deviceSettings.appearance.value
+            graph.deviceSettings.setAppearance(current.copy(screen = current.screen.copy(lyricsBackground = choice)))
+        }
         "pause" -> graph.playbackController.pause()
         "play" -> if (graph.playbackController.snapshot.value.intent != PlayIntent.PLAY) graph.playbackController.play()
         "next" -> graph.playbackController.next()

@@ -1458,3 +1458,29 @@ Every significant decision, newest at the bottom. Major ones have an ADR in `adr
     to 0.1.4 (version code 5). Settings ▸ Software update showed 0.1.4, and Check now said it was up
     to date.
 
+### D-100 · Classic lyrics can keep one background: black, white or turning
+- **Context:** the owner asked for a way to stop the Classic lyrics screen turning between black and
+  white with every line. It should offer static black or white beside the automatic switching there
+  is now, for the normal (Classic) mode only, with everything else unchanged.
+- **Decision:**
+  - `LyricsBackground` (Automatic, Black, White), kept with the lyrics theme in the screen's
+    appearance (`VirtualDisplay.lyricsBackground`, stored as `lyrics_background`; an unknown value
+    reads as Automatic).
+  - Automatic is the default and draws as before: Bone's light paper, then Carbon's black, line by
+    line (D-39).
+  - Black and White keep the paper still, the words in the other colour, from the first message to
+    the last line. The paper is the only thing that changes (`lyricInverted`): the words, their
+    timing, the bass swell, the orb, the Wheel and the details stay as they are.
+  - Settings ▸ Appearance ▸ Virtual display ▸ Lyrics background opens a menu: "Automatic: turns with
+    each line", "Always black", "Always white".
+  - The row shows only while the lyrics theme is Classic. Continuous line keeps its own black sheet
+    and never reads the setting.
+  - Debug: `lyrics-background --es podium.background AUTOMATIC | BLACK | WHITE`.
+- **Verified:**
+  - Rendered lyrics screens (Robolectric, sampled paper): Black stays dark on a line Automatic draws
+    light, and before the first line. White stays light on a line Automatic draws dark. Automatic is
+    unchanged.
+  - The rule itself, including the line theme never turning.
+  - The choice kept across a restart, and a damaged value read as Automatic.
+  - Not yet on the phone (it was away).
+

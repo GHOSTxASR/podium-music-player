@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **A still background for Classic lyrics (D-100):** Settings ▸ Appearance ▸ Virtual display ▸ Lyrics background keeps the lyrics on black or on white, instead of turning between them with every line (Automatic, still the default).
 - **Updates from inside Podium (D-99):** Podium checks GitHub for a new version by itself and shows what's new in a short notice. Download and install it right there (Android asks you to confirm), open it on GitHub, or ignore that version. Settings ▸ Software update has Check now and turns automatic checks off.
 - **A backup for online songs (D-98):** when YouTube stops serving a song's stream to the app Podium asks first, Podium now asks as YouTube's TV app too, working out its streams with YouTube's own player code on the phone. Songs still play, about five seconds later to start, until the usual app serves again. When you're signed in, it can also ask with your account.
 - **Lossless mid-song (D-92):** when your custom sources are slow, a song starts from YouTube Music and moves to the lossless copy once it has loaded, with a short crossfade, like Apple Music stepping up its quality. Songs in Up Next move to it before they play.

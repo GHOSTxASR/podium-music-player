@@ -184,6 +184,7 @@ fun PodiumTheme(
         LocalTypographyPreset provides preset,
         LocalLyricsTypeface provides LyricsTypeface.of(display.lyricsFont, preset),
         LocalLyricsTheme provides display.lyricsTheme,
+        LocalLyricsBackground provides display.lyricsBackground,
         LocalPodiumType provides preset.type,
         LocalPodiumMotion provides PodiumMotion(reducedMotion),
         LocalGlassTier provides if (displayTheme.isIndustrial) GlassTier.Solid else glassTier,

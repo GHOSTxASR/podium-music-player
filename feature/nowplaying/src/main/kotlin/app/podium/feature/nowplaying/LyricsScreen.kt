@@ -44,7 +44,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.podium.core.designsystem.component.Pinwheel
 import app.podium.core.designsystem.theme.BoneColors
 import app.podium.core.designsystem.theme.CarbonColors
+import app.podium.core.designsystem.theme.LocalLyricsBackground
 import app.podium.core.designsystem.theme.LocalLyricsTheme
+import app.podium.core.designsystem.theme.LyricsBackground
 import app.podium.core.designsystem.theme.LyricsTheme
 import app.podium.core.designsystem.theme.PodiumTheme
 import app.podium.core.designsystem.type.LocalLyricsTypeface
@@ -256,9 +258,10 @@ fun LyricsScreen(controller: PlaybackController, gateway: LyricsGateway, pulse: 
         }
     }
 
-    // Classic: the two states of the display, Bone's paper and Carbon's black, never anything else.
-    // Continuous line: one matte black sheet with ivory ink (D-81).
-    val inverted = !continuous && lines.isNotEmpty() && index % 2 == 1
+    // Classic: the two states of the display, Bone's paper and Carbon's black, never anything else;
+    // turning with every line, or staying one (D-100). Continuous line: one matte black sheet with
+    // ivory ink (D-81).
+    val inverted = lyricInverted(LocalLyricsBackground.current, continuous, lines.isNotEmpty(), index)
     val reduced = PodiumTheme.motion.reduced
     val spec = if (reduced || continuous) snap<Color>() else tween<Color>(INVERT_MS)
     val paper by animateColorAsState(if (continuous) LineInk.Paper else if (inverted) CarbonColors.canvas else BoneColors.canvas, spec, label = "lyricPaper")
@@ -450,6 +453,18 @@ private const val DRIFT_LOG_MS = 1_200L
 private const val RESUME_FOLLOW_MS = 5_000L
 private const val DETAILS_MS = 4_000L
 private const val INVERT_MS = 90
+
+/**
+ * Whether Classic's paper is Carbon's black now (D-100): every other line when it turns with the
+ * lines ([LyricsBackground.AUTOMATIC], as it always has: light until there are lines), always when
+ * it's black, never when it's white. Continuous line draws on its own sheet.
+ */
+internal fun lyricInverted(background: LyricsBackground, continuous: Boolean, hasLines: Boolean, index: Int): Boolean = when {
+    continuous -> false
+    background == LyricsBackground.BLACK -> true
+    background == LyricsBackground.WHITE -> false
+    else -> hasLines && index % 2 == 1
+}
 private const val WORD_FADE_MS = 140
 
 /** How much a strong bass hit swells the lyric (D-82): under two percent, felt more than seen. */

@@ -49,6 +49,7 @@ class SharedPrefsDeviceSettings(context: Context) : DeviceSettingsRepository {
                 font = enumOf(prefs.getString(KEY_DISPLAY_FONT, null), DisplayFont.CLASSIC),
                 lyricsFont = enumOf(prefs.getString(KEY_LYRICS_FONT, null), LyricsFont.SAME_AS_DISPLAY),
                 lyricsTheme = enumOf(prefs.getString(KEY_LYRICS_THEME, null), LyricsTheme.CLASSIC),
+                lyricsBackground = enumOf(prefs.getString(KEY_LYRICS_BACKGROUND, null), app.podium.core.designsystem.theme.LyricsBackground.AUTOMATIC),
                 background = enumOf(prefs.getString(KEY_DISPLAY_BACKGROUND, null), DisplayBackground.NONE),
                 solidArgb = prefs.getInt(KEY_DISPLAY_SOLID, VirtualDisplay.DEFAULT_SOLID) or OPAQUE,
                 imageUri = prefs.getString(KEY_DISPLAY_IMAGE, null),
@@ -164,6 +165,7 @@ class SharedPrefsDeviceSettings(context: Context) : DeviceSettingsRepository {
                 putString(KEY_DISPLAY_FONT, font.name)
                 putString(KEY_LYRICS_FONT, lyricsFont.name)
                 putString(KEY_LYRICS_THEME, lyricsTheme.name)
+                putString(KEY_LYRICS_BACKGROUND, lyricsBackground.name)
                 putString(KEY_DISPLAY_BACKGROUND, background.name)
                 putInt(KEY_DISPLAY_SOLID, solidArgb)
                 // A reference only, never the picture itself (PODIUM_CUSTOMIZATION.md §7).
@@ -251,6 +253,7 @@ class SharedPrefsDeviceSettings(context: Context) : DeviceSettingsRepository {
         const val KEY_DISPLAY_FONT = "display_font"
         const val KEY_LYRICS_FONT = "lyrics_font"
         const val KEY_LYRICS_THEME = "lyrics_theme"
+        const val KEY_LYRICS_BACKGROUND = "lyrics_background"
         const val KEY_DISPLAY_BACKGROUND = "display_background"
         const val KEY_DISPLAY_SOLID = "display_solid"
         const val KEY_DISPLAY_IMAGE = "display_image_uri"

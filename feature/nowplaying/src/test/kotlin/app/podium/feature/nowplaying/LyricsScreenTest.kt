@@ -24,6 +24,8 @@ import app.podium.core.designsystem.shell.palette
 import app.podium.core.designsystem.theme.BoneColors
 import app.podium.core.designsystem.theme.CarbonColors
 import app.podium.core.designsystem.theme.DisplayTheme
+import app.podium.core.designsystem.theme.LocalLyricsBackground
+import app.podium.core.designsystem.theme.LyricsBackground
 import app.podium.core.designsystem.theme.PodiumTheme
 import app.podium.core.interaction.InputRouter
 import app.podium.core.interaction.LocalInputRouter
@@ -85,6 +87,24 @@ class LyricsScreenTest {
     @Test fun secondLineHalfSung() = check("lyrics-line-2-half", 15_200, PHONE, expectLight = false)
 
     @Test fun consent() = check("lyrics-consent", 0, PHONE, expectLight = true, answer = LyricsResult.NeedsConsent)
+
+    // Classic's paper kept still (D-100): black stays black, white stays white, line after line.
+    @Test fun blackStaysOnALightLine() = check("lyrics-black-line-1", 11_000, PHONE, expectLight = false, background = LyricsBackground.BLACK)
+
+    @Test fun blackStaysOnADarkLine() = check("lyrics-black-line-2", 15_000, PHONE, expectLight = false, background = LyricsBackground.BLACK)
+
+    @Test fun blackBeforeTheFirstLine() = check("lyrics-black-intro", 0, PHONE, expectLight = false, background = LyricsBackground.BLACK)
+
+    @Test fun whiteStaysOnADarkLine() = check("lyrics-white-line-2", 15_000, PHONE, expectLight = true, background = LyricsBackground.WHITE)
+
+    @Test
+    fun `the paper turns with the lines only when automatic, and never in the line theme`() {
+        assertEquals(listOf(false, true, false, true), (0..3).map { lyricInverted(LyricsBackground.AUTOMATIC, false, true, it) })
+        assertEquals(false, lyricInverted(LyricsBackground.AUTOMATIC, false, hasLines = false, index = 1), "light until there are lines")
+        assertTrue((0..3).all { lyricInverted(LyricsBackground.BLACK, false, true, it) })
+        assertTrue((0..3).none { lyricInverted(LyricsBackground.WHITE, false, true, it) })
+        assertTrue(LyricsBackground.entries.none { lyricInverted(it, continuous = true, hasLines = true, index = 1) })
+    }
 
     // Classic with no lyrics found: the orb shows the music, on black (D-83).
     @Test fun notFound() = check("lyrics-not-found", 0, SMALL, expectLight = false, answer = LyricsResult.NotFound, dark = OrbRenderer.Black)
@@ -187,7 +207,15 @@ class LyricsScreenTest {
         }
     }
 
-    private fun check(name: String, position: Long, qualifiers: String, expectLight: Boolean, answer: LyricsResult? = null, dark: androidx.compose.ui.graphics.Color = CarbonColors.canvas) {
+    private fun check(
+        name: String,
+        position: Long,
+        qualifiers: String,
+        expectLight: Boolean,
+        answer: LyricsResult? = null,
+        dark: androidx.compose.ui.graphics.Color = CarbonColors.canvas,
+        background: LyricsBackground = LyricsBackground.AUTOMATIC,
+    ) {
         RuntimeEnvironment.setQualifiers(qualifiers)
         // The orb animates for as long as it shows: the clock is moved by hand.
         compose.mainClock.autoAdvance = false
@@ -199,7 +227,11 @@ class LyricsScreenTest {
         compose.setContent {
             PodiumTheme(darkTheme = true, glassTier = GlassTier.Solid, displayTheme = DisplayTheme.CARBON) {
                 val palette = DeviceAppearance(FinishPreset.STEEL_GRAY, display = DisplayTheme.CARBON).palette(darkTheme = true)
-                CompositionLocalProvider(LocalInputRouter provides InputRouter(), LocalOverlayHost provides OverlayHost()) {
+                CompositionLocalProvider(
+                    LocalInputRouter provides InputRouter(),
+                    LocalOverlayHost provides OverlayHost(),
+                    LocalLyricsBackground provides background,
+                ) {
                     Box(Modifier.fillMaxSize()) {
                         DeviceBody(palette, Modifier.fillMaxSize())
                         DeviceLayout(
