@@ -100,6 +100,23 @@ class AddonMusicSourceTest {
     }
 
     @Test
+    fun `the address's own query goes with the manifest, search and stream (D-98)`() = runTest {
+        val tokened = AddonMusicSource(AddonConfig(id, "${Fixtures.BASE}?token=s3cret", manifest, mapOf("quality" to "high")), { time }, script)
+        script.on("/manifest.json", body = Fixtures.MANIFEST)
+        assertIs<Outcome.Success<AddonManifest>>(tokened.check())
+        val t = tokened.firstTrack()
+        tokened.playback!!.resolve(t, QualityRequest.Maximum, Purpose.PLAYBACK)
+        assertEquals(
+            listOf(
+                "${Fixtures.BASE}/manifest.json?token=s3cret",
+                "${Fixtures.BASE}/search?token=s3cret&q=one%20more%20time&quality=high",
+                "${Fixtures.BASE}/stream/lt_001?token=s3cret&quality=high",
+            ),
+            script.requested,
+        )
+    }
+
+    @Test
     fun `search keeps to songs and the limit`() = runTest {
         val s = source()
         assertEquals(1, (s.catalog!!.search(SearchQuery("x", limit = 1)) as Outcome.Success).value.tracks.size)

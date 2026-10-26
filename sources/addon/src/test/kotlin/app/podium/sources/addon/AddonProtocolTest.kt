@@ -33,21 +33,43 @@ class AddonProtocolTest {
     }
 
     @Test
-    fun `toggles and text settings, and kinds it can't show are left out`() {
+    fun `toggles and text settings, and kinds it doesn't know are kept as text`() {
         val m = AddonProtocol.manifest(
             """{"name":"Mixed","settings":[
                 {"key":"hires","type":"boolean","label":"Hi-res","default":true},
                 {"key":"region","type":"text","default":"US"},
-                {"key":"colour","type":"color"},
+                {"key":"colour","type":"color","default":"blue"},
                 {"key":"bad key!","type":"text"},
-                {"key":"empty","type":"select","options":[]}
+                {"key":"empty","type":"select","options":[],"default":"x"}
             ]}""".toByteArray(),
         )!!
         assertEquals("Mixed", m.id, "a manifest with a name and no id is named by it")
-        assertEquals(listOf("hires", "region"), m.settings.map { it.key })
-        assertEquals(mapOf("hires" to "true", "region" to "US"), m.settle(emptyMap()))
+        assertEquals(listOf("hires", "region", "colour", "empty"), m.settings.map { it.key }, "only a key it can't send is left out")
+        assertEquals(AddonSetting.Type.TEXT, m.settings[2].type, "an unknown kind: text")
+        assertEquals(AddonSetting.Type.TEXT, m.settings[3].type, "a choice without options: text")
+        assertEquals(mapOf("hires" to "true", "region" to "US", "colour" to "blue", "empty" to "x"), m.settle(emptyMap()), "defaults travel")
         assertEquals("On", m.settings[0].describe("true"))
-        assertEquals(mapOf("hires" to "false", "region" to "EU"), m.settle(mapOf("hires" to "false", "region" to "EU")))
+        assertEquals("EU", m.settle(mapOf("hires" to "false", "region" to "EU"))["region"])
+    }
+
+    @Test
+    fun `a quality setting with no type and value-only options is a choice (D-98)`() {
+        // The shape BitChord-protocol Qobuz bridges serve: BitChord reads only defaults and options.
+        val m = AddonProtocol.manifest(
+            """{"id":"dev.example.qobuz","name":"Qobuz bridge","resources":["search","stream"],"settings":[
+                {"key":"quality","default":"LOSSLESS","options":[{"value":"LOSSLESS"},{"value":"HI_RES"},{"value":"HIGH"},{"value":"LOW"}]},
+                {"key":"prefer","default":"studio"}
+            ]}""".toByteArray(),
+        )!!
+        val quality = m.settings.first()
+        assertEquals(AddonSetting.Type.SELECT, quality.type)
+        assertEquals(listOf("LOSSLESS", "HI_RES", "HIGH", "LOW"), quality.options.map { it.value })
+        assertEquals(listOf("Lossless", "Hi res", "High", "Low"), quality.options.map { it.label }, "named from their values")
+        assertEquals(AddonSetting.Type.TEXT, m.settings[1].type)
+        assertEquals(mapOf("quality" to "LOSSLESS", "prefer" to "studio"), m.settle(emptyMap()))
+        assertEquals("HI_RES", m.settle(mapOf("quality" to "HI_RES"))["quality"])
+        // Kept on the phone in Podium's own shape, it reads back the same.
+        assertEquals(m, Addons.readManifest(Addons.writeManifest(m)))
     }
 
     @Test

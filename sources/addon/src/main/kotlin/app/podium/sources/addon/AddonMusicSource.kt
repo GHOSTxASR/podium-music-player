@@ -44,7 +44,10 @@ import java.security.MessageDigest
 /** One addon the listener added: where it is, what it said about itself, and their settings for it. */
 data class AddonConfig(
     val sourceId: SourceId,
-    /** The addon's address, normalized ([Addons.address]). Can carry the listener's token: never shown or logged. */
+    /**
+     * The addon's address, normalized ([Addons.address]), with the query it was given (a token, say)
+     * if any. Can carry the listener's token: never shown or logged.
+     */
     val base: String,
     val manifest: AddonManifest,
     val settings: Map<String, String> = emptyMap(),
@@ -190,16 +193,28 @@ internal fun AddonTrack.toTrack(sourceId: SourceId): Track = Track(
 
 /** Adding an addon: reading the address, fetching the manifest, naming the source. */
 object Addons {
-    private const val MANIFEST = "/manifest.json"
-
     /**
-     * The address the listener typed or pasted, normalized: with or without `/manifest.json`, https
-     * anywhere, or http to a server on their own network once they agree (D-09).
+     * The address the listener typed or pasted, normalized: https anywhere, or http to a server on
+     * their own network once they agree (D-09).
+     *
+     * - An address that ends in a `.json` file (`/manifest.json`, or any other the addon names itself
+     *   by) is the folder it's in (D-98).
+     * - A query (`?token=…`) is kept as typed and sent with every request: manifest, search and
+     *   stream ([AddonClient]). A fragment is dropped.
      */
     fun address(typed: String): NetworkPolicy.Verdict {
-        var t = typed.trim().trimEnd('/')
-        if (t.endsWith(MANIFEST, ignoreCase = true)) t = t.dropLast(MANIFEST.length)
-        return NetworkPolicy.check(t)
+        val t = typed.trim().substringBefore('#')
+        val query = t.substringAfter('?', "")
+        var path = t.substringBefore('?').trimEnd('/')
+        val afterScheme = path.substringAfter("://")
+        if ('/' in afterScheme && afterScheme.substringAfterLast('/').endsWith(".json", ignoreCase = true)) {
+            path = path.substringBeforeLast('/').trimEnd('/')
+        }
+        return when (val verdict = NetworkPolicy.check(path)) {
+            is NetworkPolicy.Verdict.Secure -> if (query.isEmpty()) verdict else NetworkPolicy.Verdict.Secure("${verdict.base}?$query")
+            is NetworkPolicy.Verdict.LocalCleartext -> if (query.isEmpty()) verdict else NetworkPolicy.Verdict.LocalCleartext("${verdict.base}?$query")
+            is NetworkPolicy.Verdict.Refused -> verdict
+        }
     }
 
     /** A stable id for the addon at [base] that doesn't reveal the address. */

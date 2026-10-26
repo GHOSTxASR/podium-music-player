@@ -316,8 +316,8 @@ internal fun ordinal(n: Int): String {
 
 /**
  * Settings ▸ Custom sources ▸ Add a source: type or paste the source's https address, as the source
- * gives it (with or without /manifest.json). Center, Done or the button adds it; Podium asks the
- * source who it is first.
+ * gives it (a `.json` file at the end is trimmed, a token in its query kept, D-98). Center, Done or
+ * the button adds it; Podium asks the source who it is first.
  */
 @Composable
 fun AddCustomSourceScreen(settings: CustomSourcesSettings, onAdded: (String) -> Unit) {

@@ -124,29 +124,35 @@ internal object AddonProtocol {
         )
     }
 
+    /**
+     * One declared setting. A setting of a kind Podium doesn't know, or with no `type` at all (BitChord
+     * reads only a setting's default and options, so addons often leave it out), is kept, never
+     * dropped (D-98): with options it's a choice, without them text. Either way its default travels
+     * with every request, as it does from BitChord. An option with only a value is named from it
+     * ("HI_RES" → "Hi res").
+     */
     private fun setting(e: JsonElement): AddonSetting? {
         val o = e as? JsonObject ?: return null
         val key = o["key"].text() ?: o["id"].text() ?: o["name"].text() ?: return null
         if (!SETTING_KEY.matches(key)) return null
-        val type = when (o["type"].text()?.lowercase()) {
-            "select", "dropdown", "enum", "choice", "radio" -> AddonSetting.Type.SELECT
-            "boolean", "bool", "toggle", "switch", "checkbox" -> AddonSetting.Type.TOGGLE
-            "text", "string", "input", "password" -> AddonSetting.Type.TEXT
-            else -> return null
-        }
         val options = (o["options"] as? JsonArray).orEmpty().mapNotNull { opt ->
             when (opt) {
-                is JsonPrimitive -> opt.contentOrNull?.let { AddonSetting.Option(it, it) }
+                is JsonPrimitive -> opt.contentOrNull?.trim()?.takeIf { it.isNotEmpty() }?.let { AddonSetting.Option(humanize(it), it) }
                 is JsonObject -> {
                     val value = opt["value"].text() ?: return@mapNotNull null
-                    AddonSetting.Option(opt["label"].text() ?: opt["name"].text() ?: value, value)
+                    AddonSetting.Option(opt["label"].text() ?: opt["name"].text() ?: humanize(value), value)
                 }
                 else -> null
             }
         }.distinctBy { it.value }
-        if (type == AddonSetting.Type.SELECT && options.isEmpty()) return null
+        val type = when (o["type"].text()?.lowercase()) {
+            "select", "dropdown", "enum", "choice", "radio" -> if (options.isEmpty()) AddonSetting.Type.TEXT else AddonSetting.Type.SELECT
+            "boolean", "bool", "toggle", "switch", "checkbox" -> AddonSetting.Type.TOGGLE
+            "text", "string", "input", "password" -> AddonSetting.Type.TEXT
+            else -> if (options.isEmpty()) AddonSetting.Type.TEXT else AddonSetting.Type.SELECT
+        }
         val label = o["label"].text() ?: o["title"].text() ?: o["name"].text()?.takeIf { it != key } ?: humanize(key)
-        return AddonSetting(key, label.take(MAX_NAME), type, o["default"].text(), options)
+        return AddonSetting(key, label.take(MAX_NAME), type, o["default"].text()?.take(AddonSetting.MAX_TEXT), if (type == AddonSetting.Type.SELECT) options else emptyList())
     }
 
     /** A manifest written back in the protocol's own shape (what [manifest] reads). */

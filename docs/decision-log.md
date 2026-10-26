@@ -1276,9 +1276,25 @@ Every significant decision, newest at the bottom. Major ones have an ADR in `adr
     `stream-skip` passes over chosen apps so a device test can prove the others serve.
   - `-Ppodium.applicationIdSuffix=.walktest` builds a copy that installs beside the phone's own app,
     for testing when the installed one was signed with another key.
+- **Custom sources: settings and addresses (the owner's report).** An addon added by its `.json`
+  address showed none of its quality options. Its deployment
+  (`qobuz-addon.vercel.app`) now answers 402 `DEPLOYMENT_DISABLED`, so its manifest couldn't be read.
+  A public addon of the same family declares
+  `{"key":"quality","default":"LOSSLESS","options":[{"value":"LOSSLESS"},…]}`, with **no `type`**.
+  Podium dropped any setting without a known type. BitChord reads only defaults and options and has
+  no settings screen, so addons leave the type out. Both possible drops are fixed:
+  - A setting of an unknown kind, or none, is kept: with options a choice, without them text. Its
+    default travels like any other. A value-only option is named from its value.
+  - An address ending in any `.json` file is trimmed to its folder. A query typed with it (a token)
+    is kept and sent with every request, manifest, search and stream, instead of the address being
+    refused.
+  - An addon already added picks up its settings when its manifest is read again (Check now, or the
+    background checks of D-96).
 - **Verified:** walker tests with a scripted YouTube whose `ANDROID_VR`/`IOS` streams serve only their
   first 256 KB (the walk skips them), both checks and the size fallbacks, the default order, the
   remembered app, the last resort and the debug skip. On the phone, the first song after a cold start
   played without a stall (11.8 s heard after 15 s, as for the songs after it; 5.8 s before), and the
-  two checks at once kept a walk at 0.5–0.8 s.
+  two checks at once kept a walk at 0.5–0.8 s. Addon tests: a type-less quality setting with
+  value-only options is a choice whose default travels; unknown kinds are kept as text; `.json`
+  addresses are trimmed and their query goes with the manifest, search and stream.
 

@@ -23,8 +23,10 @@ import java.net.URLEncoder
  * - `/search?q=…`: songs, each with the addon's own id;
  * - `/stream/{id}`: where that song's audio is.
  *
- * The listener's settings travel with search and stream as query parameters. HTTP failures come back
- * as Podium's errors, never with the address (it can carry the listener's token).
+ * The listener's settings travel with search and stream as query parameters. A query that came with
+ * the address itself (a token, say) goes with every request, the manifest's too, ahead of them (D-98).
+ * HTTP failures come back as Podium's errors, never with the address (it can carry the listener's
+ * token).
  *
  * Asking politely and getting an answer (D-96):
  * - **Paced.** Requests start at least [SPACING_MS] apart, in the order they were made.
@@ -43,24 +45,32 @@ internal class AddonClient(
     private val gate = Mutex()
     private var lastStart: Long? = null
 
+    /** The address without its query, and the query as it was typed (sent with every request). */
+    private val root = base.substringBefore('?')
+    private val fixed = base.substringAfter('?', "")
+
     @Volatile private var heldUntil = 0L
 
     suspend fun manifest(): Outcome<AddonManifest> =
-        call("$base/manifest.json") { AddonProtocol.manifest(it) }
+        call(at("/manifest.json", emptyList())) { AddonProtocol.manifest(it) }
 
     suspend fun search(query: String, settings: Map<String, String>): Outcome<List<AddonTrack>> =
-        call("$base/search?" + query(listOf("q" to query) + settings.toList())) { AddonProtocol.search(it) }
+        call(at("/search", listOf("q" to query) + settings.toList())) { AddonProtocol.search(it) }
 
-    suspend fun stream(id: String, settings: Map<String, String>): Outcome<AddonStream> {
-        val params = if (settings.isEmpty()) "" else "?" + query(settings.toList())
-        return call("$base/stream/${segment(id)}$params") { bytes ->
+    suspend fun stream(id: String, settings: Map<String, String>): Outcome<AddonStream> =
+        call(at("/stream/${segment(id)}", settings.toList())) { bytes ->
             AddonProtocol.stream(bytes)?.let { s -> absolute(s.url)?.let { s.copy(url = it) } }
         }
+
+    /** [path] under the addon, with the address's own query first, then [params]. */
+    private fun at(path: String, params: List<Pair<String, String>>): String {
+        val q = listOfNotNull(fixed.takeIf { it.isNotEmpty() }, query(params).takeIf { params.isNotEmpty() }).joinToString("&")
+        return if (q.isEmpty()) "$root$path" else "$root$path?$q"
     }
 
     /** A stream address relative to the addon (some answer "/files/…") made whole. */
     private fun absolute(url: String): String? =
-        if ("://" in url) url else runCatching { java.net.URI("$base/").resolve(url).toString() }.getOrNull()
+        if ("://" in url) url else runCatching { java.net.URI("$root/").resolve(url).toString() }.getOrNull()
 
     private suspend fun <T> call(url: String, read: (ByteArray) -> T?): Outcome<T> {
         held()?.let { return Outcome.Failure(it) }

@@ -32,6 +32,12 @@ call is a GET under the addon's address, answered with JSON:
 | `/search?q=…` | `tracks[]` (or a bare array, or `results`/`items`): `id`, `title`, `artist` (or `artists[]`), `album`, `duration` (seconds; `durationMs` or `m:ss` also read), `isrc`, `explicit` |
 | `/stream/{id}` | `url`, `format`/`manifest` (`dash`, `hls`, `flac` …), `quality` (free text), `encrypted`/`drm`, `headers`, `expiresAt` |
 
+- **Settings of a kind Podium doesn't know (D-98).** A setting with an unknown `type`, or none (BitChord
+  reads only defaults and options, so addons often leave it out), is kept: with `options` it's a
+  choice, without them text, and its default travels like any other. An option with only a `value`
+  is named from it (`HI_RES` → "Hi res").
+- **The address's own query (D-98).** A query typed with the address (`?token=…`) is kept as typed and
+  sent with every request, the manifest's too, ahead of the settings.
 - **Settings.** The listener's value for each declared setting goes with search and stream as a
   query parameter (`?quality=lossless`). Only declared keys are sent, and only values the addon
   declares (a choice's options, `true`/`false` for a toggle, text up to 256 characters).
@@ -181,7 +187,8 @@ the one exception to "never mid-track" (D-18): only to an EXACT copy, of the son
   straight back to work, and the player asks it again for the song playing and the ones coming up.
   A source asked too often isn't asked until its rest is over. Check now is still there.
 - **Add a source:** type or paste the source's https address as it gives it, for example
-  `https://addon.example.com` (`/manifest.json` on the end is optional).
+  `https://addon.example.com`. A `.json` file on the end (`/manifest.json`, or any other the addon
+  names itself by) is trimmed to its folder; a query (a token) is kept (D-98).
   - **Paste** reads the clipboard.
   - **Center**, Done or **Add source** asks the source for its manifest first. A source that can't
     both search and stream isn't added.
