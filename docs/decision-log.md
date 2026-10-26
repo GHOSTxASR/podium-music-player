@@ -1381,4 +1381,22 @@ Every significant decision, newest at the bottom. Major ones have an ADR in `adr
   lost page started over once, the token on the web player's streams bound to the guest visitor (or
   the video, signed in), a refused token bound the other way and then minted afresh no more often
   than every 5 minutes, the trial app asked only when named, and BotGuard never needed signed in.
+  Suites: `sources:youtubemusic` 120 (2 opt-in live tests skipped), `sources:addon` 43,
+  `feature:nowplaying` 116 and the app's 114 pass. In `player:service` (66), `PlaybackPipelineTest`
+  (5) and `CrossfadeTest` (1) fail when the whole suite runs ("Non-fatal errors detected" from
+  Media3's test runner) and pass alone. They fail the same way on the commit before D-98 (`3d62643`),
+  so the cause is older: some state shared between test classes.
+- **Still open:**
+  - Signed out, one app serves on its own (`VISIONOS`). The TV backup serves but starts songs about
+    5 s later (the pre-roll ad's skip point), and isn't faster signed in.
+  - The web apps (`WEB`, `WEB_REMIX`) would need YouTube's streaming protocol (SABR) in Media3: their
+    plain streams take no web PoToken today. `ANDROID_VR`/`IOS` would need their apps' own
+    attestation. Neither is built.
+  - `WEB_REMIX_SIGNED_IN` should serve for an account with Premium; not tried (the owner's account
+    has none).
+  - Measured on home Wi-Fi only, not on mobile data.
+  - The owner's own custom source couldn't be checked: its deployment is disabled. The settings fix
+    follows a public addon of the same family.
+  - `PlaybackPipelineTest` and `CrossfadeTest` fail together with the rest of `player:service`
+    (above).
 
