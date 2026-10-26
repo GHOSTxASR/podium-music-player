@@ -1198,3 +1198,47 @@ Every significant decision, newest at the bottom. Major ones have an ADR in `adr
   quieter copies placed, other music and silence left unsure. App tests for background checks and
   a rest running out. Autoplay test: a custom source holding the seed is never asked. Not yet heard
   on the phone.
+
+### D-97 · YouTube Music streams found like BitChord: several apps, proven streams (issue #5)
+- **Context:** issue #5. Signed-in listeners on 0.1.2 and 0.1.3 got "Something went wrong playing
+  this song" for online songs. The owner asked for resolution done the way BitChord does it, if
+  that resists these failures better.
+- **Findings (2026-10-26):**
+  - **The message was wrong.** The engine sent its error to Now Playing as the class's own name
+    (`::class.simpleName`). Release builds rename classes (R8), so Now Playing couldn't read it
+    back. It fell back to the raw player error code: a refused stream (HTTP 403) read as
+    "Something went wrong".
+  - **Streams were refused.** Podium got streams from NewPipeExtractor only. That means one route
+    (YouTube's visionOS app), with no check that the stream plays. NewPipeExtractor v0.26.5's
+    signature solver also no longer reads YouTube's current player, so no app that needs one can
+    be used through it.
+  - From this development machine's address YouTube refuses nearly every stream (HTTP 403, for
+    every app), so a phone's results couldn't be reproduced here.
+- **Decision:**
+  - **Errors by a stable name** (`PlaybackErrors.kindOf`), with a refused stream read as such even
+    without it. Misses now say why: "not streamable" or "not permitted" read as "can't play right
+    now", and a resting source as "isn't answering". "Busy" and "isn't answering" have their own
+    words.
+  - **The walk** (`YouTubeStreamWalker`). The player is asked as `ANDROID_VR`, `VISIONOS`, `IOS`
+    and `ANDROID` in turn (apps whose streams need no signature), with a guest visitor id that is
+    renewed after a bot check.
+  - **Proven streams.** Every stream is checked with a two-byte request as its app before the
+    player gets it, and the app's user agent goes with it. The app that last served a stream goes
+    first; one whose stream was refused while playing goes last.
+  - **What can't play, and what can't play yet.** Gone, private and age-restricted songs are misses
+    at once; one app's "not available" isn't final. An answer about another video isn't used.
+    HTTP 429 stops the walk.
+  - **NewPipeExtractor as the failsafe**, its stream proven the same way. Live stations still come
+    from it.
+  - **Not built:** signature and "n" solving, BotGuard PoTokens and the listener's session for the
+    web and TV apps. Each needs YouTube's player JavaScript run on the phone. Running it in the
+    development sandbox, to check a solver, was refused. These are the next tier when wanted.
+- **Verified:**
+  - Walker tests (12) with scripted YouTube answers: order and memory, bot-check renewal, refusals,
+    verdicts, 429, stand-in answers, the failsafe proven before use.
+  - Error-kind tests (3).
+  - Live from this machine: a song whose stream serves was found through `ANDROID_VR` in 1.6 s; a
+    song whose every stream is refused came back "refused", not handed over; a missing video was a
+    miss in 0.35 s.
+  - Not yet on a phone, and not verified in a release build.
+

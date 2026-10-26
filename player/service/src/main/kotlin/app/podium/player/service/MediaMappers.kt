@@ -193,8 +193,15 @@ object AudioQualityMapper {
     }
 }
 
-/** Raised by the data-source resolver when a queue item couldn't be resolved before opening. */
-class PodiumResolveException(val healthOutcome: HealthOutcome?, message: String) : java.io.IOException(message)
+/**
+ * Raised by the data-source resolver when a queue item couldn't be resolved before opening: a
+ * failure ([healthOutcome]) or, when that is null, a miss — why, when known ([missReason]).
+ */
+class PodiumResolveException(
+    val healthOutcome: HealthOutcome?,
+    message: String,
+    val missReason: app.podium.sources.api.MissReason? = null,
+) : java.io.IOException(message)
 
 /**
  * Raised by the data-source resolver when an item built for one kind of stream resolved to another
@@ -221,8 +228,31 @@ object PlaybackErrors {
     private val REFUSED_CODES = setOf(401, 403, 404, 410)
 
     /**
-     * The engine's own classification (published by kind, [PodiumExtras.LAST_ERROR]) back as an
-     * error, so the UI says what actually happened rather than what an error code suggests.
+     * The engine's classification as a stable name, for the session ([PodiumExtras.LAST_ERROR]).
+     * Never the class's own name: release builds rename classes, and the UI could no longer read
+     * it back (issue #5: every error then read "Something went wrong").
+     */
+    fun kindOf(error: PodiumError): String = when (error) {
+        PodiumError.Offline -> "Offline"
+        is PodiumError.Network -> "Network"
+        is PodiumError.Server -> "Server"
+        is PodiumError.AuthRequired -> "AuthRequired"
+        is PodiumError.AuthExpired -> "AuthExpired"
+        is PodiumError.RateLimited -> "RateLimited"
+        is PodiumError.NotFound -> "NotFound"
+        is PodiumError.InvalidMedia -> "InvalidMedia"
+        is PodiumError.UnsupportedFormat -> "UnsupportedFormat"
+        is PodiumError.PolicyDisabled -> "PolicyDisabled"
+        is PodiumError.PermissionRequired -> "PermissionRequired"
+        is PodiumError.Unexpected -> "Unexpected"
+        is PodiumError.Unsupported -> "Unsupported"
+        is PodiumError.NotPlayable -> "NotPlayable"
+        is PodiumError.UserActionRequired -> "UserActionRequired"
+    }
+
+    /**
+     * The engine's own classification (published by kind, [kindOf]) back as an error, so the UI
+     * says what actually happened rather than what an error code suggests.
      */
     fun fromKind(kind: String?): PodiumError? = when (kind) {
         "Offline" -> PodiumError.Offline
@@ -237,6 +267,9 @@ object PlaybackErrors {
         "PolicyDisabled" -> PodiumError.PolicyDisabled()
         "NotPlayable" -> PodiumError.NotPlayable("stream")
         "Unexpected" -> PodiumError.Unexpected()
+        "PermissionRequired" -> PodiumError.PermissionRequired("storage")
+        "Unsupported" -> PodiumError.Unsupported("stream")
+        "UserActionRequired" -> PodiumError.UserActionRequired("source")
         else -> null
     }
 
@@ -253,7 +286,7 @@ object PlaybackErrors {
     fun classify(error: PlaybackException): PodiumError {
         var cause: Throwable? = error.cause
         while (cause != null) {
-            if (cause is PodiumResolveException) return fromHealth(cause.healthOutcome)
+            if (cause is PodiumResolveException) return cause.healthOutcome?.let(::fromHealth) ?: fromMiss(cause.missReason)
             if (cause is HttpDataSource.InvalidResponseCodeException) {
                 return when (cause.responseCode) {
                     401, 403 -> PodiumError.AuthRequired()
@@ -271,6 +304,8 @@ object PlaybackErrors {
         PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED,
         PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT -> PodiumError.Network()
         PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND -> PodiumError.NotFound("file")
+        // Only reached when the engine's own classification isn't at hand: a refused stream.
+        PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS -> PodiumError.NotPlayable("stream refused")
         PlaybackException.ERROR_CODE_IO_NO_PERMISSION -> PodiumError.PermissionRequired("storage")
         PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED,
         PlaybackException.ERROR_CODE_PARSING_MANIFEST_MALFORMED,
@@ -302,5 +337,13 @@ object PlaybackErrors {
         HealthOutcome.POLICY_DISABLED -> PodiumError.PolicyDisabled()
         null, HealthOutcome.MISS -> PodiumError.NotFound("stream")
         else -> PodiumError.Unexpected()
+    }
+
+    /** Why no source had a stream: refused or not allowed here, the source resting, or not there. */
+    private fun fromMiss(reason: app.podium.sources.api.MissReason?): PodiumError = when (reason) {
+        app.podium.sources.api.MissReason.NOT_STREAMABLE -> PodiumError.NotPlayable("stream refused")
+        app.podium.sources.api.MissReason.NOT_PERMITTED -> PodiumError.NotPlayable("not permitted")
+        app.podium.sources.api.MissReason.SOURCE_UNAVAILABLE -> PodiumError.Server()
+        else -> PodiumError.NotFound("stream")
     }
 }

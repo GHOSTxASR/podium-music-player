@@ -748,7 +748,7 @@ class PodiumPlaybackEngine(
         } ?: throw PodiumResolveException(app.podium.sources.api.HealthOutcome.NETWORK_FAILURE, "Timed out resolving $uid")
         return when (outcome) {
             is ResolveOutcome.Resolved -> outcome.selection
-            is ResolveOutcome.Miss -> throw PodiumResolveException(null, "No playable copy for $uid (${outcome.reason})")
+            is ResolveOutcome.Miss -> throw PodiumResolveException(null, "No playable copy for $uid (${outcome.reason})", outcome.reason)
             is ResolveOutcome.Failed -> throw PodiumResolveException(outcome.outcome, "Resolution failed for $uid")
         }
     }
@@ -912,7 +912,7 @@ class PodiumPlaybackEngine(
                 heard.channels?.let { putInt(PodiumExtras.HEARD_CHANNELS, it) }
             }
             putString(PodiumExtras.CONTEXT_LABEL, queue.state.value.context?.label)
-            putString(PodiumExtras.LAST_ERROR, lastError?.let { it::class.simpleName })
+            putString(PodiumExtras.LAST_ERROR, lastError?.let(PlaybackErrors::kindOf))
             putString(PodiumExtras.RECOVERY, recovery?.name)
         }
         onExtrasChanged(extras)

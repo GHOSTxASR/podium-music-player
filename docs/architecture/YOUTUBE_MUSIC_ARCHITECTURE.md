@@ -124,14 +124,41 @@ Podium plays YouTube Music audio natively in its own Media3 audio engine:
   - Stable cache key
 - **Background Playback:** Managed natively by Android's `MediaLibraryService` foreground service with media session notifications, lock-screen controls, and Bluetooth integration.
 
-### 8.2 Stream Extraction Pipeline (BitChord Reference)
+### 8.2 Stream Extraction Pipeline (BitChord Reference, D-97)
 
-To obtain valid progressive audio stream URLs, `sources:youtubemusic` implements a stream extraction pipeline informed by BitChord and established extraction practices:
-1. **Player Endpoint Request:** Requesting the video metadata and adaptive streaming formats from InnerTube (`/youtubei/v1/player`).
-2. **Client Identity Management:** Using supported client configurations (e.g., Android, Web Remix, iOS) capable of retrieving audio streams.
-3. **Cipher & Throttle Deobfuscation:** Extracting and executing signature deciphering and anti-throttle ("n" parameter) algorithms derived from the active YouTube player JavaScript.
-4. **Token Minting (PoToken / BotGuard):** Providing Proof-of-Origin tokens where required to prevent bot detection and 403 playback refusals.
-5. **URL Caching and Pre-expiry Refresh:** Caching resolved URLs with consideration for their TTL (typically ~6 hours) and refreshing proactively before expiry.
+Built like BitChord's resolver: several of YouTube's own apps asked in turn, a stream proven to
+serve audio before the player gets it, NewPipeExtractor as the failsafe
+(`YouTubeMusicStreamResolver`, `YouTubeStreamWalker`, `PlayerIdentities`, `StreamHttp`).
+
+1. **The walk.** `/youtubei/v1/player` is asked as each app in `PlayerIdentities`, in turn:
+   `ANDROID_VR`, `VISIONOS`, `IOS`, `ANDROID`. These apps get plain stream addresses, with no
+   signature to work out. Each request carries the app's own client context and user agent, and a
+   guest visitor id (`/youtubei/v1/visitor_id`, kept six hours).
+2. **Bot checks.** When an app is asked to confirm it isn't a bot, a fresh visitor id is fetched
+   and that app is asked once more.
+3. **Proven before it plays.** The best audio formats (Opus, then AAC, higher bitrate first; no
+   DRC variants) are checked with a two-byte ranged request as the app (two formats per app at
+   most). A refused stream (HTTP 403) is never handed to the player: the next app is asked. The
+   app's user agent goes with the stream (`PlayableMedia.headers`), so the player asks for it as
+   that app too. The app that last served a stream is asked first next time. One whose stream was
+   refused while playing goes last (`forget`).
+4. **Verdicts.** A song gone, private or age-restricted for every app is a miss at once
+   (`NOT_FOUND`, `NOT_PERMITTED`). One app's "not available" isn't the last word: the others are
+   asked. An answer about another video (a stand-in) isn't used. HTTP 429 stops the walk (rate
+   limited, with `Retry-After`).
+5. **The failsafe.** When no app's stream played (all refused, bot checks everywhere, the service
+   unreachable, or the 12 s walk budget spent), NewPipeExtractor is asked. Its stream is proven the
+   same way before it is used. Live stations (§8.3) come from it.
+6. **What the listener is told.** Every stream refused gives a miss "not streamable": Now Playing
+   says the song can't play right now. Bot checks everywhere rest the source for 30 s as rate
+   limited: "The music source is busy". The service unreachable is a network failure.
+7. **Not built yet** (needs YouTube's player JavaScript run on the phone):
+   - signature and "n" solving for the web and TV apps (NewPipeExtractor v0.26.5's solver no longer
+     reads the current player; checked 2026-10-26);
+   - PoTokens minted by BotGuard in a WebView;
+   - the listener's own session for the apps that accept one.
+
+   These would add the apps that need them to the walk.
 
 ### 8.3 Live Radio (D-90)
 
@@ -163,9 +190,13 @@ To obtain valid progressive audio stream URLs, `sources:youtubemusic` implements
 `sources:youtubemusic` maps errors to `PodiumError`:
 - `Offline`: No internet connectivity.
 - `AuthExpired`: Account session invalid or expired; requires re-authentication.
-- `RateLimited`: Backoff with `Retry-After`.
-- `StreamUnavailable`: Extraction or playback failure (e.g., region-locked track, content unavailable).
-- `Server`: Transient remote failure.
+- `RateLimited`: Backoff with `Retry-After` (HTTP 429, or bot checks for every app, §8.2).
+- `NotPlayable`: every stream refused, or not allowed here (region, Premium, age).
+- `NotFound`: the song is gone or private.
+- `Server`: Transient remote failure, or the source resting.
+
+The engine sends its classification to Now Playing by a stable name (`PlaybackErrors.kindOf`),
+never a class's own name: release builds rename classes (issue #5, D-97).
 
 A circuit breaker in `SourceHealthMonitor` distinguishes between transport failures (which open the breaker) and content misses (empty searches or deleted tracks, which never trip the breaker).
 
@@ -174,7 +205,7 @@ A circuit breaker in `SourceHealthMonitor` distinguishes between transport failu
 ## 10. Open Technical Implementation Decisions
 
 The following technical questions pertain to the upcoming implementation phase and represent engineering tradeoffs rather than product ambiguities:
-1. **Extractor Integration Strategy:** Choosing between leveraging an established standalone library (e.g., NewPipeExtractor, InnerTubeX) or implementing a dedicated Kotlin extraction pipeline within `sources:youtubemusic`.
+1. **Extractor Integration Strategy:** decided (D-97): Podium's own walk over YouTube's apps, with NewPipeExtractor as the failsafe (§8.2).
 2. **Cipher Execution Engine:** Deciding whether to evaluate player JavaScript via a lightweight embedded engine (e.g., QuickJS) or via AST-derived pattern matching.
 3. **BotGuard PoToken Strategy:** Establishing the most resilient mechanism for generating Proof-of-Origin tokens on Android (e.g., headless WebView helper or equivalent).
 4. **Seeking & Buffer Configuration:** Tuning Media3 `DefaultLoadControl` and OkHttp data source buffer sizes for progressive audio streams.
