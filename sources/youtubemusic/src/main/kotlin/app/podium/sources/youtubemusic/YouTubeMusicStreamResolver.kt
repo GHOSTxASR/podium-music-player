@@ -65,12 +65,15 @@ internal open class YouTubeMusicStreamResolver(
     scriptCache: PlayerScriptCache? = null,
     /** The listener's session when signed in, for the apps that accept one (D-98). */
     session: () -> StreamSession? = { null },
+    /** Pages at a site's origin: BotGuard's, for the apps whose streams need a PoToken (D-98). */
+    pages: OriginPages? = null,
     http: StreamHttp = OkHttpStreamHttp(),
     /** The walk; null leaves NewPipe alone (tests that script extraction themselves). */
     private val walker: YouTubeStreamWalker? = YouTubeStreamWalker(
         http, region, now, memory = memory,
         scripts = if (scriptEngine != null && scriptCache != null) PlayerScripts(http, EjsChallengeSolver(scriptEngine, scriptCache), scriptCache, now) else null,
         session = session,
+        poTokens = pages?.let { BotGuardMinter(http, it.open(BotGuardMinter.ORIGIN, BotGuardMinter.USER_AGENT), now) },
     ),
 ) {
     private val initialized = AtomicBoolean(false)

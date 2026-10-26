@@ -5,6 +5,7 @@ import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.Headers.Companion.toHeaders
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -47,7 +48,8 @@ internal class OkHttpStreamHttp(
 ) : StreamHttp {
 
     override suspend fun post(url: String, headers: Map<String, String>, body: ByteArray): HttpResponse {
-        val request = Request.Builder().url(checked(url)).headers(headers.toHeaders()).post(body.toRequestBody(JSON)).build()
+        val type = headers.entries.firstOrNull { it.key.equals("Content-Type", ignoreCase = true) }?.value?.toMediaTypeOrNull() ?: JSON
+        val request = Request.Builder().url(checked(url)).headers(headers.toHeaders()).post(body.toRequestBody(type)).build()
         return execute(request, MAX_ANSWER_BYTES, tooLarge = true)
     }
 

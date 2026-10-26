@@ -44,6 +44,10 @@ import java.util.concurrent.CopyOnWriteArrayList
  *   asked with the listener's session when they're signed in, and passed over when they aren't. The
  *   session goes only to YouTube's own hosts, with the player request; never to a stream's server,
  *   never to the player, never into the trace.
+ * - **PoTokens (D-98).** Apps whose streams serve past their first part only with a token
+ *   ([PlayerIdentity.needsPoToken]) get one from BotGuard ([BotGuardMinter]) on their addresses
+ *   (`pot=`), bound to the guest visitor id the player was asked with (or the video, signed in). A
+ *   stream refused with it is tried bound the other way, then with BotGuard asked afresh.
  * - **The pre-roll ad's wait.** An answer that comes with an ad before the song serves the song only
  *   once the ad could have been skipped; the check waits for that (up to [MAX_AD_WAIT_MS]).
  * - **What can't play, and what can't play yet.** A song that is gone, private or age-restricted is a
@@ -63,6 +67,8 @@ internal class YouTubeStreamWalker(
     private val scripts: PlayerScripts? = null,
     /** The listener's session when they're signed in, for the apps that accept one; null passes those over. */
     private val session: () -> StreamSession? = { null },
+    /** BotGuard, for the apps whose streams need a PoToken; null passes over those that can't do without. */
+    private val poTokens: BotGuardMinter? = null,
 ) {
     sealed interface Result {
         data class Found(val stream: Stream) : Result
@@ -140,6 +146,9 @@ internal class YouTubeStreamWalker(
                 }
                 if (identity.needsPlayerScript && scripts == null) continue
                 if (identity.needsSession && signedIn == null) continue
+                if (identity.trial && identity.key !in StreamWalkDebug.potFor) continue
+                // Signed out, a token is the only way these serve; signed in, Premium may do without.
+                if (identity.needsPoToken && poTokens == null && !identity.needsSession) continue
                 var verdict = ask(identity, videoId, signedIn)
                 if (verdict == Verdict.BotCheck && !rotated) {
                     rotated = true
@@ -359,7 +368,22 @@ internal class YouTubeStreamWalker(
             seen.notes += "ad ${adWait / 1000} s"
             if (early > 0) delay(early)
         }
-        for ((i, candidate) in candidates.withIndex()) {
+        // A PoToken for the apps that need one: bound to the visitor the player was asked as, else the video.
+        val minter = poTokens?.takeIf { identity.needsPoToken || identity.key in StreamWalkDebug.potFor }
+        // The visitor the answer was issued for (YouTube may name another than the one asked with).
+        val issuedTo = json.obj("responseContext")?.str("visitorData")?.takeIf { it.isNotEmpty() } ?: visitorData
+        if (minter != null && issuedTo != null && visitorData != null && issuedTo != visitorData) seen.notes += "visitor changed"
+        val bindings = if (minter == null) emptyList() else listOfNotNull(issuedTo?.let { "visitor" to it }, "video" to videoId)
+        val pot = if (minter != null) {
+            val started = now()
+            minter.token(bindings.first().second).also {
+                seen.notes += if (it != null) "pot ${bindings.first().first} in ${now() - started} ms" else "no pot"
+            }
+        } else {
+            null
+        }
+        val withPot = if (pot == null) candidates else candidates.map { it.copy(url = withParam(it.url, "pot", pot)) }
+        for ((i, candidate) in withPot.withIndex()) {
             var code = check(candidate, identity, seen) ?: return Verdict.Unreachable
             // Checked a little early for the ad: once more when it could be skipped.
             if (code == 403 && i == 0 && adWait > 0 && now() < servesAt + AD_EARLY_MS) {
@@ -367,6 +391,24 @@ internal class YouTubeStreamWalker(
                 code = check(candidate, identity, seen) ?: return Verdict.Unreachable
             }
             if (code in 200..299) return Verdict.Plays(candidate)
+        }
+        if (minter != null && pot != null && candidates.isNotEmpty()) {
+            // Refused with the token: bound the other way, then with BotGuard asked afresh.
+            val first = candidates.first()
+            for ((name, id) in bindings.drop(1)) {
+                val other = minter.token(id) ?: continue
+                seen.notes += "pot $name"
+                val c = first.copy(url = withParam(first.url, "pot", other))
+                if ((check(c, identity, seen) ?: return Verdict.Unreachable) in 200..299) return Verdict.Plays(c)
+            }
+            if (minter.forget()) {
+                val fresh = minter.token(bindings.first().second)
+                seen.notes += if (fresh != null) "pot minted again" else "no pot again"
+                if (fresh != null) {
+                    val c = first.copy(url = withParam(first.url, "pot", fresh))
+                    if ((check(c, identity, seen) ?: return Verdict.Unreachable) in 200..299) return Verdict.Plays(c)
+                }
+            }
         }
         return Verdict.Refused
     }
@@ -693,6 +735,7 @@ interface StreamWalkMemory {
  * - [trace]: one line per app asked (HTTP code, playability status, YouTube's reason, the check's
  *   codes per format) and one for how the walk ended. Never an address, a cookie or a visitor id.
  * - [skipped]: apps the walk passes over, so a device test can prove the others serve songs.
+ * - [potFor]: apps given a PoToken although they aren't known to need one; trial apps named here are asked.
  */
 object StreamWalkDebug {
     @Volatile
@@ -700,6 +743,10 @@ object StreamWalkDebug {
 
     @Volatile
     var skipped: Set<String> = emptySet()
+
+    /** Apps given a PoToken although they aren't known to need one, and trial apps to ask (device tests of whether it helps). */
+    @Volatile
+    var potFor: Set<String> = emptySet()
 
     internal inline fun note(line: () -> String) {
         trace?.invoke(line())

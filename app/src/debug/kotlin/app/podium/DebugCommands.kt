@@ -150,6 +150,10 @@ internal fun handleDebugIntent(intent: Intent?, graph: AppGraph) {
         // --es podium.apps VISIONOS,ANDROID_VR (none: every app again). In memory until a restart.
         "stream-skip" -> app.podium.sources.youtubemusic.StreamWalkDebug.skipped =
             intent.getStringExtra("podium.apps").orEmpty().split(',').map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+        // Give a PoToken to apps not known to need one (D-98), to see if it helps:
+        // --es podium.apps ANDROID_VR,IOS (none: back to those that need one).
+        "stream-pot" -> app.podium.sources.youtubemusic.StreamWalkDebug.potFor =
+            intent.getStringExtra("podium.apps").orEmpty().split(',').map { it.trim() }.filter { it.isNotEmpty() }.toSet()
         // Where the backup apps' player script runs (D-98): --es podium.engine webview | sandbox.
         "script-engine" -> {
             ScriptEngineDebug.forceWebView = intent.getStringExtra("podium.engine") == "webview"

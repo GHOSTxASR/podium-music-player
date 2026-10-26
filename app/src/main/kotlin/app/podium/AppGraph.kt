@@ -113,6 +113,8 @@ class AppGraph(val context: Context) {
         // The backup apps' player script (D-98): run off the app's process, kept prepared in the cache.
         scriptEngine = scriptEngine,
         scriptCache = app.podium.sources.youtubemusic.DirectoryPlayerScriptCache(java.io.File(context.cacheDir, "player-scripts")),
+        // A hidden page the online source mints its PoTokens in (D-98).
+        pages = HiddenOriginPages(context),
     )
 
     @Volatile

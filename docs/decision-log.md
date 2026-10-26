@@ -1339,6 +1339,29 @@ Every significant decision, newest at the bottom. Major ones have an ADR in `adr
       a PoToken (the account has no Premium). It goes after `ANDROID_VR` and `IOS`, since its answers
       can make the walk wait out an ad first. Those songs played from the NewPipe failsafe in
       2.4–4.2 s.
+- **Tier b: PoTokens (2026-10-26).** Built after NewPipe's BotGuard helper (GPL-3.0, as Podium; the
+  one Metrolist and BitChord use):
+  - The pieces: `BotGuardMinter` and `OriginPage`, with `HiddenOriginPage` as the hidden WebView. The
+    WebView sits at YouTube's origin, never goes online, and refuses navigation. Podium sends
+    `jnn/v1/Create` and `GenerateIT` itself. The page runs the challenge and mints tokens from the
+    integrity token, kept per binding.
+  - Tokens are bound to the visitor the player was asked as, or the video. A refused token is tried
+    bound the other way, then BotGuard is asked afresh, at most every 5 minutes. A page that lost
+    BotGuard starts over once.
+  - **Measured.**
+    - On the phone, BotGuard was ready in 0.55–0.64 s and minted tokens. Solved `WEB_REMIX` streams
+      (signed out) were refused with them, bound to the guest visitor or to the video, on 6 walks.
+    - `ANDROID_VR` and `IOS` were refused with them too, on 4 walks (they likely need their apps'
+      own attestation, not a web token). So no token goes on them.
+    - The cause isn't the WebView. Tokens minted in desktop Chrome at youtube.com, bound to YouTube
+      Music's own visitor id in either form, with or without a player token in the request
+      (`serviceIntegrityDimensions`), were refused by the same solved streams.
+    - Plain (https) web streams don't take a web PoToken today. yt-dlp's web clients have moved to
+      the streaming protocol (SABR), which Media3 doesn't play.
+  - **Decision.** The minter stays, tested and ready. The signed-out `WEB_REMIX` is a trial app,
+    asked only when a debug build names it (`stream-pot WEB_REMIX`). `WEB_REMIX_SIGNED_IN` is asked
+    without a token (Premium needs none). The default walk never opens the BotGuard page: on the
+    phone, `VISIONOS` still served in 0.45–1.05 s with nothing else touched.
 - **Verified:** walker tests with a scripted YouTube whose `ANDROID_VR`/`IOS` streams serve only their
   first 256 KB (the walk skips them), both checks and the size fallbacks, the default order, the
   remembered app, the last resort and the debug skip. On the phone, the first song after a cold start
@@ -1353,5 +1376,9 @@ Every significant decision, newest at the bottom. Major ones have an ADR in `adr
   this laptop in 5.8 s. Tier a2 tests (`SignedInWalkTest`): the session apps passed over when signed
   out; signed in, the session sent on the right host only (`www` for the TV app, `music` for the web
   player), as the chosen channel, with the browser's agent for the web player, never with a check;
-  a refusal while playing names the signed-in app.
+  a refusal while playing names the signed-in app. Tier b tests (`PoTokensTest`): minting from
+  BotGuard's integrity token (both shapes of challenge, the service headers, kept per binding), a
+  lost page started over once, the token on the web player's streams bound to the guest visitor (or
+  the video, signed in), a refused token bound the other way and then minted afresh no more often
+  than every 5 minutes, the trial app asked only when named, and BotGuard never needed signed in.
 

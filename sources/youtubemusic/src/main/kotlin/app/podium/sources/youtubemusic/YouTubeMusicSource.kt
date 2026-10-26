@@ -91,13 +91,14 @@ class YouTubeMusicSource internal constructor(
     streamMemory: StreamWalkMemory = StreamWalkMemory.None,
     scriptEngine: ScriptEngine? = null,
     scriptCache: PlayerScriptCache? = null,
+    pages: OriginPages? = null,
 ) : MusicSource {
 
     /**
      * [userAgent] is the device's own web browser user agent (the same one Google's sign-in page
      * saw); [region] the listener's country; [streamMemory] keeps the app that last served a stream
      * across restarts; [scriptEngine] and [scriptCache] run and keep YouTube's player script for the
-     * backup apps that need it (D-98).
+     * backup apps that need it; [pages] opens the hidden page BotGuard mints their PoTokens in (D-98).
      */
     constructor(
         credentials: CredentialStore,
@@ -106,9 +107,10 @@ class YouTubeMusicSource internal constructor(
         streamMemory: StreamWalkMemory = StreamWalkMemory.None,
         scriptEngine: ScriptEngine? = null,
         scriptCache: PlayerScriptCache? = null,
+        pages: OriginPages? = null,
     ) : this(
         credentials, UrlConnectionTransport(), userAgent, region, System::currentTimeMillis,
-        streamMemory = streamMemory, scriptEngine = scriptEngine, scriptCache = scriptCache,
+        streamMemory = streamMemory, scriptEngine = scriptEngine, scriptCache = scriptCache, pages = pages,
     )
 
     private val id = SOURCE_ID
@@ -125,6 +127,7 @@ class YouTubeMusicSource internal constructor(
         scriptEngine = scriptEngine,
         scriptCache = scriptCache,
         session = ::streamSession,
+        pages = pages,
     )
 
     private val browserAgent = userAgent

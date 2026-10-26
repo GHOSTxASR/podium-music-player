@@ -178,9 +178,14 @@ serve audio before the player gets it, NewPipeExtractor as the failsafe
 7. **What the listener is told.** Every stream refused gives a miss "not streamable": Now Playing
    says the song can't play right now. Bot checks everywhere rest the source for 30 s as rate
    limited: "The music source is busy". The service unreachable is a network failure.
-8. **Not built yet:**
-   - PoTokens minted by BotGuard in a WebView (`WEB_REMIX`'s solved streams, like `ANDROID_VR`'s and
-     `IOS`'s, serve only their first part without one, signed in too, unless the account has Premium);
+8. **PoTokens (D-98), built, not used by default.** BotGuard runs in a hidden WebView at YouTube's
+   origin (`BotGuardMinter`, `OriginPage`, `HiddenOriginPage`). Podium sends `jnn/v1/Create` and
+   `GenerateIT` itself, and tokens are minted per binding (guest visitor, else video). They go on
+   stream addresses as `pot=`; a refused one is re-bound, then minted afresh (at most every 5
+   minutes). Measured on 2026-10-26, solved `WEB_REMIX` streams and `ANDROID_VR`/`IOS` streams
+   refused web tokens: the phone's, and desktop Chrome's, with or without a player token. So
+   `WEB_REMIX` (signed out) is a trial app, asked only when a debug build names it
+   (`stream-pot WEB_REMIX`); the default walk never opens the page.
    - `WEB` isn't usable: it hands out streaming-protocol (SABR) audio only.
 
 ### 8.3 Live Radio (D-90)
@@ -230,5 +235,5 @@ A circuit breaker in `SourceHealthMonitor` distinguishes between transport failu
 The following technical questions pertain to the upcoming implementation phase and represent engineering tradeoffs rather than product ambiguities:
 1. **Extractor Integration Strategy:** decided (D-97): Podium's own walk over YouTube's apps, with NewPipeExtractor as the failsafe (§8.2).
 2. **Cipher Execution Engine:** decided (D-98): yt-dlp's challenge solver (yt-dlp-ejs) run on the player's own script in JavaScriptSandbox, or a hidden WebView where it isn't offered (§8.2).
-3. **BotGuard PoToken Strategy:** Establishing the most resilient mechanism for generating Proof-of-Origin tokens on Android (e.g., headless WebView helper or equivalent).
+3. **BotGuard PoToken Strategy:** built (D-98): a hidden WebView at YouTube's origin, after NewPipe's helper. Open: plain web streams refuse web tokens today (§8.2); SABR would be needed for the web apps.
 4. **Seeking & Buffer Configuration:** Tuning Media3 `DefaultLoadControl` and OkHttp data source buffer sizes for progressive audio streams.

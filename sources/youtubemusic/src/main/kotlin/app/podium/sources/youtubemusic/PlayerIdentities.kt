@@ -27,6 +27,13 @@ internal data class PlayerIdentity(
     val needsSession: Boolean = false,
     /** Asks (and its streams are asked for) as the browser the listener signed in with. */
     val usesSessionAgent: Boolean = false,
+    /** Its streams serve past their first part only with a PoToken (`pot=`) minted by BotGuard (D-98). */
+    val needsPoToken: Boolean = false,
+    /**
+     * Not asked unless a debug build names it ([StreamWalkDebug.potFor]): an app measured not to serve
+     * yet, kept to be tried again on a device (D-98).
+     */
+    val trial: Boolean = false,
 )
 
 internal object PlayerIdentities {
@@ -76,9 +83,26 @@ internal object PlayerIdentities {
     val TVHTML5_SIGNED_IN = TVHTML5.copy(key = "TVHTML5_SIGNED_IN", needsSession = true)
 
     /**
+     * YouTube Music's web player, signed out (D-98): enciphered streams that serve only their first
+     * part without a PoToken. A trial: on 2026-10-26 its solved streams were refused with web
+     * PoTokens too (minted on the phone, and in desktop Chrome), bound to the guest visitor or the
+     * video, with or without a player token. Asked only when a debug build names it.
+     */
+    val WEB_REMIX = PlayerIdentity(
+        key = "WEB_REMIX",
+        clientId = 67,
+        version = "1.20260707.12.00",
+        userAgent = BotGuardMinter.USER_AGENT,
+        needsPlayerScript = true,
+        host = "music.youtube.com",
+        needsPoToken = true,
+        trial = true,
+    )
+
+    /**
      * YouTube Music's web player as the signed-in listener (D-98), from the browser they signed in
-     * with. Its streams are enciphered; without a PoToken they serve only their first part unless the
-     * account has Premium.
+     * with. Its streams are enciphered, and serve only their first part unless the account has
+     * Premium (web PoTokens didn't change that, measured 2026-10-26; a debug build can still add one).
      */
     val WEB_REMIX_SIGNED_IN = PlayerIdentity(
         key = "WEB_REMIX_SIGNED_IN",
@@ -111,7 +135,7 @@ internal object PlayerIdentities {
      * streams serve only their first part (unless the account has Premium), and its answers can make
      * the walk wait out an ad first. Signed-in apps are asked only when the listener is signed in.
      */
-    val ALL = listOf(VISIONOS, TVHTML5, TVHTML5_SIGNED_IN, ANDROID_VR, IOS, WEB_REMIX_SIGNED_IN, ANDROID)
+    val ALL = listOf(VISIONOS, TVHTML5, TVHTML5_SIGNED_IN, ANDROID_VR, IOS, WEB_REMIX, WEB_REMIX_SIGNED_IN, ANDROID)
 
     /** The app a stream address was handed to, from its `c=` parameter (the signed-out one, where both exist). */
     fun of(streamUrl: String): PlayerIdentity? {

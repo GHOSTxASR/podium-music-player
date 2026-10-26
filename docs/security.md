@@ -119,7 +119,12 @@ Scope: `sources:youtubemusic`, `player:remote`, the sign-in WebView, the online 
   (checked before it's added): cookies, a SAPISIDHASH made for that request, the chosen channel.
   Never to a stream's server, never to the player, never logged (`StreamSession.toString` says
   nothing).
-- **Logged.** Debug builds only (`PodiumStreams`, `PodiumScripts`): app names, codes, times, and the
+- **BotGuard (PoTokens).** When a token is needed (not on the default walk today), BotGuard runs in a
+  hidden WebView at YouTube's origin that never goes online, refuses navigation, and has file and
+  content access off. Its two service requests are sent by Podium's own client with YouTube's public
+  web key (the one its pages send; not a secret). Tokens are bound to the guest visitor id or a
+  video, never to the listener.
+- **Logged.** Debug builds only (`PodiumStreams`, `PodiumScripts`, `PodiumPage`): app names, codes, times, and the
   solver's error class and JavaScript message. Never an address, a cookie or a visitor id.
 
 ## 10. Custom sources (D-91, 2026-10-19)
