@@ -102,11 +102,17 @@ class AppGraph(val context: Context) {
      * ONLINE (D-38, D-48): YouTube Music — its catalogue and the listener's account read here, its
      * songs played by Podium itself. The device's own browser user agent, warmed off the main thread.
      */
+    /** Runs the online source's player script for its backup apps (D-98), off the app's own process. */
+    internal val scriptEngine = AndroidScriptEngine(context)
+
     val youtubeMusic = YouTubeMusicSource(
         credentials,
         userAgent = { webUserAgent },
         region = { java.util.Locale.getDefault().country.takeIf { it.length == 2 } ?: "US" },
         streamMemory = PrefsStreamWalkMemory(context),
+        // The backup apps' player script (D-98): run off the app's process, kept prepared in the cache.
+        scriptEngine = scriptEngine,
+        scriptCache = app.podium.sources.youtubemusic.DirectoryPlayerScriptCache(java.io.File(context.cacheDir, "player-scripts")),
     )
 
     @Volatile

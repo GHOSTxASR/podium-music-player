@@ -23,6 +23,9 @@ internal interface StreamHttp {
     /** One request to YouTube's own API. */
     suspend fun post(url: String, headers: Map<String, String>, body: ByteArray): HttpResponse
 
+    /** One page or script from YouTube (the player's script, D-98), at most [maxBytes] read. */
+    suspend fun get(url: String, headers: Map<String, String>, maxBytes: Int): HttpResponse
+
     /**
      * The status of one range of a stream (`0-`, open-ended as the player asks, or `from-to`), with
      * two bytes read at most: whether it really serves audio there.
@@ -45,12 +48,17 @@ internal class OkHttpStreamHttp(
 
     override suspend fun post(url: String, headers: Map<String, String>, body: ByteArray): HttpResponse {
         val request = Request.Builder().url(checked(url)).headers(headers.toHeaders()).post(body.toRequestBody(JSON)).build()
-        return execute(request, MAX_ANSWER_BYTES)
+        return execute(request, MAX_ANSWER_BYTES, tooLarge = true)
+    }
+
+    override suspend fun get(url: String, headers: Map<String, String>, maxBytes: Int): HttpResponse {
+        val request = Request.Builder().url(checked(url)).headers(headers.toHeaders()).get().build()
+        return execute(request, maxBytes, tooLarge = true)
     }
 
     override suspend fun probe(url: String, headers: Map<String, String>, range: String): Int {
         val request = Request.Builder().url(checked(url)).headers((headers + ("Range" to "bytes=$range")).toHeaders()).get().build()
-        return execute(request, PROBE_BYTES).code
+        return execute(request, PROBE_BYTES, tooLarge = false).code
     }
 
     private fun checked(url: String): String {
@@ -60,7 +68,8 @@ internal class OkHttpStreamHttp(
         return url
     }
 
-    private suspend fun execute(request: Request, cap: Int): HttpResponse = suspendCancellableCoroutine { cont ->
+    /** [tooLarge]: an answer that fills [cap] is refused (an API answer or a script); a check just stops reading. */
+    private suspend fun execute(request: Request, cap: Int, tooLarge: Boolean): HttpResponse = suspendCancellableCoroutine { cont ->
         val call = client.newCall(request)
         cont.invokeOnCancellation { call.cancel() }
         call.enqueue(object : Callback {
@@ -70,13 +79,13 @@ internal class OkHttpStreamHttp(
             }
 
             override fun onResponse(call: Call, response: Response) {
-                val answer = runCatching { response.use { read(it, cap) } }
+                val answer = runCatching { response.use { read(it, cap, tooLarge) } }
                 answer.fold(cont::resume) { cont.resumeWithException(IOException(it.javaClass.simpleName)) }
             }
         })
     }
 
-    private fun read(response: Response, cap: Int): HttpResponse {
+    private fun read(response: Response, cap: Int, tooLarge: Boolean): HttpResponse {
         val body = response.body
         val bytes = body?.byteStream()?.use { input ->
             val out = java.io.ByteArrayOutputStream()
@@ -86,7 +95,7 @@ internal class OkHttpStreamHttp(
                 if (n < 0) break
                 out.write(buffer, 0, n)
             }
-            if (out.size() >= cap && cap == MAX_ANSWER_BYTES) throw IOException("answer too large")
+            if (tooLarge && out.size() >= cap) throw IOException("answer too large")
             out.toByteArray()
         } ?: ByteArray(0)
         return HttpResponse(response.code, bytes, response.header("Retry-After")?.trim()?.toLongOrNull())

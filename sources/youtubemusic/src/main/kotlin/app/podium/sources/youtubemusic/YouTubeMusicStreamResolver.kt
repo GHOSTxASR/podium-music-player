@@ -60,8 +60,15 @@ internal open class YouTubeMusicStreamResolver(
     private val now: () -> Long = System::currentTimeMillis,
     /** The app that last served, kept across restarts (D-98). */
     memory: StreamWalkMemory = StreamWalkMemory.None,
+    /** Runs the player's script for the apps that need it, and keeps it prepared (D-98); null passes those apps over. */
+    scriptEngine: ScriptEngine? = null,
+    scriptCache: PlayerScriptCache? = null,
+    http: StreamHttp = OkHttpStreamHttp(),
     /** The walk; null leaves NewPipe alone (tests that script extraction themselves). */
-    private val walker: YouTubeStreamWalker? = YouTubeStreamWalker(OkHttpStreamHttp(), region, now, memory = memory),
+    private val walker: YouTubeStreamWalker? = YouTubeStreamWalker(
+        http, region, now, memory = memory,
+        scripts = if (scriptEngine != null && scriptCache != null) PlayerScripts(http, EjsChallengeSolver(scriptEngine, scriptCache), scriptCache, now) else null,
+    ),
 ) {
     private val initialized = AtomicBoolean(false)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)

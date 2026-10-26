@@ -100,6 +100,23 @@ Scope: `sources:youtubemusic`, `player:remote`, the sign-in WebView, the online 
 | Repository | no API keys, tokens, cookies, signing keys, local paths with secrets, personal data or databases in the tree or history; test values are invented (`sapi-secret/123`) | OK |
 | Remaining risks | the unofficial basis (D-19) can change without notice; a WebView session grants Podium the account's YouTube Music session (necessary for the library — documented to the listener: "You sign in on the service's own page. Podium never sees your password."); debug builds accept debug intents from any app on the device | Accepted |
 
+## 11. YouTube Music's backup apps: running the player's script (D-98, 2026-10-26)
+
+- **What runs.** yt-dlp's challenge solver (yt-dlp-ejs 0.8.0, shipped unchanged with its notices,
+  third_party/CODE.md) runs on YouTube's own player script, which it reads as data. It runs only
+  when the usual apps' streams are refused and a backup needs it.
+- **Where it runs.** In JavaScriptSandbox, V8 in WebView's sandboxed process with no DOM, no network and
+  no access to the app. Where the phone doesn't offer it with large scripts, it runs in a hidden WebView
+  with network loads blocked, file and content access off, and every navigation the page starts
+  refused (the player script navigates a page it finds itself in). Neither is ever shown.
+- **What it fetches.** `iframe_api` and the player script, from `www.youtube.com` only (the stream
+  walk's https allowlist). The prepared script and its signature timestamp are kept per player id in
+  the app's cache (the newest three).
+- **What leaves the phone.** Nothing new. Solved stream addresses go to YouTube's video servers as
+  the player's own requests would.
+- **Logged.** Debug builds only (`PodiumStreams`, `PodiumScripts`): app names, codes, times, and the
+  solver's error class and JavaScript message. Never an address, a cookie or a visitor id.
+
 ## 10. Custom sources (D-91, 2026-10-19)
 
 - **What the listener adds is theirs.** A custom source is an address the listener types or pastes. Podium doesn't vet sources or what they serve; it asks them for streams of songs the listener chose, and nothing else.

@@ -88,6 +88,9 @@ dependencies {
     // Custom sources (D-91): addons the listener adds for their streams.
     implementation(project(":sources:addon"))
     implementation(libs.kotlinx.serialization.json)
+    // The online source's backup apps run YouTube's player script in a sandbox (D-98).
+    implementation(libs.androidx.javascriptengine)
+    implementation(libs.kotlinx.coroutines.guava)
     implementation(project(":feature:nowplaying"))
     implementation(project(":feature:settings"))
     // Deterministic generated test tones: debug builds only, never shipped.

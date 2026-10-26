@@ -1290,11 +1290,49 @@ Every significant decision, newest at the bottom. Major ones have an ADR in `adr
     refused.
   - An addon already added picks up its settings when its manifest is read again (Check now, or the
     background checks of D-96).
+- **Tier a: the player's script, and the TV app (2026-10-26).** `VISIONOS` was the only app serving,
+  so backups were added, each tried only after the app that last served fails and inside the walk's
+  12 s:
+  - **The solver.** yt-dlp's challenge solver (yt-dlp-ejs 0.8.0: Unlicense; it bundles meriyah, ISC,
+    and astring, MIT) runs YouTube's player script (`player_ias…/base.js`; current player from
+    `iframe_api`, rechecked every six hours) on the phone (`PlayerScripts`, `EjsChallengeSolver`).
+    The player is prepared once per player id and the prepared form kept in the cache, with its
+    signature timestamp. All of a walk's `n` and signature challenges go in one batch. An engine
+    that fails is reset and asked once more; a second failure moves the walk on.
+  - **Where it runs** (`AndroidScriptEngine`): JavaScriptSandbox when the phone offers it with large
+    scripts, else a hidden WebView. The WebView never goes online, and it refuses every navigation
+    the page starts. YouTube's player script navigated the page, which wiped the solver's context;
+    found on the phone through the debug switch `script-engine` that forces the WebView. Both close
+    after three minutes unused.
+  - **`TVHTML5`, as yt-dlp's `tv_samsung`** (Samsung TV browser, client version `5.20260707`). The TV
+    page's own config (version `7.20261021…`, its visitor data, and its cookies) was refused ("The
+    page needs to be reloaded"); this one answers. Its streams are enciphered, and they serve only
+    once the pre-roll ad could be skipped (`adPlacements`, skip after 5 s: measured, the addresses
+    turned from 403 to 206 about 3.7–4.3 s after the answer). The walk checks them 1.5 s early and
+    once more just after the skip point. An ad longer than 6 s is a refusal, not a wait. Its
+    visitor id is asked as `ANDROID_VR` (`visitor_id` refuses the TV client with HTTP 400).
+  - **A backup that served goes first for ten minutes only**, then the usual apps are asked first
+    again. Only the usual apps are remembered across restarts, so the working path doesn't stay
+    slow once `VISIONOS` serves again.
+  - **`WEB` isn't a tier.** It hands out streaming-protocol (SABR) audio only, no addresses, which
+    Media3 can't play. `WEB_REMIX`'s solved streams serve only their first part without a PoToken,
+    like `ANDROID_VR`'s and `IOS`'s (tier b).
+  - **Measured on the phone** (`stream-skip VISIONOS` forcing the backup): the ten songs and their
+    radio songs, 26 walks, were all served by `TVHTML5`. Each walk took 4.1–6.8 s, mostly the ad's
+    wait. The first solve took 1.4 s with the player prepared from scratch, later ones 17–137 ms.
+    In the forced WebView, six walks were all served; the first solve took 600 ms (the prepared
+    player reloaded from the cache), later ones 28–41 ms. Songs then start about 5 s later than from
+    `VISIONOS`. None was refused while playing.
 - **Verified:** walker tests with a scripted YouTube whose `ANDROID_VR`/`IOS` streams serve only their
   first 256 KB (the walk skips them), both checks and the size fallbacks, the default order, the
   remembered app, the last resort and the debug skip. On the phone, the first song after a cold start
   played without a stall (11.8 s heard after 15 s, as for the songs after it; 5.8 s before), and the
   two checks at once kept a walk at 0.5–0.8 s. Addon tests: a type-less quality setting with
   value-only options is a choice whose default travels; unknown kinds are kept as text; `.json`
-  addresses are trimmed and their query goes with the manifest, search and stream.
+  addresses are trimmed and their query goes with the manifest, search and stream. Tier a tests
+  (`PlayerScriptsTest`): enciphered streams solved in one batch then checked, a failing solver
+  retried once then moved past, no engine means no TV app, the ad's wait and its limit, the
+  prepared player kept across starts, the cache's eviction, and a backup's ten minutes first. An
+  opt-in live test (`PODIUM_LIVE_NETWORK=1`, node) solved and served a TV stream for "Kesariya" from
+  this laptop in 5.8 s.
 

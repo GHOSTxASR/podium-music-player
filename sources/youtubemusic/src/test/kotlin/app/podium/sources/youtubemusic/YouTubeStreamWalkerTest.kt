@@ -59,6 +59,11 @@ class YouTubeStreamWalkerTest {
             return players[app]?.invoke() ?: HttpResponse(200, unavailable("UNPLAYABLE", "This video is unavailable"))
         }
 
+        val pages = mutableMapOf<String, () -> HttpResponse>()
+
+        override suspend fun get(url: String, headers: Map<String, String>, maxBytes: Int): HttpResponse =
+            pages[url]?.invoke() ?: HttpResponse(404, ByteArray(0))
+
         override suspend fun probe(url: String, headers: Map<String, String>, range: String): Int {
             probed += url to headers["User-Agent"]
             ranges += range
@@ -252,11 +257,11 @@ class YouTubeStreamWalkerTest {
     }
 
     @Test
-    fun `VISIONOS goes first by default and the last resort stays last`() {
+    fun `VISIONOS goes first by default, the TV app next, and the last resort stays last`() {
         val walker = defaultWalker()
-        assertEquals(listOf("VISIONOS", "ANDROID_VR", "IOS", "ANDROID"), walker.order())
+        assertEquals(listOf("VISIONOS", "TVHTML5", "ANDROID_VR", "IOS", "ANDROID"), walker.order())
         walker.demote("VISIONOS")
-        assertEquals(listOf("ANDROID_VR", "IOS", "VISIONOS", "ANDROID"), walker.order())
+        assertEquals(listOf("TVHTML5", "ANDROID_VR", "IOS", "VISIONOS", "ANDROID"), walker.order())
     }
 
     @Test
@@ -278,7 +283,7 @@ class YouTubeStreamWalkerTest {
         assertEquals("VISIONOS", kept)
         // An app this build doesn't know is ignored.
         kept = "SOMETHING_ELSE"
-        assertEquals(listOf("VISIONOS", "ANDROID_VR", "IOS", "ANDROID"), YouTubeStreamWalker(script, memory = memory).order())
+        assertEquals(listOf("VISIONOS", "TVHTML5", "ANDROID_VR", "IOS", "ANDROID"), YouTubeStreamWalker(script, memory = memory).order())
     }
 
     @Test

@@ -5,6 +5,7 @@ import app.podium.sources.api.MissReason
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
@@ -35,6 +36,12 @@ import java.util.concurrent.CopyOnWriteArrayList
  *   first bytes alone passed them. A refused stream (HTTP 403) is never handed over; the next format,
  *   or the next app, is tried instead. The app's own user agent goes with the stream
  *   ([Stream.userAgent]).
+ * - **Backups that need the player's script (D-98).** Apps whose streams come enciphered
+ *   ([PlayerIdentity.needsPlayerScript], `TVHTML5`) are asked like the rest, with the player's
+ *   signature timestamp; their signatures and "n" are solved in one batch by YouTube's own script
+ *   ([PlayerScripts]). Without a script engine they're passed over.
+ * - **The pre-roll ad's wait.** An answer that comes with an ad before the song serves the song only
+ *   once the ad could have been skipped; the check waits for that (up to [MAX_AD_WAIT_MS]).
  * - **What can't play, and what can't play yet.** A song that is gone, private or age-restricted is a
  *   [Result.Unplayable] (asking again won't help); refused streams, bot checks and an unreachable
  *   service are worth trying again, and the caller has a failsafe for them (NewPipe).
@@ -48,6 +55,8 @@ internal class YouTubeStreamWalker(
     identities: List<PlayerIdentity> = PlayerIdentities.ALL,
     private val budgetMillis: Long = WALK_BUDGET_MS,
     private val memory: StreamWalkMemory = StreamWalkMemory.None,
+    /** YouTube's player script and its solver, for the apps that need them; null passes them over. */
+    private val scripts: PlayerScripts? = null,
 ) {
     sealed interface Result {
         data class Found(val stream: Stream) : Result
@@ -112,6 +121,7 @@ internal class YouTubeStreamWalker(
 
     suspend fun walk(videoId: String): Result {
         restore()
+        settleBackup()
         val verdicts = mutableListOf<Verdict>()
         var rotated = false
         val started = now()
@@ -121,6 +131,7 @@ internal class YouTubeStreamWalker(
                     StreamWalkDebug.note { "walk $videoId ${identity.key}: skipped (debug)" }
                     continue
                 }
+                if (identity.needsPlayerScript && scripts == null) continue
                 var verdict = ask(identity, videoId)
                 if (verdict == Verdict.BotCheck && !rotated) {
                     rotated = true
@@ -164,16 +175,35 @@ internal class YouTubeStreamWalker(
         val found = order.firstOrNull { it.key == identity } ?: return
         order.remove(found)
         order.add(found)
-        order.firstOrNull()?.let { memory.served(it.key) }
+        order.firstOrNull { !it.needsPlayerScript }?.let { memory.served(it.key) }
     }
 
+    /**
+     * [identity] served: it goes first. A backup that needs the player's script (slower: the TV app
+     * waits out an ad) goes first only for [BACKUP_FIRST_MS], then the usual apps are asked first
+     * again, so the working path doesn't stay slow once they serve again. Only the usual apps are
+     * remembered across restarts.
+     */
     private fun promote(identity: String) {
         val found = order.firstOrNull { it.key == identity } ?: return
         if (order.firstOrNull() != found) {
             order.remove(found)
             order.add(0, found)
         }
-        memory.served(identity)
+        if (found.needsPlayerScript) backupFirstUntil = now() + BACKUP_FIRST_MS else memory.served(identity)
+    }
+
+    /** Until when a backup that served stays first ([promote]). */
+    @Volatile private var backupFirstUntil = 0L
+
+    /** A backup promoted for longer than it may be goes back behind the usual apps. */
+    private fun settleBackup() {
+        val first = order.firstOrNull() ?: return
+        if (!first.needsPlayerScript || backupFirstUntil == 0L || now() < backupFirstUntil) return
+        backupFirstUntil = 0L
+        order.remove(first)
+        val after = order.indexOfLast { !it.needsPlayerScript } + 1
+        order.add(after, first)
     }
 
     /** The app that served last before a restart, first again. */
@@ -181,7 +211,7 @@ internal class YouTubeStreamWalker(
         if (restored) return
         restored = true
         val remembered = runCatching { memory.lastServed() }.getOrNull() ?: return
-        val found = order.firstOrNull { it.key == remembered } ?: return
+        val found = order.firstOrNull { it.key == remembered && !it.needsPlayerScript } ?: return
         order.remove(found)
         order.add(0, found)
     }
@@ -232,8 +262,9 @@ internal class YouTubeStreamWalker(
         StreamWalkDebug.note {
             val reason = seen.reason?.let { " \"${it.take(TRACE_REASON_CHARS)}\"" }.orEmpty()
             val probes = if (seen.probes.isEmpty()) "" else " probe ${seen.probes.joinToString(", ")}"
+            val notes = if (seen.notes.isEmpty()) "" else " (${seen.notes.joinToString(", ")})"
             "walk $videoId ${identity.key}: http ${seen.http ?: "-"} status ${seen.status ?: "-"}$reason " +
-                "streams ${seen.streams}$probes -> ${verdict.javaClass.simpleName} in ${now() - started} ms"
+                "streams ${seen.streams}$probes$notes -> ${verdict.javaClass.simpleName} in ${now() - started} ms"
         }
         return verdict
     }
@@ -245,17 +276,24 @@ internal class YouTubeStreamWalker(
         var reason: String? = null
         var streams = 0
         val probes = mutableListOf<String>()
+        val notes = mutableListOf<String>()
     }
 
     private suspend fun ask(identity: PlayerIdentity, videoId: String, seen: Seen): Verdict {
+        val player = if (identity.needsPlayerScript) {
+            scripts?.current() ?: return Verdict.Unreachable.also { seen.notes += "no player script" }
+        } else {
+            null
+        }
         val visitorData = visitor(identity)
         val response = try {
-            http.post(PLAYER_URL, headers(identity, visitorData), playerBody(identity, visitorData, videoId))
+            http.post(playerUrl(identity), headers(identity, visitorData), playerBody(identity, visitorData, videoId, player?.signatureTimestamp))
         } catch (e: CancellationException) {
             throw e
         } catch (e: IOException) {
             return Verdict.Unreachable
         }
+        val answeredAt = now()
         seen.http = response.code
         if (response.code == 429) return Verdict.Limited(response.retryAfterSeconds?.takeIf { it > 0 }?.times(1000))
         if (response.code !in 200..299) return Verdict.Unreachable
@@ -268,22 +306,91 @@ internal class YouTubeStreamWalker(
         if (status != null && status != "OK") return unavailable(status, playability.str("reason").orEmpty())
         // An answer about another video: the app was turned away with a stand-in.
         if (json.obj("videoDetails")?.str("videoId") != videoId) return Verdict.Refused
-        val candidates = streams(json, identity)
-        seen.streams = candidates.size
-        for (candidate in candidates.take(PROBES_PER_APP)) {
-            val codes = mutableListOf<String>()
-            val code = try {
-                proves(candidate.url, mapOf("User-Agent" to identity.userAgent), candidate.contentLength, codes)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: IOException) {
-                seen.probes += "${candidate.itag} ${(codes + e.message.orEmpty()).joinToString(" ")}"
+        val formats = formats(json, identity)
+        seen.streams = formats.size
+        val tried = formats.take(PROBES_PER_APP)
+        val candidates = if (player != null) {
+            val started = now()
+            val solved = scripts!!.solve(player, tried.mapNotNull { it.n }.toSet(), tried.mapNotNull { it.s }.toSet())
+            if (solved == null) {
+                seen.notes += "solver failed in ${now() - started} ms"
                 return Verdict.Unreachable
             }
-            seen.probes += "${candidate.itag} ${codes.joinToString(" ")}"
+            seen.notes += "solved in ${now() - started} ms"
+            tried.mapNotNull { it.deciphered(solved) }
+        } else {
+            tried.map { it.stream }
+        }
+        // An ad before the song: its stream serves once the ad could have been skipped.
+        val adWait = adWaitMillis(json)
+        if (adWait > MAX_AD_WAIT_MS) {
+            seen.notes += "ad ${adWait / 1000} s"
+            return Verdict.Refused
+        }
+        val servesAt = answeredAt + adWait
+        if (adWait > 0) {
+            val early = servesAt - AD_EARLY_MS - now()
+            seen.notes += "ad ${adWait / 1000} s"
+            if (early > 0) delay(early)
+        }
+        for ((i, candidate) in candidates.withIndex()) {
+            var code = check(candidate, identity, seen) ?: return Verdict.Unreachable
+            // Checked a little early for the ad: once more when it could be skipped.
+            if (code == 403 && i == 0 && adWait > 0 && now() < servesAt + AD_EARLY_MS) {
+                delay((servesAt + AD_SETTLE_MS - now()).coerceAtLeast(0))
+                code = check(candidate, identity, seen) ?: return Verdict.Unreachable
+            }
             if (code in 200..299) return Verdict.Plays(candidate)
         }
         return Verdict.Refused
+    }
+
+    /** One stream's check, its codes noted for the trace; null when YouTube couldn't be reached. */
+    private suspend fun check(candidate: Stream, identity: PlayerIdentity, seen: Seen): Int? {
+        val codes = mutableListOf<String>()
+        return try {
+            proves(candidate.url, mapOf("User-Agent" to identity.userAgent), candidate.contentLength, codes).also {
+                seen.probes += "${candidate.itag} ${codes.joinToString(" ")}"
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: IOException) {
+            seen.probes += "${candidate.itag} ${(codes + e.message.orEmpty()).joinToString(" ")}"
+            null
+        }
+    }
+
+    /**
+     * How long an ad before the song holds the song's stream back, in milliseconds: each pre-roll's
+     * skip point, or its length when it can't be skipped (as yt-dlp reads it).
+     */
+    private fun adWaitMillis(json: JsonObject): Long {
+        var total = 0L
+        fun ads(node: kotlinx.serialization.json.JsonElement?) {
+            when (node) {
+                is JsonObject -> {
+                    (node["instreamVideoAdRenderer"] as? JsonObject)?.let { ad ->
+                        val skip = ad.str("skipOffsetMilliseconds")?.toLongOrNull()
+                        val length = ad.str("playerVars")?.split('&')?.firstOrNull { it.startsWith("length_seconds=") }
+                            ?.substringAfter('=')?.toLongOrNull()?.times(1000)
+                        total += skip ?: length ?: 0L
+                        return
+                    }
+                    node.values.forEach(::ads)
+                }
+                is JsonArray -> node.forEach(::ads)
+                else -> Unit
+            }
+        }
+        (json["adPlacements"] as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }.forEach { p ->
+            val kind = p.obj("adPlacementRenderer")?.obj("config")?.obj("adPlacementConfig")?.str("kind")
+            if (kind == "AD_PLACEMENT_KIND_START") ads(p.obj("adPlacementRenderer")?.get("renderer"))
+        }
+        (json["adSlots"] as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }.forEach { s ->
+            val trigger = s.obj("adSlotRenderer")?.obj("adSlotMetadata")?.str("triggerEvent")
+            if (trigger == "SLOT_TRIGGER_EVENT_BEFORE_CONTENT") ads(s.obj("adSlotRenderer")?.get("fulfillmentContent"))
+        }
+        return total
     }
 
     private fun unavailable(status: String, reason: String): Verdict = when (status) {
@@ -308,8 +415,25 @@ internal class YouTubeStreamWalker(
         else -> Verdict.Refused
     }
 
-    /** The app's audio streams with plain addresses, best first: Opus, then AAC, higher bitrate first. */
-    private fun streams(json: JsonObject, identity: PlayerIdentity): List<Stream> {
+    /**
+     * A format as the app handed it: a plain address, or (apps that need the player's script) an
+     * enciphered signature `s` to put in `sp`, and the address's `n` to solve.
+     */
+    private class Format(val stream: Stream, val s: String?, val sp: String?, val n: String?) {
+        /** The address with its challenges answered, or null when one wasn't. */
+        fun deciphered(solved: Solutions): Stream? {
+            var url = stream.url
+            if (s != null) url = withParam(url, sp ?: "signature", solved.sig[s] ?: return null)
+            if (n != null) url = withParam(url, "n", solved.n[n] ?: return null)
+            return stream.copy(url = url)
+        }
+    }
+
+    /**
+     * The app's audio formats, best first: Opus, then AAC, higher bitrate first. Plain addresses
+     * only, unless the app's player script can be run.
+     */
+    private fun formats(json: JsonObject, identity: PlayerIdentity): List<Format> {
         val streaming = json.obj("streamingData") ?: return emptyList()
         val expiresIn = streaming.str("expiresInSeconds")?.toLongOrNull()
         val duration = json.obj("videoDetails")?.str("lengthSeconds")?.toLongOrNull()?.takeIf { it > 0 }?.times(1000)
@@ -317,10 +441,12 @@ internal class YouTubeStreamWalker(
         return formats.mapNotNull { f ->
             val mime = f.str("mimeType") ?: return@mapNotNull null
             if (!mime.startsWith("audio/") || f.bool("isDrc") == true) return@mapNotNull null
-            val url = f.str("url") ?: return@mapNotNull null
+            val cipher = f.str("signatureCipher")?.takeIf { identity.needsPlayerScript }?.let(::query)
+            val url = f.str("url") ?: cipher?.get("url") ?: return@mapNotNull null
             val itag = f.str("itag")?.toIntOrNull() ?: return@mapNotNull null
+            if (cipher != null && cipher["s"] == null) return@mapNotNull null
             val bitrate = (f.str("averageBitrate") ?: f.str("bitrate"))?.toIntOrNull()?.takeIf { it > 0 }
-            Stream(
+            Format(Stream(
                 url = url,
                 identity = identity.key,
                 userAgent = identity.userAgent,
@@ -337,14 +463,19 @@ internal class YouTubeStreamWalker(
                 durationMs = duration ?: f.str("approxDurationMs")?.toLongOrNull(),
                 expiresAtMillis = expireOf(url) ?: expiresIn?.let { now() + it * 1000 },
                 contentLength = f.str("contentLength")?.toLongOrNull()?.takeIf { it > 0 },
-            )
-        }.sortedWith(compareBy<Stream> { if (it.codec == Codec.OPUS) 0 else if (it.codec == Codec.AAC) 1 else 2 }.thenByDescending { it.bitrateKbps ?: 0 })
+            ), s = cipher?.get("s"), sp = cipher?.get("sp"), n = if (identity.needsPlayerScript) param(url, "n")?.let(::decoded) else null)
+        }.sortedWith(
+            compareBy<Format> { if (it.stream.codec == Codec.OPUS) 0 else if (it.stream.codec == Codec.AAC) 1 else 2 }
+                .thenByDescending { it.stream.bitrateKbps ?: 0 },
+        )
     }
 
     // --- The guest visitor -------------------------------------------------------------------------------
 
-    private suspend fun visitor(identity: PlayerIdentity, fresh: Boolean = false): String? = visitorLock.withLock {
+    private suspend fun visitor(asking: PlayerIdentity, fresh: Boolean = false): String? = visitorLock.withLock {
         if (!fresh) visitor?.let { if (now() - visitorAt < VISITOR_TTL_MS) return@withLock it }
+        // The visitor id is asked as an app with plain streams: the TV app's request is refused (HTTP 400).
+        val identity = if (asking.needsPlayerScript) PlayerIdentities.ANDROID_VR else asking
         val fetched = try {
             val body = buildJsonObject { putJsonObject("context") { put("client", clientContext(identity, null)) } }.toString().encodeToByteArray()
             val response = http.post(VISITOR_URL, headers(identity, null), body)
@@ -368,17 +499,19 @@ internal class YouTubeStreamWalker(
 
     // --- Requests ---------------------------------------------------------------------------------------
 
+    private fun playerUrl(identity: PlayerIdentity) = "https://${identity.host}/youtubei/v1/player?prettyPrint=false"
+
     private fun headers(identity: PlayerIdentity, visitorData: String?): Map<String, String> = buildMap {
         put("Content-Type", "application/json")
         put("User-Agent", identity.userAgent)
         put("X-Youtube-Client-Name", identity.clientId.toString())
         put("X-Youtube-Client-Version", identity.version)
-        put("Origin", "https://www.youtube.com")
+        put("Origin", "https://${identity.host}")
         visitorData?.let { put("X-Goog-Visitor-Id", it) }
     }
 
     private fun clientContext(identity: PlayerIdentity, visitorData: String?): JsonObject = buildJsonObject {
-        put("clientName", identity.key)
+        put("clientName", identity.clientName)
         put("clientVersion", identity.version)
         identity.device.forEach { (k, v) ->
             when (v) {
@@ -392,7 +525,7 @@ internal class YouTubeStreamWalker(
         visitorData?.let { put("visitorData", it) }
     }
 
-    private fun playerBody(identity: PlayerIdentity, visitorData: String?, videoId: String): ByteArray = buildJsonObject {
+    private fun playerBody(identity: PlayerIdentity, visitorData: String?, videoId: String, signatureTimestamp: Int?): ByteArray = buildJsonObject {
         putJsonObject("context") {
             put("client", clientContext(identity, visitorData))
             putJsonObject("user") { put("lockedSafetyMode", false) }
@@ -400,7 +533,12 @@ internal class YouTubeStreamWalker(
         put("videoId", videoId)
         put("contentCheckOk", true)
         put("racyCheckOk", true)
-        putJsonObject("playbackContext") { putJsonObject("contentPlaybackContext") { put("html5Preference", "HTML5_PREF_WANTS") } }
+        putJsonObject("playbackContext") {
+            putJsonObject("contentPlaybackContext") {
+                put("html5Preference", "HTML5_PREF_WANTS")
+                signatureTimestamp?.let { put("signatureTimestamp", it) }
+            }
+        }
     }.toString().encodeToByteArray()
 
     private fun JsonObject.obj(key: String): JsonObject? = this[key] as? JsonObject
@@ -410,7 +548,6 @@ internal class YouTubeStreamWalker(
     private fun JsonObject.bool(key: String): Boolean? = (this[key] as? JsonPrimitive)?.content?.toBooleanStrictOrNull()
 
     internal companion object {
-        const val PLAYER_URL = "https://www.youtube.com/youtubei/v1/player?prettyPrint=false"
         const val VISITOR_URL = "https://www.youtube.com/youtubei/v1/visitor_id?prettyPrint=false"
 
         /** All the apps together, before the failsafe gets its turn (inside the source's own time). */
@@ -423,6 +560,18 @@ internal class YouTubeStreamWalker(
         /** YouTube's own reason, shortened, in the debug trace. */
         const val TRACE_REASON_CHARS = 80
 
+        /** How long a backup that served stays first before the usual apps are asked first again. */
+        const val BACKUP_FIRST_MS = 10 * 60_000L
+
+        /** The longest wait for a pre-roll ad worth taking: a song shouldn't wait through an unskippable ad. */
+        const val MAX_AD_WAIT_MS = 6_000L
+
+        /** A stream held back for an ad is first checked this much before the ad could be skipped. */
+        const val AD_EARLY_MS = 1_500L
+
+        /** Then once more this long after. */
+        const val AD_SETTLE_MS = 250L
+
         /** A stream address's own expiry (`expire=` seconds), in milliseconds. */
         fun expireOf(url: String): Long? = param(url, "expire")?.toLongOrNull()?.times(1000)
 
@@ -431,6 +580,22 @@ internal class YouTubeStreamWalker(
 
         private fun param(url: String, name: String): String? =
             url.substringAfter('?', "").split('&').firstOrNull { it.startsWith("$name=") }?.substringAfter('=')
+
+        /** A form-encoded query (`a=1&b=2`), decoded. */
+        fun query(q: String): Map<String, String> = q.split('&').filter { '=' in it }
+            .associate { decoded(it.substringBefore('=')) to decoded(it.substringAfter('=')) }
+
+        fun decoded(s: String): String = java.net.URLDecoder.decode(s, "UTF-8")
+
+        /** [url] with its [name] parameter set to [value] (replaced where it was, else added). */
+        fun withParam(url: String, name: String, value: String): String {
+            val encoded = java.net.URLEncoder.encode(value, "UTF-8")
+            val base = url.substringBefore('?')
+            val parts = url.substringAfter('?', "").split('&').filter { it.isNotEmpty() }
+            val replaced = parts.map { if (it.substringBefore('=') == name) "$name=$encoded" else it }
+            val all = if (parts.any { it.substringBefore('=') == name }) replaced else parts + "$name=$encoded"
+            return "$base?${all.joinToString("&")}"
+        }
     }
 }
 

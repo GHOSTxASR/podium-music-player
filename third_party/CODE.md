@@ -6,3 +6,9 @@
 
 The test files in `player/service/src/test/resources/alac/` were made by Podium with FFmpeg's ALAC
 encoder from generated tones and noise (no third-party audio).
+
+# Code shipped unchanged
+
+| Podium file | What it is | License | Source |
+|---|---|---|---|
+| `sources/youtubemusic/src/main/resources/app/podium/sources/youtubemusic/ejs/lib.min.js`, `…/core.min.js` | yt-dlp's JavaScript challenge solver, **yt-dlp-ejs 0.8.0**, as published (D-98). `lib.min.js` bundles **meriyah 6.1.4** (ISC, Copyright (c) 2019 and later, KFlash and others) and **astring** (MIT); their notices are in the file's header and in [licenses/ISC-MIT-yt-dlp-ejs-bundled.txt](licenses/ISC-MIT-yt-dlp-ejs-bundled.txt). SHA-256: `lib.min.js` `c55987fe697e5b9ee18830163f7af85327e9bb5c3e674b969d38c8d205eaa577`, `core.min.js` `18da6ce0758b416e7ae645084f4f8801f9f9d59d6c477c05eaa0ff94ebd8cc00` (from the PyPI wheel `yt_dlp_ejs-0.8.0-py3-none-any.whl`, SHA-256 `79300e5f…4bdb4`). | Unlicense — [licenses/Unlicense-yt-dlp-ejs.txt](licenses/Unlicense-yt-dlp-ejs.txt); bundled: ISC, MIT | github.com/yt-dlp/ejs, pypi.org/project/yt-dlp-ejs |

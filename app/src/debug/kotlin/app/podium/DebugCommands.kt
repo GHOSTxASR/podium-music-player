@@ -150,6 +150,11 @@ internal fun handleDebugIntent(intent: Intent?, graph: AppGraph) {
         // --es podium.apps VISIONOS,ANDROID_VR (none: every app again). In memory until a restart.
         "stream-skip" -> app.podium.sources.youtubemusic.StreamWalkDebug.skipped =
             intent.getStringExtra("podium.apps").orEmpty().split(',').map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+        // Where the backup apps' player script runs (D-98): --es podium.engine webview | sandbox.
+        "script-engine" -> {
+            ScriptEngineDebug.forceWebView = intent.getStringExtra("podium.engine") == "webview"
+            graph.scriptEngine.reset()
+        }
         "pause" -> graph.playbackController.pause()
         "play" -> if (graph.playbackController.snapshot.value.intent != PlayIntent.PLAY) graph.playbackController.play()
         "next" -> graph.playbackController.next()
