@@ -124,7 +124,20 @@ class YouTubeMusicSource internal constructor(
         memory = streamMemory,
         scriptEngine = scriptEngine,
         scriptCache = scriptCache,
+        session = ::streamSession,
     )
+
+    private val browserAgent = userAgent
+
+    /**
+     * The listener's session for the stream walk's signed-in apps (D-98): only while they're signed
+     * in, as the channel they chose, with the browser they signed in with.
+     */
+    private fun streamSession(): StreamSession? {
+        if (_auth.value !is AuthState.SignedIn) return null
+        val s = session ?: return null
+        return StreamSession(s.cookieHeader, { origin -> s.authorization(now() / 1000, origin) }, pageId, browserAgent())
+    }
 
     @Volatile private var session: WebSession? = credentials.read(id)?.get(KEY_SESSION)?.let(WebSession::parse)
 

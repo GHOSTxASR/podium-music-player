@@ -259,9 +259,12 @@ class YouTubeStreamWalkerTest {
     @Test
     fun `VISIONOS goes first by default, the TV app next, and the last resort stays last`() {
         val walker = defaultWalker()
-        assertEquals(listOf("VISIONOS", "TVHTML5", "ANDROID_VR", "IOS", "ANDROID"), walker.order())
+        val all = PlayerIdentities.ALL.map { it.key }
+        assertEquals(listOf("VISIONOS", "TVHTML5"), all.take(2))
+        assertEquals("ANDROID", all.last())
+        assertEquals(all, walker.order())
         walker.demote("VISIONOS")
-        assertEquals(listOf("TVHTML5", "ANDROID_VR", "IOS", "VISIONOS", "ANDROID"), walker.order())
+        assertEquals(all.drop(1).dropLast(1) + "VISIONOS" + "ANDROID", walker.order())
     }
 
     @Test
@@ -283,7 +286,7 @@ class YouTubeStreamWalkerTest {
         assertEquals("VISIONOS", kept)
         // An app this build doesn't know is ignored.
         kept = "SOMETHING_ELSE"
-        assertEquals(listOf("VISIONOS", "TVHTML5", "ANDROID_VR", "IOS", "ANDROID"), YouTubeStreamWalker(script, memory = memory).order())
+        assertEquals(PlayerIdentities.ALL.map { it.key }, YouTubeStreamWalker(script, memory = memory).order())
     }
 
     @Test

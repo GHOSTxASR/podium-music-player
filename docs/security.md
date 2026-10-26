@@ -114,6 +114,11 @@ Scope: `sources:youtubemusic`, `player:remote`, the sign-in WebView, the online 
   the app's cache (the newest three).
 - **What leaves the phone.** Nothing new. Solved stream addresses go to YouTube's video servers as
   the player's own requests would.
+- **The listener's session.** Two backups (the TV app and YouTube Music's web player) are asked
+  with it when they're signed in. It goes only with the player request, to YouTube's own hosts
+  (checked before it's added): cookies, a SAPISIDHASH made for that request, the chosen channel.
+  Never to a stream's server, never to the player, never logged (`StreamSession.toString` says
+  nothing).
 - **Logged.** Debug builds only (`PodiumStreams`, `PodiumScripts`): app names, codes, times, and the
   solver's error class and JavaScript message. Never an address, a cookie or a visitor id.
 

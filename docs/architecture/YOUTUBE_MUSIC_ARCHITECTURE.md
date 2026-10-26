@@ -143,6 +143,11 @@ serve audio before the player gets it, NewPipeExtractor as the failsafe
      a hidden WebView where the phone doesn't offer it (`AndroidScriptEngine`). The player is
      prepared once per player id and kept in the cache. A backup is asked only after the app that
      last served fails. When one serves, it goes first for ten minutes, then the usual apps again.
+   - **The listener's session (D-98).** When they're signed in, `TVHTML5_SIGNED_IN` (after the
+     signed-out TV app) and `WEB_REMIX_SIGNED_IN` (YouTube Music's web player, from their browser,
+     after `IOS`) are asked with their session. It is sent only with the player request, to YouTube's
+     own hosts: cookies, a fresh SAPISIDHASH, and the chosen channel as `onBehalfOfUser`. Never to a
+     stream's server, never to the player. Signed out, they're passed over.
 2. **Bot checks.** When an app is asked to confirm it isn't a bot, a fresh visitor id is fetched
    and that app is asked once more.
 3. **Proven before it plays (D-98).** The best audio formats (Opus, then AAC, higher bitrate first;
@@ -175,8 +180,7 @@ serve audio before the player gets it, NewPipeExtractor as the failsafe
    limited: "The music source is busy". The service unreachable is a network failure.
 8. **Not built yet:**
    - PoTokens minted by BotGuard in a WebView (`WEB_REMIX`'s solved streams, like `ANDROID_VR`'s and
-     `IOS`'s, serve only their first part without one);
-   - the listener's own session for the apps that accept one.
+     `IOS`'s, serve only their first part without one, signed in too, unless the account has Premium);
    - `WEB` isn't usable: it hands out streaming-protocol (SABR) audio only.
 
 ### 8.3 Live Radio (D-90)

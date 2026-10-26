@@ -23,6 +23,10 @@ internal data class PlayerIdentity(
     val needsPlayerScript: Boolean = false,
     /** Where its player is asked. */
     val host: String = "www.youtube.com",
+    /** Asked only as the signed-in listener, with their session; passed over when signed out (D-98). */
+    val needsSession: Boolean = false,
+    /** Asks (and its streams are asked for) as the browser the listener signed in with. */
+    val usesSessionAgent: Boolean = false,
 )
 
 internal object PlayerIdentities {
@@ -68,6 +72,26 @@ internal object PlayerIdentities {
         needsPlayerScript = true,
     )
 
+    /** The TV app as the signed-in listener (D-98): the session goes with the player request. */
+    val TVHTML5_SIGNED_IN = TVHTML5.copy(key = "TVHTML5_SIGNED_IN", needsSession = true)
+
+    /**
+     * YouTube Music's web player as the signed-in listener (D-98), from the browser they signed in
+     * with. Its streams are enciphered; without a PoToken they serve only their first part unless the
+     * account has Premium.
+     */
+    val WEB_REMIX_SIGNED_IN = PlayerIdentity(
+        key = "WEB_REMIX_SIGNED_IN",
+        clientName = "WEB_REMIX",
+        clientId = 67,
+        version = "1.20260707.12.00",
+        userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
+        needsPlayerScript = true,
+        host = "music.youtube.com",
+        needsSession = true,
+        usesSessionAgent = true,
+    )
+
     val ANDROID = PlayerIdentity(
         key = "ANDROID",
         clientId = 3,
@@ -82,13 +106,16 @@ internal object PlayerIdentities {
      * In the order first tried, until one has served a stream (then that one goes first). VISIONOS
      * first: on a phone, on 2026-10-26, it was the only app whose streams served past their first part
      * (ANDROID_VR's and IOS's stop after about 256 KB without a PoToken, D-98). TVHTML5 next: the one
-     * backup measured to serve (with the player's script).
+     * backup measured to serve (with the player's script), then the TV app signed in (as fast, no
+     * faster: the same ad). WEB_REMIX signed in comes after ANDROID_VR and IOS: without a PoToken its
+     * streams serve only their first part (unless the account has Premium), and its answers can make
+     * the walk wait out an ad first. Signed-in apps are asked only when the listener is signed in.
      */
-    val ALL = listOf(VISIONOS, TVHTML5, ANDROID_VR, IOS, ANDROID)
+    val ALL = listOf(VISIONOS, TVHTML5, TVHTML5_SIGNED_IN, ANDROID_VR, IOS, WEB_REMIX_SIGNED_IN, ANDROID)
 
-    /** The app a stream address was handed to, from its `c=` parameter. */
+    /** The app a stream address was handed to, from its `c=` parameter (the signed-out one, where both exist). */
     fun of(streamUrl: String): PlayerIdentity? {
         val client = streamUrl.substringAfter('?', "").split('&').firstOrNull { it.startsWith("c=") }?.substringAfter("c=") ?: return null
-        return ALL.firstOrNull { it.key == client }
+        return ALL.firstOrNull { it.clientName == client && !it.needsSession } ?: ALL.firstOrNull { it.clientName == client }
     }
 }

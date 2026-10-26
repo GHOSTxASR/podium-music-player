@@ -63,11 +63,14 @@ internal open class YouTubeMusicStreamResolver(
     /** Runs the player's script for the apps that need it, and keeps it prepared (D-98); null passes those apps over. */
     scriptEngine: ScriptEngine? = null,
     scriptCache: PlayerScriptCache? = null,
+    /** The listener's session when signed in, for the apps that accept one (D-98). */
+    session: () -> StreamSession? = { null },
     http: StreamHttp = OkHttpStreamHttp(),
     /** The walk; null leaves NewPipe alone (tests that script extraction themselves). */
     private val walker: YouTubeStreamWalker? = YouTubeStreamWalker(
         http, region, now, memory = memory,
         scripts = if (scriptEngine != null && scriptCache != null) PlayerScripts(http, EjsChallengeSolver(scriptEngine, scriptCache), scriptCache, now) else null,
+        session = session,
     ),
 ) {
     private val initialized = AtomicBoolean(false)
@@ -125,9 +128,9 @@ internal open class YouTubeMusicStreamResolver(
     fun forget(track: Track) {
         val refused = synchronized(inFlight) { recent.remove(track.id.value) }?.first
         val uri = ((refused?.target as? PlaybackTarget.DirectStream)?.media?.uri)
-        val identity = uri?.let(PlayerIdentities::of)
-        identity?.let { walker?.demote(it.key) }
-        StreamWalkDebug.note { "forget ${track.source.providerKey}: refused while playing (${identity?.key ?: "app unknown"})" }
+        val identity = uri?.let { walker?.identityOf(it) ?: PlayerIdentities.of(it)?.key }
+        identity?.let { walker?.demote(it) }
+        StreamWalkDebug.note { "forget ${track.source.providerKey}: refused while playing (${identity ?: "app unknown"})" }
     }
 
     /** Kept a few minutes, and never past the stream's own expiry (less a margin). */

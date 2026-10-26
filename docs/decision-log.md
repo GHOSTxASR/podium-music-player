@@ -1323,6 +1323,22 @@ Every significant decision, newest at the bottom. Major ones have an ADR in `adr
     In the forced WebView, six walks were all served; the first solve took 600 ms (the prepared
     player reloaded from the cache), later ones 28–41 ms. Songs then start about 5 s later than from
     `VISIONOS`. None was refused while playing.
+- **Tier a2: the listener's session (2026-10-26).** Two apps are asked with the listener's session
+  when they're signed in, and passed over when they aren't:
+  - `TVHTML5_SIGNED_IN`: the TV app above, with the session.
+  - `WEB_REMIX_SIGNED_IN`: YouTube Music's web player on `music.youtube.com`, from the browser they
+    signed in with.
+
+  The session (cookies, a fresh SAPISIDHASH per request, the chosen channel as `onBehalfOfUser`) goes
+  only with the player request, only to YouTube's own hosts. It never goes to a stream's server or
+  the player, and never into the trace.
+  - **Measured** (the owner signed in on the test copy; every other app skipped):
+    - `TVHTML5_SIGNED_IN` served all 9 walks in 4.3–4.8 s, the same 5 s ad as signed out. It isn't
+      faster, so it goes after the signed-out TV app: a backup for when guests are refused.
+    - `WEB_REMIX_SIGNED_IN` was refused: solved, its streams serve only their first part, as without
+      a PoToken (the account has no Premium). It goes after `ANDROID_VR` and `IOS`, since its answers
+      can make the walk wait out an ad first. Those songs played from the NewPipe failsafe in
+      2.4–4.2 s.
 - **Verified:** walker tests with a scripted YouTube whose `ANDROID_VR`/`IOS` streams serve only their
   first 256 KB (the walk skips them), both checks and the size fallbacks, the default order, the
   remembered app, the last resort and the debug skip. On the phone, the first song after a cold start
@@ -1334,5 +1350,8 @@ Every significant decision, newest at the bottom. Major ones have an ADR in `adr
   retried once then moved past, no engine means no TV app, the ad's wait and its limit, the
   prepared player kept across starts, the cache's eviction, and a backup's ten minutes first. An
   opt-in live test (`PODIUM_LIVE_NETWORK=1`, node) solved and served a TV stream for "Kesariya" from
-  this laptop in 5.8 s.
+  this laptop in 5.8 s. Tier a2 tests (`SignedInWalkTest`): the session apps passed over when signed
+  out; signed in, the session sent on the right host only (`www` for the TV app, `music` for the web
+  player), as the chosen channel, with the browser's agent for the web player, never with a check;
+  a refusal while playing names the signed-in app.
 

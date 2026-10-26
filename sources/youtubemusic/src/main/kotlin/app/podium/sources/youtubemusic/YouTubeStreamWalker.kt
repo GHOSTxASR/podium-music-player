@@ -40,6 +40,10 @@ import java.util.concurrent.CopyOnWriteArrayList
  *   ([PlayerIdentity.needsPlayerScript], `TVHTML5`) are asked like the rest, with the player's
  *   signature timestamp; their signatures and "n" are solved in one batch by YouTube's own script
  *   ([PlayerScripts]). Without a script engine they're passed over.
+ * - **The listener's session (D-98).** Apps that accept a sign-in ([PlayerIdentity.needsSession]) are
+ *   asked with the listener's session when they're signed in, and passed over when they aren't. The
+ *   session goes only to YouTube's own hosts, with the player request; never to a stream's server,
+ *   never to the player, never into the trace.
  * - **The pre-roll ad's wait.** An answer that comes with an ad before the song serves the song only
  *   once the ad could have been skipped; the check waits for that (up to [MAX_AD_WAIT_MS]).
  * - **What can't play, and what can't play yet.** A song that is gone, private or age-restricted is a
@@ -57,6 +61,8 @@ internal class YouTubeStreamWalker(
     private val memory: StreamWalkMemory = StreamWalkMemory.None,
     /** YouTube's player script and its solver, for the apps that need them; null passes them over. */
     private val scripts: PlayerScripts? = null,
+    /** The listener's session when they're signed in, for the apps that accept one; null passes those over. */
+    private val session: () -> StreamSession? = { null },
 ) {
     sealed interface Result {
         data class Found(val stream: Stream) : Result
@@ -125,6 +131,7 @@ internal class YouTubeStreamWalker(
         val verdicts = mutableListOf<Verdict>()
         var rotated = false
         val started = now()
+        val signedIn = runCatching { session() }.getOrNull()
         val decided = withTimeoutOrNull(budgetMillis) {
             for (identity in order.toList() + lastResort) {
                 if (identity.key in StreamWalkDebug.skipped) {
@@ -132,16 +139,18 @@ internal class YouTubeStreamWalker(
                     continue
                 }
                 if (identity.needsPlayerScript && scripts == null) continue
-                var verdict = ask(identity, videoId)
+                if (identity.needsSession && signedIn == null) continue
+                var verdict = ask(identity, videoId, signedIn)
                 if (verdict == Verdict.BotCheck && !rotated) {
                     rotated = true
                     visitor(identity, fresh = true)
                     StreamWalkDebug.note { "walk $videoId ${identity.key}: bot check, asking again with a fresh visitor" }
-                    verdict = ask(identity, videoId)
+                    verdict = ask(identity, videoId, signedIn)
                 }
                 when (verdict) {
                     is Verdict.Plays -> {
                         promote(identity.key)
+                        servedBy(verdict.stream)
                         return@withTimeoutOrNull Result.Found(verdict.stream)
                     }
                     is Verdict.Limited -> return@withTimeoutOrNull Result.Limited(verdict.retryAfterMillis)
@@ -168,6 +177,16 @@ internal class YouTubeStreamWalker(
     } catch (e: IOException) {
         false
     }
+
+    /** The apps that served the last few streams, by address: one refused while playing names its app. */
+    private val served = object : LinkedHashMap<String, String>() {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String>) = size > SERVED_KEPT
+    }
+
+    private fun servedBy(stream: Stream) = synchronized(served) { served[stream.url] = stream.identity }
+
+    /** The app a stream handed out came from: as recorded, else as its address says (`c=`). */
+    fun identityOf(url: String): String? = synchronized(served) { served[url] } ?: PlayerIdentities.of(url)?.key
 
     /** A stream from the app [identity] was refused while playing: that app goes last for now (before the last resort). */
     fun demote(identity: String) {
@@ -255,10 +274,10 @@ internal class YouTubeStreamWalker(
 
     // --- One app -----------------------------------------------------------------------------------------
 
-    private suspend fun ask(identity: PlayerIdentity, videoId: String): Verdict {
+    private suspend fun ask(identity: PlayerIdentity, videoId: String, signedIn: StreamSession?): Verdict {
         val started = now()
         val seen = Seen()
-        val verdict = ask(identity, videoId, seen)
+        val verdict = ask(identity, videoId, seen, signedIn?.takeIf { identity.needsSession })
         StreamWalkDebug.note {
             val reason = seen.reason?.let { " \"${it.take(TRACE_REASON_CHARS)}\"" }.orEmpty()
             val probes = if (seen.probes.isEmpty()) "" else " probe ${seen.probes.joinToString(", ")}"
@@ -279,15 +298,22 @@ internal class YouTubeStreamWalker(
         val notes = mutableListOf<String>()
     }
 
-    private suspend fun ask(identity: PlayerIdentity, videoId: String, seen: Seen): Verdict {
+    private suspend fun ask(identity: PlayerIdentity, videoId: String, seen: Seen, signedIn: StreamSession?): Verdict {
+        // An app signed in as the listener's browser asks (and its streams are asked for) with that browser's agent.
+        val agent = if (signedIn != null && identity.usesSessionAgent) signedIn.userAgent else identity.userAgent
         val player = if (identity.needsPlayerScript) {
             scripts?.current() ?: return Verdict.Unreachable.also { seen.notes += "no player script" }
         } else {
             null
         }
-        val visitorData = visitor(identity)
+        // Signed in, the session's own cookies name the visitor.
+        val visitorData = if (signedIn == null) visitor(identity) else null
         val response = try {
-            http.post(playerUrl(identity), headers(identity, visitorData), playerBody(identity, visitorData, videoId, player?.signatureTimestamp))
+            http.post(
+                playerUrl(identity),
+                headers(identity, visitorData, agent, signedIn),
+                playerBody(identity, visitorData, videoId, player?.signatureTimestamp, signedIn?.pageId),
+            )
         } catch (e: CancellationException) {
             throw e
         } catch (e: IOException) {
@@ -306,7 +332,7 @@ internal class YouTubeStreamWalker(
         if (status != null && status != "OK") return unavailable(status, playability.str("reason").orEmpty())
         // An answer about another video: the app was turned away with a stand-in.
         if (json.obj("videoDetails")?.str("videoId") != videoId) return Verdict.Refused
-        val formats = formats(json, identity)
+        val formats = formats(json, identity, agent)
         seen.streams = formats.size
         val tried = formats.take(PROBES_PER_APP)
         val candidates = if (player != null) {
@@ -349,7 +375,8 @@ internal class YouTubeStreamWalker(
     private suspend fun check(candidate: Stream, identity: PlayerIdentity, seen: Seen): Int? {
         val codes = mutableListOf<String>()
         return try {
-            proves(candidate.url, mapOf("User-Agent" to identity.userAgent), candidate.contentLength, codes).also {
+            // As the player will ask: its app's agent, and nothing of the listener's session.
+            proves(candidate.url, mapOf("User-Agent" to candidate.userAgent), candidate.contentLength, codes).also {
                 seen.probes += "${candidate.itag} ${codes.joinToString(" ")}"
             }
         } catch (e: CancellationException) {
@@ -433,7 +460,7 @@ internal class YouTubeStreamWalker(
      * The app's audio formats, best first: Opus, then AAC, higher bitrate first. Plain addresses
      * only, unless the app's player script can be run.
      */
-    private fun formats(json: JsonObject, identity: PlayerIdentity): List<Format> {
+    private fun formats(json: JsonObject, identity: PlayerIdentity, agent: String): List<Format> {
         val streaming = json.obj("streamingData") ?: return emptyList()
         val expiresIn = streaming.str("expiresInSeconds")?.toLongOrNull()
         val duration = json.obj("videoDetails")?.str("lengthSeconds")?.toLongOrNull()?.takeIf { it > 0 }?.times(1000)
@@ -449,7 +476,7 @@ internal class YouTubeStreamWalker(
             Format(Stream(
                 url = url,
                 identity = identity.key,
-                userAgent = identity.userAgent,
+                userAgent = agent,
                 itag = itag,
                 mimeType = mime.substringBefore(';').trim(),
                 codec = when {
@@ -501,13 +528,27 @@ internal class YouTubeStreamWalker(
 
     private fun playerUrl(identity: PlayerIdentity) = "https://${identity.host}/youtubei/v1/player?prettyPrint=false"
 
-    private fun headers(identity: PlayerIdentity, visitorData: String?): Map<String, String> = buildMap {
+    private fun headers(
+        identity: PlayerIdentity,
+        visitorData: String?,
+        agent: String = identity.userAgent,
+        signedIn: StreamSession? = null,
+    ): Map<String, String> = buildMap {
+        val origin = "https://${identity.host}"
         put("Content-Type", "application/json")
-        put("User-Agent", identity.userAgent)
+        put("User-Agent", agent)
         put("X-Youtube-Client-Name", identity.clientId.toString())
         put("X-Youtube-Client-Version", identity.version)
-        put("Origin", "https://${identity.host}")
+        put("Origin", origin)
         visitorData?.let { put("X-Goog-Visitor-Id", it) }
+        // The session only ever goes to YouTube's own hosts.
+        if (signedIn != null && (identity.host == "youtube.com" || identity.host.endsWith(".youtube.com"))) {
+            put("Cookie", signedIn.cookie)
+            signedIn.authorization(origin)?.let { put("Authorization", it) }
+            put("X-Origin", origin)
+            put("Referer", "$origin/")
+            put("X-Goog-AuthUser", "0")
+        }
     }
 
     private fun clientContext(identity: PlayerIdentity, visitorData: String?): JsonObject = buildJsonObject {
@@ -525,10 +566,20 @@ internal class YouTubeStreamWalker(
         visitorData?.let { put("visitorData", it) }
     }
 
-    private fun playerBody(identity: PlayerIdentity, visitorData: String?, videoId: String, signatureTimestamp: Int?): ByteArray = buildJsonObject {
+    private fun playerBody(
+        identity: PlayerIdentity,
+        visitorData: String?,
+        videoId: String,
+        signatureTimestamp: Int?,
+        pageId: String? = null,
+    ): ByteArray = buildJsonObject {
         putJsonObject("context") {
             put("client", clientContext(identity, visitorData))
-            putJsonObject("user") { put("lockedSafetyMode", false) }
+            putJsonObject("user") {
+                put("lockedSafetyMode", false)
+                // The channel chosen under the account (D-86).
+                pageId?.let { put("onBehalfOfUser", it) }
+            }
         }
         put("videoId", videoId)
         put("contentCheckOk", true)
@@ -559,6 +610,9 @@ internal class YouTubeStreamWalker(
 
         /** YouTube's own reason, shortened, in the debug trace. */
         const val TRACE_REASON_CHARS = 80
+
+        /** Streams whose app is remembered by address, for a refusal while playing. */
+        const val SERVED_KEPT = 32
 
         /** How long a backup that served stays first before the usual apps are asked first again. */
         const val BACKUP_FIRST_MS = 10 * 60_000L
@@ -597,6 +651,22 @@ internal class YouTubeStreamWalker(
             return "$base?${all.joinToString("&")}"
         }
     }
+}
+
+/**
+ * The listener's session, for the apps that accept one (D-98). Sent only with player requests to
+ * YouTube's own hosts; never logged ([toString] says nothing).
+ */
+internal class StreamSession(
+    val cookie: String,
+    /** The `Authorization` the web player sends for [origin], made afresh for each request. */
+    val authorization: (origin: String) -> String?,
+    /** The channel chosen under the account (D-86), or null for the account's own. */
+    val pageId: String?,
+    /** The browser the session was signed in with. */
+    val userAgent: String,
+) {
+    override fun toString(): String = "StreamSession"
 }
 
 /**
