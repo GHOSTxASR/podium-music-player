@@ -174,13 +174,13 @@ fades — the whole virtual display is the lyric.
   **justified edge to edge**, a single word stands centred. If even 20 sp doesn't fit, it keeps
   shrinking rather than clip. Margins are 9 % horizontally and 12 % vertically. Words are drawn on a
   Canvas with `softWrap = false` at measured positions, so nothing is ever cut off.
-- **Alternating inversion:** line index even → Bone paper (light) with dark words; odd → Carbon black
+- **Alternating inversion:** line index even → the warm off-white paper (`PaperColors`) with dark words; odd → Carbon black
   with light words. The colours are the two display finishes' own tokens, nothing else. The change is
   a 90 ms colour tween, or instant with reduced motion. The display's finish colours are not changed
   (D-26): this is content drawn inside the screen.
 - **Lyrics background (D-100):** Settings ▸ Appearance ▸ Virtual display ▸ Lyrics background keeps
   the paper still instead. Automatic (the default) turns it with every line as above. Black is
-  always Carbon's black with light words; White is always Bone's paper with dark words. That covers
+  always Carbon's black with light words; White is always that same paper with dark words. That covers
   the messages before the words too. Only the paper changes: the words, their timing, the orb and
   the Wheel are the same. The row shows only with the Classic theme: Continuous line keeps its own
   black sheet (§12).

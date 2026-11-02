@@ -41,12 +41,15 @@ import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import app.podium.core.designsystem.artwork.ArtworkImage
 import app.podium.core.designsystem.theme.PodiumTheme
+import app.podium.core.designsystem.tonal.CarbonRadius
+import app.podium.core.designsystem.tonal.ContinuousShape
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.sqrt
@@ -119,7 +122,7 @@ fun PreviewPane(preview: MenuPreview, size: Dp, modifier: Modifier = Modifier) {
     val corner = previewCorner()
     when (preview) {
         MenuPreview.None -> Unit
-        is MenuPreview.Swatch -> Box(distance.size(size).clip(RoundedCornerShape(corner)).background(preview.color))
+        is MenuPreview.Swatch -> Box(distance.size(size).clip(previewShape(corner)).background(preview.color))
         is MenuPreview.Artwork, is MenuPreview.Carousel -> {
             val uris = if (preview is MenuPreview.Artwork) preview.uris else (preview as MenuPreview.Carousel).uris
             if (uris.isEmpty()) return
@@ -146,7 +149,7 @@ fun PreviewPane(preview: MenuPreview, size: Dp, modifier: Modifier = Modifier) {
                 modifier = distance,
                 label = "previewCycle",
             ) { i ->
-                Box(Modifier.size(size).clip(if (round) CircleShape else RoundedCornerShape(corner))) {
+                Box(Modifier.size(size).clip(if (round) CircleShape else previewShape(corner))) {
                     ArtworkImage(uris[i % uris.size], size, fallbackText = "", modifier = Modifier.fillMaxSize())
                 }
             }
@@ -333,7 +336,15 @@ fun Modifier.softDeparture(scope: AnimatedVisibilityScope?, delayMillis: Int, du
 private val SoftDepartureRadius = 7.dp
 
 @Composable
-internal fun previewCorner(): Dp = if (PodiumTheme.colors.isIndustrial) 2.dp else 6.dp
+private fun previewShape(corner: Dp): Shape =
+    if (PodiumTheme.colors.isIndustrial) RoundedCornerShape(corner) else ContinuousShape(corner)
+
+@Composable
+internal fun previewCorner(): Dp = when {
+    PodiumTheme.colors.isIndustrial -> 2.dp
+    PodiumTheme.colors.isTonal -> CarbonRadius.band
+    else -> 6.dp
+}
 
 /**
  * Fades the content out toward its edges, over [left] and [right] at the sides and [vertical] at

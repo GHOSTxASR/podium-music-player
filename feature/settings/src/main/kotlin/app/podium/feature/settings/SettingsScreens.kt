@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -55,14 +54,16 @@ import app.podium.core.designsystem.shell.FinishPreset
 import app.podium.core.designsystem.shell.formatHex
 import app.podium.core.designsystem.shell.palette
 import app.podium.core.designsystem.shell.parseHex
-import app.podium.core.designsystem.theme.BoneColors
+import app.podium.core.designsystem.theme.PaperColors
 import app.podium.core.designsystem.theme.CarbonColors
 import app.podium.core.designsystem.theme.DisplayBackground
 import app.podium.core.designsystem.theme.DisplayTheme
 import app.podium.core.designsystem.theme.PodiumTheme
 import app.podium.core.designsystem.theme.Spacing
+import app.podium.core.designsystem.tonal.ContinuousShape
 import app.podium.core.designsystem.type.PodiumText
 import app.podium.core.interaction.FocusListState
+import app.podium.core.interaction.HapticProfile
 import app.podium.core.interaction.InputTargetEffect
 import app.podium.core.interaction.PodiumInput
 import app.podium.core.interaction.WheelButton
@@ -70,7 +71,7 @@ import app.podium.core.interaction.WheelContext
 import app.podium.core.interaction.rememberFocusListState
 import app.podium.core.interaction.rememberPodiumHaptics
 
-private enum class SettingsRow { Appearance, PodiumSpace, FullScreen, TitleBarBattery, Keyboard, MusicFolders, OnlineSources, CustomSources, Autoplay, Recommendations, AvoidRepeats, Crossfade, Equalizer, SleepTimer, OnlineLyrics, LyricsCredit, Haptics, Clicks, StartupSound, SoftwareUpdate }
+private enum class SettingsRow { Appearance, PodiumSpace, FullScreen, TitleBarBattery, HideNowPlayingTray, Keyboard, MusicFolders, OnlineSources, CustomSources, Autoplay, Recommendations, AvoidRepeats, Crossfade, Equalizer, SleepTimer, OnlineLyrics, LyricsCredit, Haptics, Clicks, StartupSound, SoftwareUpdate }
 
 /** Settings ▸ Software update (D-99): the version, a check now, and whether Podium checks by itself. */
 interface SoftwareUpdateSettings {
@@ -112,13 +113,14 @@ fun SettingsScreen(
 ) {
     val appearance by repository.appearance.collectAsStateWithLifecycle()
     val startupSound by repository.startupSound.collectAsStateWithLifecycle()
-    val hapticsOn by repository.haptics.collectAsStateWithLifecycle()
+    val hapticProfile by repository.hapticProfile.collectAsStateWithLifecycle()
     val clicksOn by repository.clicks.collectAsStateWithLifecycle()
     val autoplayOn by repository.autoplay.collectAsStateWithLifecycle()
     val recommendationsOn by repository.onlineRecommendations.collectAsStateWithLifecycle()
     val avoidRepeatsOn by repository.avoidRepeats.collectAsStateWithLifecycle()
     val onlineLyricsOn by repository.onlineLyrics.collectAsStateWithLifecycle()
     val podiumKeyboard by repository.podiumKeyboard.collectAsStateWithLifecycle()
+    val hideNowPlayingTray by repository.hideNowPlayingTray.collectAsStateWithLifecycle()
     val immersive by repository.immersive.collectAsStateWithLifecycle()
     val titleBarBattery by repository.titleBarBattery.collectAsStateWithLifecycle()
     val folderList by folders.folders.collectAsStateWithLifecycle()
@@ -136,6 +138,14 @@ fun SettingsScreen(
         }
     }
     val haptics = rememberPodiumHaptics()
+    // A newly chosen haptic profile plays itself, so it can be felt straight away (D-105).
+    var profileFelt by remember { mutableStateOf(hapticProfile) }
+    LaunchedEffect(hapticProfile) {
+        if (hapticProfile != profileFelt) {
+            profileFelt = hapticProfile
+            haptics.confirm()
+        }
+    }
     // Only a build with an online service has anything to choose there.
     val rows = SettingsRow.entries.filter {
         (it != SettingsRow.OnlineSources || service != null) &&
@@ -150,30 +160,34 @@ fun SettingsScreen(
             SettingsRow.Appearance -> onAppearance()
             SettingsRow.PodiumSpace -> onPodiumSpace()
             SettingsRow.FullScreen -> {
-                haptics.confirm()
+                haptics.toggle(on = !immersive)
                 repository.setImmersive(!immersive)
             }
             SettingsRow.TitleBarBattery -> if (!immersive) haptics.reject() else {
-                haptics.confirm()
+                haptics.toggle(on = !titleBarBattery)
                 repository.setTitleBarBattery(!titleBarBattery)
             }
+            SettingsRow.HideNowPlayingTray -> {
+                haptics.toggle(on = !hideNowPlayingTray)
+                repository.setHideNowPlayingTray(!hideNowPlayingTray)
+            }
             SettingsRow.Keyboard -> {
-                haptics.confirm()
+                haptics.toggle(on = !podiumKeyboard)
                 repository.setPodiumKeyboard(!podiumKeyboard)
             }
             SettingsRow.MusicFolders -> onMusicFolders()
             SettingsRow.OnlineSources -> onOnlineService()
             SettingsRow.CustomSources -> onCustomSources()
             SettingsRow.Autoplay -> {
-                haptics.confirm()
+                haptics.toggle(on = !autoplayOn)
                 repository.setAutoplay(!autoplayOn)
             }
             SettingsRow.Recommendations -> if (!autoplayOn) haptics.reject() else {
-                haptics.confirm()
+                haptics.toggle(on = !recommendationsOn)
                 repository.setOnlineRecommendations(!recommendationsOn)
             }
             SettingsRow.AvoidRepeats -> if (!autoplayOn) haptics.reject() else {
-                haptics.confirm()
+                haptics.toggle(on = !avoidRepeatsOn)
                 repository.setAvoidRepeats(!avoidRepeatsOn)
             }
             SettingsRow.Crossfade -> overlay.show(
@@ -187,20 +201,30 @@ fun SettingsScreen(
             SettingsRow.Equalizer -> onEqualizer()
             SettingsRow.SleepTimer -> onSleepTimer()
             SettingsRow.OnlineLyrics -> {
-                haptics.confirm()
+                haptics.toggle(on = !onlineLyricsOn)
                 repository.setOnlineLyrics(!onlineLyricsOn)
             }
             SettingsRow.LyricsCredit -> haptics.reject()
-            SettingsRow.Haptics -> {
-                repository.setHaptics(!hapticsOn)
-                haptics.confirm()
+            // A profile (D-105); choosing one plays it, so it can be felt before going on. A phone without
+            // full control of its motor plays its own haptics, as Podium always did: just on or off.
+            SettingsRow.Haptics -> if (haptics.fullControl) {
+                overlay.show(
+                    app.podium.core.designsystem.component.MenuSpec(
+                        "Haptics: ${hapticProfile.label}",
+                        HapticProfile.entries.map { profile ->
+                            app.podium.core.designsystem.component.MenuAction(profile.label) { repository.setHapticProfile(profile) }
+                        },
+                    ),
+                )
+            } else {
+                repository.setHapticProfile(if (hapticProfile == HapticProfile.OFF) HapticProfile.BALANCED else HapticProfile.OFF)
             }
             SettingsRow.Clicks -> {
-                haptics.confirm()
+                haptics.toggle(on = !clicksOn)
                 repository.setClicks(!clicksOn)
             }
             SettingsRow.StartupSound -> {
-                haptics.confirm()
+                haptics.toggle(on = !startupSound)
                 repository.setStartupSound(!startupSound)
             }
             SettingsRow.SoftwareUpdate -> softwareUpdate?.let { updates ->
@@ -248,6 +272,14 @@ fun SettingsScreen(
                 enabled = immersive,
                 showChevron = false,
             )
+            // The tray slides away on Now Playing when nothing has been touched (D-108); the Wheel's
+            // next move only brings it back.
+            SettingsRow.HideNowPlayingTray -> MenuRow(
+                "Now Playing's tray",
+                focused,
+                value = if (hideNowPlayingTray) "Hides when idle" else "Always shown",
+                showChevron = false,
+            )
             SettingsRow.Keyboard -> MenuRow("Keyboard", focused, value = if (podiumKeyboard) "Podium" else "Phone", showChevron = false)
             SettingsRow.MusicFolders -> MenuRow(
                 "Music folders",
@@ -270,7 +302,12 @@ fun SettingsScreen(
             SettingsRow.OnlineLyrics -> MenuRow("Online lyrics", focused, value = if (onlineLyricsOn) "On" else "Off", showChevron = false)
             // The lyrics service's credit (LYRICS_ARCHITECTURE.md §9): its community wrote the words.
             SettingsRow.LyricsCredit -> MenuRow("Lyrics from LRCLIB, written by its community", focused, enabled = false, showChevron = false)
-            SettingsRow.Haptics -> MenuRow("Haptics", focused, value = if (hapticsOn) "On" else "Off", showChevron = false)
+            SettingsRow.Haptics -> MenuRow(
+                "Haptics",
+                focused,
+                value = if (haptics.fullControl) hapticProfile.label else if (hapticProfile == HapticProfile.OFF) "Off" else "On",
+                showChevron = false,
+            )
             SettingsRow.Clicks -> MenuRow("Click sound", focused, value = if (clicksOn) "On" else "Off", showChevron = false)
             SettingsRow.StartupSound -> MenuRow("Startup sound", focused, value = if (startupSound) "On" else "Off", showChevron = false)
             SettingsRow.SoftwareUpdate -> MenuRow("Software update", focused, value = softwareUpdate?.version, showChevron = false)
@@ -369,7 +406,6 @@ fun ThemeScreen(repository: DeviceSettingsRepository) {
             when (theme) {
                 DisplayTheme.GLASS -> MenuPreview.Instrument
                 DisplayTheme.CARBON -> MenuPreview.Swatch(CarbonColors.canvas)
-                DisplayTheme.BONE -> MenuPreview.Swatch(BoneColors.canvas)
                 DisplayTheme.CUSTOM -> MenuPreview.Swatch(Color(appearance.screen.solidArgb))
             }
         },
@@ -383,7 +419,6 @@ fun ThemeScreen(repository: DeviceSettingsRepository) {
                     when (theme) {
                         DisplayTheme.GLASS -> null
                         DisplayTheme.CARBON -> CarbonColors.canvas
-                        DisplayTheme.BONE -> BoneColors.canvas
                         DisplayTheme.CUSTOM -> Color(appearance.screen.solidArgb)
                     },
                 )
@@ -477,8 +512,8 @@ fun CustomColorScreen(repository: DeviceSettingsRepository, target: ColorTarget 
             Modifier
                 .fillMaxWidth()
                 .height(56.dp)
-                .background(Color(argb), RoundedCornerShape(16.dp))
-                .border(1.dp, colors.separator, RoundedCornerShape(16.dp))
+                .background(Color(argb), ContinuousShape(16.dp))
+                .border(1.dp, colors.separator, ContinuousShape(16.dp))
                 .semantics { contentDescription = "Color preview ${formatHex(argb)}" },
         )
         Spacer(Modifier.height(Spacing.l))
@@ -486,8 +521,8 @@ fun CustomColorScreen(repository: DeviceSettingsRepository, target: ColorTarget 
             Modifier
                 .fillMaxWidth()
                 .height(52.dp)
-                .background(colors.canvasRaised, RoundedCornerShape(14.dp))
-                .border(1.dp, if (invalid) colors.critical else colors.separator, RoundedCornerShape(14.dp))
+                .background(colors.canvasRaised, ContinuousShape(14.dp))
+                .border(1.dp, if (invalid) colors.critical else colors.separator, ContinuousShape(14.dp))
                 .padding(horizontal = Spacing.l),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -538,7 +573,7 @@ fun CustomColorScreen(repository: DeviceSettingsRepository, target: ColorTarget 
             Modifier
                 .fillMaxWidth()
                 .height(48.dp)
-                .background(colors.highlight, RoundedCornerShape(14.dp))
+                .background(colors.highlight, ContinuousShape(14.dp))
                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
                     if (parseHex(text) != null) apply() else haptics.reject()
                 },

@@ -10,6 +10,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.ContentTransform
 import kotlin.math.roundToInt
 import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.keyframes
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -57,6 +58,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
@@ -77,10 +79,12 @@ import app.podium.core.common.DiskActivity
 import app.podium.core.common.Outcome
 import app.podium.core.designsystem.artwork.BackgroundExtension
 import app.podium.core.designsystem.artwork.LocalArtworkLoader
-import app.podium.core.designsystem.artwork.rememberArtwork
+import app.podium.core.designsystem.artwork.rememberArtworkState
 import app.podium.core.designsystem.component.GlassMenu
+import app.podium.core.designsystem.component.ImmersiveHost
 import app.podium.core.designsystem.component.KeyboardHost
 import app.podium.core.designsystem.component.KeyboardStyle
+import app.podium.core.designsystem.component.LocalImmersiveHost
 import app.podium.core.designsystem.component.LocalKeyboardHost
 import app.podium.core.designsystem.component.LocalKeyboardStyle
 import app.podium.core.designsystem.component.LocalMiniature
@@ -104,6 +108,7 @@ import app.podium.core.designsystem.component.WheelKeyboard
 import app.podium.core.designsystem.glass.GlassHost
 import app.podium.core.designsystem.glass.scrollEdgeFade
 import app.podium.core.designsystem.shell.BootScreen
+import app.podium.core.designsystem.shell.BootReveal
 import app.podium.core.designsystem.shell.DeviceBody
 import app.podium.core.designsystem.shell.DeviceLayout
 import app.podium.core.designsystem.shell.PowerButton
@@ -115,6 +120,12 @@ import app.podium.core.designsystem.shell.palette
 import app.podium.core.designsystem.theme.Atmosphere
 import app.podium.core.designsystem.theme.AtmosphereBackground
 import app.podium.core.designsystem.theme.DisplayBackground
+import app.podium.core.designsystem.theme.DisplayStyle
+import app.podium.core.designsystem.tonal.AlbumAtmosphere
+import app.podium.core.designsystem.tonal.LocalAlbumTone
+import app.podium.core.designsystem.tonal.defocus
+import app.podium.core.designsystem.tonal.rememberAlbumTone
+import app.podium.core.designsystem.tonal.rememberCoverAnalysis
 import app.podium.core.designsystem.theme.LocalDisplaySurface
 import app.podium.core.designsystem.theme.PodiumMotion
 import app.podium.core.designsystem.theme.PodiumTheme
@@ -133,6 +144,7 @@ import app.podium.core.model.ArtistId
 import app.podium.core.model.PlaylistId
 import app.podium.core.model.Track
 import app.podium.core.model.TrackId
+import app.podium.feature.library.AddSongsScreen
 import app.podium.feature.library.AlbumScreen
 import app.podium.feature.library.AlbumsScreen
 import app.podium.feature.library.ArtistScreen
@@ -142,7 +154,13 @@ import app.podium.feature.library.FavoritesScreen
 import app.podium.feature.library.HomeScreen
 import app.podium.feature.library.LibraryIndex
 import app.podium.feature.library.LibraryState
+import app.podium.feature.library.LocalPlaylistPicker
 import app.podium.feature.library.MusicScreen
+import app.podium.feature.library.NamePlaylistScreen
+import app.podium.feature.library.PlaylistKeys
+import app.podium.feature.library.PlaylistPicker
+import app.podium.feature.library.PlaylistScreen
+import app.podium.feature.library.PlaylistsScreen
 import app.podium.feature.library.SongsScreen
 import app.podium.feature.nowplaying.LyricsScreen
 import app.podium.feature.nowplaying.NowPlayingScreen
@@ -177,6 +195,8 @@ import app.podium.guide.GuideState
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import app.podium.core.interaction.LocalHapticEngine
+import app.podium.core.interaction.HapticEngine
 import app.podium.space.SpacePanel
 import app.podium.space.SpacePhase
 import app.podium.space.SpacePage
@@ -216,6 +236,12 @@ sealed interface Dest {
     data object Artists : Dest
     data object Songs : Dest
     data object Favorites : Dest
+
+    /** Music ▸ Playlists (D-106), one playlist, adding songs to it, and naming one. */
+    data object Playlists : Dest
+    data class Playlist(val id: String, val name: String) : Dest
+    data class AddSongs(val playlistId: String) : Dest
+    data class NamePlaylist(val playlistId: String? = null, val currentName: String = "") : Dest
     data object NowPlaying : Dest
     data object UpNext : Dest
 
@@ -269,7 +295,7 @@ sealed interface Dest {
 }
 
 private val fixedDests = listOf(
-    Dest.Home, Dest.Music, Dest.CoverFlow, Dest.Albums, Dest.Artists, Dest.Songs, Dest.Favorites, Dest.NowPlaying,
+    Dest.Home, Dest.Music, Dest.CoverFlow, Dest.Albums, Dest.Artists, Dest.Songs, Dest.Favorites, Dest.Playlists, Dest.NowPlaying,
     Dest.UpNext, Dest.Lyrics, Dest.Settings, Dest.Appearance, Dest.DeviceBody, Dest.VirtualDisplay, Dest.Theme, Dest.Font,
     Dest.LyricsFont, Dest.LyricsTheme, Dest.Background, Dest.Finish, Dest.CustomColor, Dest.DisplayColor, Dest.OnlineSources, Dest.OnlineChannel, Dest.Equalizer,
     Dest.CustomSources, Dest.AddCustomSource,
@@ -284,6 +310,9 @@ private fun Dest.encode(): String = when (this) {
     is Dest.EqualizerBand -> "EqualizerBand:$band"
     is Dest.CustomSource -> "CustomSource:$id"
     is Dest.CustomSourceOption -> "CustomSourceOption:$id\u0000$key"
+    is Dest.Playlist -> "Playlist:$id\u0000$name"
+    is Dest.AddSongs -> "AddSongs:$playlistId"
+    is Dest.NamePlaylist -> "NamePlaylist:${playlistId.orEmpty()}\u0000$currentName"
     else -> toString()
 }
 
@@ -298,6 +327,11 @@ private fun decodeDest(text: String): Dest? = when {
     text.startsWith("CustomSource:") -> Dest.CustomSource(text.removePrefix("CustomSource:"))
     text.startsWith("CustomSourceOption:") -> text.removePrefix("CustomSourceOption:").split('\u0000').takeIf { it.size == 2 }
         ?.let { (id, key) -> Dest.CustomSourceOption(id, key) }
+    text.startsWith("Playlist:") -> text.removePrefix("Playlist:").split('\u0000', limit = 2).takeIf { it.size == 2 }
+        ?.let { (id, name) -> Dest.Playlist(id, name) }
+    text.startsWith("AddSongs:") -> Dest.AddSongs(text.removePrefix("AddSongs:"))
+    text.startsWith("NamePlaylist:") -> text.removePrefix("NamePlaylist:").split('\u0000', limit = 2).takeIf { it.size == 2 }
+        ?.let { (id, name) -> Dest.NamePlaylist(id.ifEmpty { null }, name) }
     else -> fixedDests[text]
 }
 
@@ -316,6 +350,10 @@ private fun titleOf(dest: Dest, graph: AppGraph): String = when (dest) {
     Dest.Artists -> "Artists"
     Dest.Songs -> "Songs"
     Dest.Favorites -> "Favorites"
+    Dest.Playlists -> "Playlists"
+    is Dest.Playlist -> graph.playlists.playlists.collectAsStateWithLifecycle().value?.firstOrNull { it.id == dest.id }?.name ?: dest.name
+    is Dest.AddSongs -> "Add songs"
+    is Dest.NamePlaylist -> if (dest.playlistId == null) "New playlist" else "Rename"
     Dest.NowPlaying -> "Now Playing"
     Dest.UpNext -> "Up Next"
     Dest.Lyrics -> "Lyrics"
@@ -400,20 +438,36 @@ fun PodiumApp(graph: AppGraph, onSourceAction: (CapabilityAction) -> Unit, onTur
                         navigator.push(Dest.Lyrics)
                     }
                     "home" -> while (navigator.pop()) Unit
+                    "songs" -> {
+                        while (navigator.pop()) Unit
+                        navigator.push(Dest.Music)
+                        navigator.push(Dest.Songs)
+                    }
+                    "playlists" -> {
+                        while (navigator.pop()) Unit
+                        navigator.push(Dest.Music)
+                        navigator.push(Dest.Playlists)
+                    }
                 }
                 if (place != null) graph.debugOpen.value = null
             }
         }
         val router = remember { InputRouter() }
         val overlay = remember { OverlayHost() }
+        // A moment that takes the whole display (D-104): Now Playing's vinyl.
+        val immersive = remember { ImmersiveHost() }
         // Typing (D-45): fields open the Podium keyboard where the Wheel is, or the phone's.
         val keyboard = remember { KeyboardHost() }
         val podiumKeyboard by graph.deviceSettings.podiumKeyboard.collectAsStateWithLifecycle()
-        val hapticsOn by graph.deviceSettings.haptics.collectAsStateWithLifecycle()
+        val hapticProfile by graph.deviceSettings.hapticProfile.collectAsStateWithLifecycle()
         val clicksOn by graph.deviceSettings.clicks.collectAsStateWithLifecycle()
-        val feedback = remember(hapticsOn, clicksOn) { Feedback(haptics = hapticsOn, clicker = if (clicksOn) graph.sounds else Clicker.Silent) }
+        val feedback = remember(hapticProfile, clicksOn) { Feedback(profile = hapticProfile, clicker = if (clicksOn) graph.sounds else Clicker.Silent) }
         val view = LocalView.current
-        val haptics = remember(view, feedback) { PodiumHaptics(view, feedback) }
+        // One haptic engine for the whole app (D-105): its capabilities found once, its effects kept.
+        val hapticEngine = remember(view) { HapticEngine(view.context, view) }
+        val haptics = remember(hapticEngine, feedback) { PodiumHaptics(hapticEngine, feedback) }
+        // Add to playlist (D-106), from the library's song menus and Now Playing.
+        val playlistPicker = remember(navigator, haptics) { PlaylistPicker(graph.playlists, haptics) { navigator.push(Dest.NamePlaylist()) } }
         val scope = rememberCoroutineScope()
 
         SystemBarIcons(darkIcons = palette.isLight)
@@ -497,20 +551,37 @@ fun PodiumApp(graph: AppGraph, onSourceAction: (CapabilityAction) -> Unit, onTur
             space.startEditing()
         }
 
-        val nowPlayingArt = rememberArtwork(snapshot.item?.artworkUri, 96.dp)
-        val atmosphere = remember(nowPlayingArt, colors.isDark) {
-            nowPlayingArt?.let { Atmosphere.fromArtwork(it.asAndroidBitmap(), colors.isDark) } ?: Atmosphere.neutral(colors)
-        }
-
         CompositionLocalProvider(
             LocalInputRouter provides router,
             LocalOverlayHost provides overlay,
+            LocalImmersiveHost provides immersive,
+            LocalPlaylistPicker provides playlistPicker,
             LocalArtworkLoader provides graph.artworkLoader,
             LocalFeedback provides feedback,
+            LocalHapticEngine provides hapticEngine,
             LocalKeyboardHost provides keyboard,
             LocalKeyboardStyle provides if (podiumKeyboard) KeyboardStyle.PODIUM else KeyboardStyle.PHONE,
             LocalPodiumSpace provides space,
         ) {
+         // The playing cover, read through the app's artwork loader (provided just above; read before
+         // it, every cover came back empty and the artwork atmosphere never showed). Glass's
+         // atmosphere and Carbon's palette and field (D-101) all come from it.
+         val nowPlayingArtState = rememberArtworkState(snapshot.item?.artworkUri, 96.dp)
+         // While the next cover loads the last one holds, so a skip never dips through neutral.
+         var nowPlayingArt by remember { mutableStateOf(nowPlayingArtState.bitmap) }
+         LaunchedEffect(nowPlayingArtState) {
+             if (nowPlayingArtState.bitmap != null || nowPlayingArtState.settled) nowPlayingArt = nowPlayingArtState.bitmap
+         }
+         val atmosphere = remember(nowPlayingArt, colors.isDark) {
+             nowPlayingArt?.let { Atmosphere.fromArtwork(it.asAndroidBitmap(), colors.isDark) } ?: Atmosphere.neutral(colors)
+         }
+         // Carbon's and Glass's colours from the cover (D-101, D-103); the matte instrument takes none.
+         val lit = !colors.isIndustrial
+         val cover = rememberCoverAnalysis(
+             artwork = if (lit) nowPlayingArtState.bitmap else null,
+             settled = !lit || nowPlayingArtState.settled,
+         )
+         CompositionLocalProvider(LocalAlbumTone provides rememberAlbumTone(cover?.palette)) {
          Box(Modifier.fillMaxSize()) {
           PodiumSpace(
             state = space,
@@ -584,23 +655,48 @@ fun PodiumApp(graph: AppGraph, onSourceAction: (CapabilityAction) -> Unit, onTur
             // One structure for every finish, so trying finishes on never rebuilds the screen.
             GlassHost(
                 modifier = Modifier.fillMaxSize(),
-                content = { Body(palette, atmosphere, nowPlayingArt) },
+                // The Glass body keeps its own neutral light: the album colours only the display (D-101).
+                content = { Body(palette, remember(colors.isDark) { Atmosphere.neutral(colors) }, art = null) },
                 functional = {
                     DeviceLayout(
                         modifier = Modifier.fillMaxSize(),
                         screen = {
+                            // Booting and on are one screen (D-102): the menu is there behind the boot, which
+                            // dives through its mark into it, so the hand-over is one continuous move.
                             AnimatedContent(
-                                targetState = power,
-                                transitionSpec = { powerTransition(initialState, targetState) },
+                                targetState = power != Power.OFF,
+                                transitionSpec = { powerTransition(on = targetState) },
                                 label = "power",
-                            ) { state ->
-                                when (state) {
-                                    Power.OFF -> Box(Modifier.fillMaxSize().background(Color.Black).semantics { contentDescription = "Display off" })
-                                    Power.BOOTING -> {
-                                        val checks by graph.bootChecks.collectAsStateWithLifecycle()
-                                        BootScreen(checks = checks, onChime = graph::onBootChime, onFinished = graph::onBootFinished)
+                            ) { on ->
+                                if (!on) {
+                                    Box(Modifier.fillMaxSize().background(Color.Black).semantics { contentDescription = "Display off" })
+                                } else {
+                                    val booting = power == Power.BOOTING
+                                    // A fresh one each time the display comes on.
+                                    val boot = remember { BootReveal() }
+                                    val idleRouter = remember { InputRouter() }
+                                    Box(Modifier.fillMaxSize()) {
+                                        // While it boots the menu takes no input (the boot does) and stays hidden
+                                        // until the dive, then comes forward out of the distance, into focus.
+                                        CompositionLocalProvider(LocalInputRouter provides if (booting) idleRouter else router) {
+                                            Box(
+                                                Modifier
+                                                    .fillMaxSize()
+                                                    .graphicsLayer {
+                                                        if (!booting) return@graphicsLayer
+                                                        val r = boot.reveal
+                                                        alpha = if (r <= 0f) 0f else 0.3f + 0.7f * r
+                                                        val s = 0.86f + 0.14f * r
+                                                        scaleX = s
+                                                        scaleY = s
+                                                    }
+                                                    .defocus { if (booting) (1f - boot.reveal) * 0.8f else 0f },
+                                            ) {
+                                                ScreenOs(graph, snapshot, backStack, navigator, overlay, atmosphere, cover?.field, onSourceAction)
+                                            }
+                                        }
+                                        if (booting) BootScreen(boot, onChime = graph::onBootChime, onFinished = graph::onBootFinished)
                                     }
-                                    Power.ON -> ScreenOs(graph, snapshot, backStack, navigator, overlay, atmosphere, onSourceAction)
                                 }
                             }
                         },
@@ -630,6 +726,7 @@ fun PodiumApp(graph: AppGraph, onSourceAction: (CapabilityAction) -> Unit, onTur
           GuideTour(guide, palette)
           if (turningOff) Farewell(onFinished = onTurnOff)
          }
+         }
         }
     }
 }
@@ -637,10 +734,10 @@ fun PodiumApp(graph: AppGraph, onSourceAction: (CapabilityAction) -> Unit, onTur
 /**
  * The display's power changes (D-26). Switching off dims the panel first, holds a beat, then goes
  * black — inside the screen only; the body and the Wheel stay as they are. Waking lights the black
- * panel straight into the boot screen.
+ * panel straight into the boot, which hands over to the menu by itself (D-102).
  */
-private fun AnimatedContentTransitionScope<Power>.powerTransition(from: Power, to: Power): ContentTransform = when {
-    to == Power.OFF -> fadeIn(
+private fun AnimatedContentTransitionScope<Boolean>.powerTransition(on: Boolean): ContentTransform = if (!on) {
+    fadeIn(
         keyframes {
             durationMillis = 520
             0f at 0
@@ -649,8 +746,8 @@ private fun AnimatedContentTransitionScope<Power>.powerTransition(from: Power, t
             1f at 520
         },
     ) togetherWith fadeOut(tween(durationMillis = 1, delayMillis = 520))
-    from == Power.OFF -> fadeIn(tween(180)) togetherWith fadeOut(tween(1, delayMillis = 180))
-    else -> fadeIn(tween(320)) togetherWith fadeOut(tween(320))
+} else {
+    fadeIn(tween(180)) togetherWith fadeOut(tween(1, delayMillis = 180))
 }
 
 /** The device body: the Glass finish shows the artwork's atmosphere for the Wheel to refract. */
@@ -673,6 +770,8 @@ private fun ScreenOs(
     navigator: Navigator,
     overlay: OverlayHost,
     atmosphere: Atmosphere,
+    /** Carbon's atmosphere field for the playing cover (D-101), or null. */
+    albumField: ImageBitmap?,
     onSourceAction: (CapabilityAction) -> Unit,
 ) {
     val controller = graph.playbackController
@@ -687,14 +786,30 @@ private fun ScreenOs(
     val miniPlayerVisible = snapshot.isActive && top.showsMiniPlayer()
     // Lyrics take the whole display: no header, no fading edges.
     val fullScreen = top == Dest.Lyrics
+    // Carbon (D-101): an open menu or notice puts the display behind it out of focus.
+    val updateShown by graph.updates.shown.collectAsStateWithLifecycle()
+    val updateState by graph.updates.state.collectAsStateWithLifecycle()
+    val overlayOpen = overlay.menu != null || (updateShown && updateState != app.podium.update.UpdateState.Idle)
+    val defocused = animateFloatAsState(
+        if (colors.isTonal && overlayOpen) 1f else 0f,
+        if (overlayOpen) tween(220, easing = PodiumMotion.Standard) else tween(140, easing = PodiumMotion.Standard),
+        label = "defocus",
+    )
+    // A moment that takes the whole display (D-104) puts everything behind it out of focus, on every
+    // theme, as deep as it says.
+    val stage = LocalImmersiveHost.current
+    val behindOverlay = Modifier.defocus { maxOf(defocused.value, stage.depth * ImmersiveDefocus) }
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
-        val miniBlock = if (miniPlayerVisible) Spacing.miniPlayer + Spacing.s * 2 else Spacing.s
+        // The mini player sits the edge margin above the display's bottom, with the same margin
+        // above it to the content (D-103).
+        val miniBlock = if (miniPlayerVisible) Spacing.miniPlayer + Spacing.edge * 2 else Spacing.edge
         val insets = ScreenInsets(top = ScreenHeaderHeight, bottom = miniBlock)
         val density = LocalDensity.current
         val screenHeight = maxHeight
         // The same geometry the lists use, so a screen moving away lands exactly in its box.
-        val paper = PaperGeometry(maxWidth, maxHeight, insets.top + 8.dp, insets.bottom + 8.dp)
+        val listPadding = insets.listPadding()
+        val paper = PaperGeometry(maxWidth, maxHeight, listPadding.calculateTopPadding(), listPadding.calculateBottomPadding())
         // Where each column's lit row sits, and which column was in front before this move (D-61).
         val lenses = remember { PaperLenses() }
         // The column in front now, and the one in front before it. The move may be set up before or
@@ -716,13 +831,27 @@ private fun ScreenOs(
         GlassHost(
             modifier = Modifier.fillMaxSize(),
             content = {
-                // Glass tints the display with the artwork's atmosphere; Carbon and Bone stay matte, and
-                // a background the listener chose (D-41) shows as it is.
-                if (!colors.isIndustrial && LocalDisplaySurface.current == null) AtmosphereBackground(atmosphere, Modifier.fillMaxSize())
+                // Glass tints the display with the artwork's atmosphere; Carbon lights it with the playing
+                // album, strongest on Now Playing (D-101); Bone stays matte, and a background the
+                // listener chose (D-41) shows as it is.
+                if (colors.isTonal) {
+                    val level = animateFloatAsState(top.atmosphereLevel(), tween(PaperTransitionMillis, easing = PodiumMotion.Spatial), label = "atmosphereLevel")
+                    // On Now Playing, while the music plays, the cover's colours flow (D-103).
+                    AlbumAtmosphere(
+                        albumField,
+                        level = { level.value },
+                        Modifier.fillMaxSize(),
+                        moving = { top == Dest.NowPlaying && snapshot.intent == PlayIntent.PLAY },
+                    )
+                } else if (!colors.isIndustrial && LocalDisplaySurface.current == null) {
+                    // Glass: the album tints the display on Now Playing; elsewhere its neutral light.
+                    val neutral = remember(colors.isDark) { Atmosphere.neutral(colors) }
+                    AtmosphereBackground(if (top == Dest.NowPlaying) atmosphere else neutral, Modifier.fillMaxSize())
+                }
                 CompositionLocalProvider(LocalScreenInsets provides insets, LocalPaperLenses provides lenses) {
                     NavDisplay(
                         backStack = backStack,
-                        modifier = Modifier.fillMaxSize().scrollEdgeFade(
+                        modifier = Modifier.fillMaxSize().then(behindOverlay).scrollEdgeFade(
                             topFadePx = if (fullScreen) 0f else with(density) { insets.top.toPx() },
                             bottomStartPx = with(density) { (if (fullScreen) screenHeight else screenHeight - insets.bottom.coerceAtLeast(24.dp)).toPx() },
                         ),
@@ -735,7 +864,7 @@ private fun ScreenOs(
                         entryProvider = { key ->
                             // Glass lets Now Playing rise from the mini player; Carbon and Bone keep the whole
                             // hierarchy on one horizontal sheet of paper (D-29).
-                            val rise = key == Dest.NowPlaying && !colors.isIndustrial
+                            val rise = key == Dest.NowPlaying && colors.style == DisplayStyle.GLASS
                             NavEntry(key, metadata = if (rise) riseFromMiniPlayer(motion) else emptyMap()) { screen ->
                                 // Each screen sees the column before it on the paper peeking in at its left.
                                 val position = backStack.indexOf(screen)
@@ -782,11 +911,11 @@ private fun ScreenOs(
                     output = output.indicator(),
                     clock = immersive,
                     battery = if (immersive && titleBarBattery) battery else null,
-                    modifier = Modifier.align(Alignment.TopCenter),
+                    modifier = Modifier.align(Alignment.TopCenter).then(behindOverlay),
                 )
                 AnimatedVisibility(
                     visible = miniPlayerVisible,
-                    modifier = Modifier.align(Alignment.BottomCenter),
+                    modifier = Modifier.align(Alignment.BottomCenter).then(behindOverlay),
                     enter = fadeIn(motion.fadeStandard()) + slideInVertically(motion.navigateOffset()) { it / 2 },
                     exit = fadeOut(motion.fadeFast()) + slideOutVertically(motion.navigateOffset()) { it / 2 },
                 ) {
@@ -804,9 +933,15 @@ private fun ScreenOs(
                             onOpen = navigator::showNowPlaying,
                             onPlayPause = controller::togglePlayPause,
                             onNext = controller::next,
-                            modifier = Modifier.padding(Spacing.s).fillMaxWidth(),
+                            modifier = Modifier.padding(Spacing.edge).fillMaxWidth(),
                         )
                     }
+                }
+                // Over the title bar and the mini player, under menus and notices (D-104). The system's
+                // back goes to it, not to the screen behind.
+                stage.content?.let { moment ->
+                    moment()
+                    BackHandler { stage.onBack() }
                 }
                 // Back folds the keyboard away before it goes anywhere (D-45). Registered when it
                 // opens, so it comes after the navigation's own handler and wins.
@@ -834,6 +969,9 @@ private fun PreviousColumn(previous: Dest, current: Dest, graph: AppGraph, navig
     val focusKey = when (current) {
         is Dest.Album -> current.id.value
         is Dest.Artist -> current.id.value
+        is Dest.Playlist -> current.id
+        is Dest.AddSongs -> PlaylistKeys.ADD_SONGS
+        is Dest.NamePlaylist -> if (current.playlistId == null) PlaylistKeys.NEW else PlaylistKeys.RENAME
         Dest.NowPlaying -> snapshot.item?.trackId?.value
         // Settings rows are keyed by their enum names.
         Dest.Appearance -> "Appearance"
@@ -879,9 +1017,27 @@ private fun PreviousColumn(previous: Dest, current: Dest, graph: AppGraph, navig
     }
 }
 
-private val MiniPlayerScreens = setOf(Dest.Home, Dest.Music, Dest.Albums, Dest.Artists, Dest.Songs, Dest.Favorites)
+/**
+ * How strongly the playing album lights Carbon's display behind each screen (D-101): fully behind Now
+ * Playing, where the music is the subject; enough to feel alive behind menus; quiet behind long lists
+ * and faint behind Settings, where reading comes first. Lyrics draw their own paper.
+ */
+private fun Dest.atmosphereLevel(): Float = when (this) {
+    Dest.NowPlaying -> 1f
+    Dest.Lyrics -> 0f
+    Dest.UpNext -> 0.6f
+    Dest.Home, Dest.Music, Dest.CoverFlow -> 0.55f
+    Dest.Albums, Dest.Artists, Dest.Songs, Dest.Favorites, Dest.Playlists, is Dest.Playlist, is Dest.AddSongs,
+    is Dest.Album, is Dest.Artist, is Dest.Online -> 0.4f
+    else -> 0.22f
+}
 
-private fun Dest.showsMiniPlayer() = this in MiniPlayerScreens || this is Dest.Album || this is Dest.Artist ||
+private val MiniPlayerScreens = setOf(Dest.Home, Dest.Music, Dest.Albums, Dest.Artists, Dest.Songs, Dest.Favorites, Dest.Playlists)
+
+/** How far out of focus a full-display moment puts what's behind it: twice a menu's (D-104). */
+private const val ImmersiveDefocus = 2f
+
+private fun Dest.showsMiniPlayer() = this in MiniPlayerScreens || this is Dest.Album || this is Dest.Artist || this is Dest.Playlist || this is Dest.AddSongs ||
     (this is Dest.Online && place !is OnlinePlace.Search && place !is OnlinePlace.NamePlaylist)
 
 @Composable
@@ -934,6 +1090,8 @@ private fun ScreenContent(
             onSongs = { navigator.push(Dest.Songs) },
             onFavorites = { navigator.push(Dest.Favorites) },
             onSourceAction = onSourceAction,
+            playlists = graph.playlists,
+            onPlaylists = { navigator.push(Dest.Playlists) },
         )
         Dest.CoverFlow -> CoverFlowScreen(graph.library, onOpen = { navigator.push(Dest.Album(it)) })
         Dest.Albums -> AlbumsScreen(graph.library, onOpen = { navigator.push(Dest.Album(it)) })
@@ -941,6 +1099,38 @@ private fun ScreenContent(
         is Dest.Album -> AlbumScreen(graph.library, screen.id, onPlay = play, onPlayNext = playNext, onAddToQueue = addToQueue)
         is Dest.Artist -> ArtistScreen(graph.library, screen.id, onOpenAlbum = { navigator.push(Dest.Album(it)) }, onPlay = play)
         Dest.Favorites -> FavoritesScreen(graph.library, graph.localFavorites, onPlay = play, onPlayNext = playNext, onAddToQueue = addToQueue)
+        Dest.Playlists -> PlaylistsScreen(
+            graph.playlists,
+            onOpen = { navigator.push(Dest.Playlist(it.id, it.name)) },
+            onNew = { navigator.push(Dest.NamePlaylist()) },
+        )
+        is Dest.Playlist -> PlaylistScreen(
+            graph.playlists,
+            screen.id,
+            screen.name,
+            onPlay = play,
+            onShuffle = { tracks, label ->
+                controller.playContext(tracks.map { it.id }, 0, label, shuffle = true)
+                navigator.showNowPlaying()
+            },
+            onPlayNext = playNext,
+            onAddToQueue = addToQueue,
+            onAddSongs = { navigator.push(Dest.AddSongs(screen.id)) },
+            onRename = { navigator.push(Dest.NamePlaylist(screen.id, it)) },
+            onDeleted = { navigator.pop() },
+        )
+        is Dest.AddSongs -> AddSongsScreen(graph.library, graph.playlists, screen.playlistId)
+        is Dest.NamePlaylist -> NamePlaylistScreen(
+            graph.playlists,
+            screen.playlistId,
+            screen.currentName,
+            onRenamed = { navigator.pop() },
+            onCreated = { id, name, withSongs ->
+                navigator.pop()
+                // A new, empty playlist opens, ready for its songs; one made for songs goes back to them.
+                if (!withSongs && navigator.current == Dest.Playlists) navigator.push(Dest.Playlist(id, name))
+            },
+        )
         Dest.Songs -> SongsScreen(
             repository = graph.library,
             onPlay = { tracks, index -> play(tracks, index, "Songs") },
@@ -953,9 +1143,14 @@ private fun ScreenContent(
             graph.favorites,
             onUpNext = { navigator.push(Dest.UpNext) },
             environmentOf = { id -> if (graph.environments.isOnline(id)) "Online" else null },
+            // A song of the library can go into one of its playlists (D-106); online songs never do (D-34).
+            onAddToPlaylist = LocalPlaylistPicker.current?.let { picker -> { id -> if (!graph.environments.isOnline(id)) picker.show(overlay, listOf(id)) } },
             onLyrics = { navigator.push(Dest.Lyrics) },
             trackOf = { id -> graph.songPages.of(id) },
             sleepTimer = graph.sleepTimer,
+            pulse = graph.audioPulse,
+            // Settings ▸ Now Playing's tray (D-108).
+            autoHideTray = graph.deviceSettings.hideNowPlayingTray.collectAsStateWithLifecycle().value,
             // Each page in the song's own environment (D-34): the library's, or online's.
             onOpenAlbum = { track ->
                 val album = track.album

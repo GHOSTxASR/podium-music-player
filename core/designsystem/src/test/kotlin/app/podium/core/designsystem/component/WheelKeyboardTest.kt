@@ -30,6 +30,7 @@ import app.podium.core.designsystem.shell.ScreenHeaderHeight
 import app.podium.core.designsystem.shell.palette
 import app.podium.core.designsystem.theme.DisplayTheme
 import app.podium.core.designsystem.theme.PodiumTheme
+import app.podium.core.designsystem.theme.Spacing
 import app.podium.core.interaction.InputRouter
 import app.podium.core.interaction.LocalInputRouter
 import org.junit.Rule
@@ -86,7 +87,7 @@ class WheelKeyboardTest {
                         DeviceLayout(
                             modifier = Modifier.fillMaxSize(),
                             screen = {
-                                CompositionLocalProvider(LocalScreenInsets provides ScreenInsets(top = ScreenHeaderHeight, bottom = 8.dp)) {
+                                CompositionLocalProvider(LocalScreenInsets provides ScreenInsets(top = ScreenHeaderHeight, bottom = Spacing.edge)) {
                                     Box(Modifier.fillMaxSize().padding(top = ScreenHeaderHeight + 16.dp, start = 16.dp, end = 16.dp)) {
                                         PodiumTextField(
                                             value = text,

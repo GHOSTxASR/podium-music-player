@@ -14,6 +14,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.podium.core.designsystem.component.DetailHeader
 import app.podium.core.designsystem.component.FocusList
+import app.podium.core.designsystem.component.KeyboardAwayOnLeave
 import app.podium.core.designsystem.component.ListInputEffect
 import app.podium.core.designsystem.component.LocalScreenInsets
 import app.podium.core.designsystem.component.MenuAction
@@ -39,7 +40,7 @@ fun OnlinePlaylistsScreen(repository: OnlineRepository, navigate: (OnlinePlace) 
             navigate(OnlinePlace.NamePlaylist())
         },
     ) + list.map { p ->
-        OnlineEntry(p.name, MenuPreview.None, value = if (p.trackCount == 1) "1 song" else "${p.trackCount} songs") {
+        OnlineEntry(p.name, MenuPreview.None, value = if (p.trackCount == 1) "1 song" else "${p.trackCount} songs", key = "playlist:${p.id}") {
             navigate(OnlinePlace.MyPlaylist(p.id, p.name))
         }
     }

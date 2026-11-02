@@ -12,6 +12,9 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.ImageShader
+import androidx.compose.ui.graphics.ShaderBrush
+import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.graphicsLayer
 import app.podium.core.designsystem.theme.PodiumTheme
 
@@ -33,6 +36,7 @@ fun DeviceBody(
     val bottom by animateColorAsState(palette.bodyBottom, tween(duration), label = "bodyBottom")
     val grain by animateFloatAsState(palette.grain, tween(duration), label = "bodyGrain")
     val sheenAlpha = if (palette.matte) 0f else if (palette.isLight) 0.22f else 0.07f
+    val metal = palette.metal
     Box(
         modifier
             // The body is the largest thing drawn and changes only when the finish does or the glitter
@@ -48,9 +52,15 @@ fun DeviceBody(
                     start = Offset.Zero,
                     end = Offset(size.width * 0.9f, size.height * 0.55f),
                 )
+                // Carbon's blackened steel (D-101): brushed, with its edges catching the light.
+                val brushed = ShaderBrush(ImageShader(BrushedTile, TileMode.Repeated, TileMode.Repeated))
                 onDrawBehind {
-                    drawRect(falloff)
-                    drawRect(sheen)
+                    if (metal) {
+                        drawBrushedBody(top, bottom, brushed)
+                    } else {
+                        drawRect(falloff)
+                        drawRect(sheen)
+                    }
                 }
             }
             .grain { grain }

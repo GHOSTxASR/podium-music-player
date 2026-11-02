@@ -30,6 +30,7 @@ import app.podium.core.designsystem.component.MessageState
 import app.podium.core.designsystem.component.ProgressBar
 import app.podium.core.designsystem.shell.DeviceAppearance
 import app.podium.core.designsystem.symbol.PodiumSymbol
+import app.podium.core.designsystem.theme.DisplayTheme
 import app.podium.core.designsystem.theme.DisplayBackground
 import app.podium.core.designsystem.theme.LocalPodiumType
 import app.podium.core.designsystem.theme.LyricsTheme
@@ -204,8 +205,12 @@ fun DeviceBodyScreen(
             BodyRow.Finish -> MenuRow(
                 "Finish",
                 focused,
-                // Carbon, Bone and Custom come in matte black hardware (D-29).
-                value = if (industrial) "Matte black" else appearance.preset.label,
+                // Carbon comes in blackened steel (D-101); Bone and Custom in matte black hardware (D-29).
+                value = when {
+                    appearance.display == DisplayTheme.CARBON -> "Blackened steel"
+                    industrial -> "Matte black"
+                    else -> appearance.preset.label
+                },
                 enabled = !industrial,
                 showChevron = !industrial,
             )
@@ -254,9 +259,8 @@ fun VirtualDisplayScreen(
     val haptics = rememberPodiumHaptics()
     val focus = rememberFocusListState("virtual-display")
     val screen = appearance.screen
-    // Carbon and Bone keep their own display (D-29): one row says so instead of three that can't be used.
-    val ownDisplay = appearance.display == app.podium.core.designsystem.theme.DisplayTheme.CARBON ||
-        appearance.display == app.podium.core.designsystem.theme.DisplayTheme.BONE
+    // Carbon keeps its own display (D-101): one row says so instead of three that can't be used.
+    val ownDisplay = appearance.display == app.podium.core.designsystem.theme.DisplayTheme.CARBON
     val shown = screen.backgroundFor(appearance.display)
     val rows = DisplayRow.entries.filter { row ->
         when (row) {

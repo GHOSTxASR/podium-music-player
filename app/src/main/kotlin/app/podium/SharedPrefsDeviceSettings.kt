@@ -12,6 +12,7 @@ import app.podium.core.designsystem.theme.TextContrast
 import app.podium.core.designsystem.theme.VirtualDisplay
 import app.podium.core.designsystem.type.DisplayFont
 import app.podium.core.designsystem.type.LyricsFont
+import app.podium.core.interaction.HapticProfile
 import app.podium.feature.settings.DeviceSettingsRepository
 import app.podium.player.api.AudioEffects
 import app.podium.player.api.EqualizerPreset
@@ -66,8 +67,12 @@ class SharedPrefsDeviceSettings(context: Context) : DeviceSettingsRepository {
     private val _startupSound = MutableStateFlow(prefs.getBoolean(KEY_SOUND, true))
     override val startupSound: StateFlow<Boolean> = _startupSound.asStateFlow()
 
-    private val _haptics = MutableStateFlow(prefs.getBoolean(KEY_HAPTICS, true))
-    override val haptics: StateFlow<Boolean> = _haptics.asStateFlow()
+    // The profile (D-105); before it, a switch: off stays off, on becomes Balanced.
+    private val _hapticProfile = MutableStateFlow(
+        prefs.getString(KEY_HAPTIC_PROFILE, null)?.let { saved -> HapticProfile.entries.firstOrNull { it.name == saved } }
+            ?: if (prefs.getBoolean(KEY_HAPTICS, true)) HapticProfile.BALANCED else HapticProfile.OFF,
+    )
+    override val hapticProfile: StateFlow<HapticProfile> = _hapticProfile.asStateFlow()
 
     private val _clicks = MutableStateFlow(prefs.getBoolean(KEY_CLICKS, false))
     override val clicks: StateFlow<Boolean> = _clicks.asStateFlow()
@@ -119,6 +124,14 @@ class SharedPrefsDeviceSettings(context: Context) : DeviceSettingsRepository {
         prefs.edit { putBoolean(KEY_TITLE_BAR_BATTERY, shown) }
     }
 
+    private val _hideNowPlayingTray = MutableStateFlow(prefs.getBoolean(KEY_HIDE_TRAY, false))
+    override val hideNowPlayingTray: StateFlow<Boolean> = _hideNowPlayingTray.asStateFlow()
+
+    override fun setHideNowPlayingTray(enabled: Boolean) {
+        _hideNowPlayingTray.value = enabled
+        prefs.edit { putBoolean(KEY_HIDE_TRAY, enabled) }
+    }
+
     override fun setAutoplay(enabled: Boolean) {
         _autoplay.value = enabled
         prefs.edit { putBoolean(KEY_AUTOPLAY, enabled) }
@@ -134,9 +147,9 @@ class SharedPrefsDeviceSettings(context: Context) : DeviceSettingsRepository {
         prefs.edit { putBoolean(KEY_AVOID_REPEATS, enabled) }
     }
 
-    override fun setHaptics(enabled: Boolean) {
-        _haptics.value = enabled
-        prefs.edit { putBoolean(KEY_HAPTICS, enabled) }
+    override fun setHapticProfile(profile: HapticProfile) {
+        _hapticProfile.value = profile
+        prefs.edit { putString(KEY_HAPTIC_PROFILE, profile.name) }
     }
 
     override fun setClicks(enabled: Boolean) {
@@ -231,8 +244,10 @@ class SharedPrefsDeviceSettings(context: Context) : DeviceSettingsRepository {
         const val KEY_CUSTOM = "custom_argb"
         const val KEY_GRAIN = "grain"
         const val KEY_SOUND = "startup_sound"
+        const val KEY_HIDE_TRAY = "hide_now_playing_tray"
         const val KEY_DISPLAY = "display_theme"
         const val KEY_HAPTICS = "haptics"
+        const val KEY_HAPTIC_PROFILE = "haptic_profile"
         const val KEY_CLICKS = "clicks"
         const val KEY_AUTOPLAY = "autoplay"
         const val KEY_RECOMMENDATIONS = "online_recommendations"

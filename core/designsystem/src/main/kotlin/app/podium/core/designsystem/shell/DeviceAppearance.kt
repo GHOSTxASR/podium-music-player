@@ -39,8 +39,12 @@ data class DeviceAppearance(
 ) {
     val isGlass: Boolean get() = !display.isIndustrial && preset == FinishPreset.GLASS
 
-    /** The solid base colour, or null for Glass. Industrial themes always use matte black hardware. */
+    /**
+     * The solid base colour, or null for Glass. Carbon comes in blackened steel (D-101); Bone and
+     * Custom in matte black hardware (D-29).
+     */
     val baseArgb: Int? get() = when {
+        display == DisplayTheme.CARBON -> BLACKENED_STEEL
         display.isIndustrial -> MATTE_BLACK
         preset == FinishPreset.CUSTOM -> customArgb
         else -> preset.baseArgb
@@ -50,6 +54,9 @@ data class DeviceAppearance(
         const val DEFAULT_CUSTOM = 0xFF2F6F5E.toInt()
         const val DEFAULT_GRAIN = 0.25f
         const val MATTE_BLACK = 0xFF171717.toInt()
+
+        /** Carbon's hardware (D-101): blackened, brushed steel. */
+        const val BLACKENED_STEEL = 0xFF16171A.toInt()
     }
 }
 
@@ -72,6 +79,11 @@ data class ShellPalette(
     val grain: Float,
     /** Matte industrial hardware: flat surfaces, no sheen, no drop shadows (D-29). */
     val matte: Boolean = false,
+    /**
+     * Carbon's blackened steel (D-101): a brushed body and a spun-metal Wheel that turns with the
+     * finger, with real bevels, seams and contact shadows.
+     */
+    val metal: Boolean = false,
     /** The body's glitter (off unless chosen) and the two colours its flakes take from the body. */
     val glitter: Glitter = Glitter(),
     val glitterLight: Color = Color.Unspecified,
@@ -91,6 +103,26 @@ fun DeviceAppearance.palette(darkTheme: Boolean): ShellPalette {
         pressShade = Color.Black.copy(alpha = if (darkTheme) 0.16f else 0.08f),
         grain = 0f,
     )
+    if (display == DisplayTheme.CARBON) {
+        // Blackened steel: graphite and near-black, the light neutral (never gold), legends in a warm
+        // off-white engraved into the metal.
+        return ShellPalette(
+            isGlass = false,
+            isLight = false,
+            bodyTop = Color(0xFF1C1D20),
+            bodyBottom = Color(0xFF0D0E10),
+            ring = Color(0xFF1E1F22),
+            ringRim = Color.White.copy(alpha = 0.09f),
+            center = Color(0xFF18191C),
+            legend = Color(0xFFDAD7D0),
+            pressShade = Color.Black.copy(alpha = 0.22f),
+            grain = grain.coerceIn(0f, 1f),
+            metal = true,
+            glitter = glitter,
+            glitterLight = Color(0xFFC9CCD0),
+            glitterDark = Color(0xFF000000),
+        )
+    }
     if (display.isIndustrial) {
         // Matte black instrument hardware: a barely lighter wheel, a hairline rim, off-white legends.
         return ShellPalette(

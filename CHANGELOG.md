@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-11-02
+
+### Added
+- **Carbon, redesigned (D-101):** the playing album now lights Carbon's display — a deep, defocused field of the cover's colours, strongest on Now Playing and quiet in lists and Settings — and gives it one accent. Controls are solid, rounded surfaces you can press. Now Playing shows the cover flat and large, a seek bar that ripples gently while the music plays, and the transport as one group of keys with the play key in the album's colour. Opening a menu softens everything behind it. The hardware is blackened steel: a brushed body and a spun-metal Wheel whose shine follows the phone as you tilt it, around a matte centre button. Glass and Custom are unchanged.
+- **A new start-up (D-102):** Podium's P appears in a lens of fine lines, spins, and unrolls into the PODIUM wordmark; then you dive through the O into the menu. On every theme. Any Wheel press skips it.
+
+- **Vinyl (D-104):** Now Playing ▸ Vinyl lifts the cover out, slides the record from it and sets it on a turntable in the middle of the display, the rest out of focus. The tonearm swings on and the music plays; a dot visualiser below moves with the sound, and the song's name sits at the foot. Center seeks (the record spins forward or back with it), ⏮ and ⏭ roll the record away for the next, and Menu packs it back into its sleeve and returns to Now Playing. Nothing else on the Wheel does anything while it plays.
+
+- **Let Now Playing clear itself (D-108):** Settings ▸ Now Playing's tray. Turn it on and the row of actions slides away towards the foot of the display a few seconds after you stop touching anything, leaving the cover, the song and the orb. Any press of the Wheel brings it back — and does nothing else, so you can't skip or pause by accident reaching for it. Once it's up the Wheel works as it always does. Off unless you ask for it.
+
+- **The orb (D-107):** Now Playing's play button is now a little creature with two eyes. It is round while the music plays and settles into a pebble when you stop it, so you can always see which it is. Playing, it dances — the bass squashes it, it bobs and leans along, and a loud passage arches its eyes up happily — and every so often it gets carried away, rolls right forward over itself and lands in a burst of little stars. It watches the covers slide by when you change songs, follows the Wheel's focus lens around the action tray, and screws its eyes up when you press it. Leave the music stopped and it works through a whole mood: first it sits up, then it tilts its head and wonders, leans in to look, gets cross, has a cute little panic to get your attention, goes sad, and finally dozes off — nodding, catching itself, and nodding again. Ivory on Carbon, frosted glass on Glass, drawn in outline on Custom. With "Remove animations" on it holds perfectly still, and the play light in the title bar blinks while paused either way.
+
+- **Playlists of your own music (D-106):** Music ▸ Playlists. Make a playlist, name it and fill it from Add songs (every song: Center adds it, or takes it back out), or hold Center on any song (in Songs, an album, Favorites or a playlist) or choose More on Now Playing and pick Add to playlist. In a playlist: Play, Shuffle, Rename and Delete, and holding Center on a song lets you move it with the Wheel (it ticks past each song), remove it, or queue it. Songs that leave your library wait in their playlists until they're back. Your online playlists stay separate.
+
+### Removed
+- **Bone (D-108):** the warm off-white display has been withdrawn; the display is Glass, Carbon or Custom. Custom still draws the same matte instrument — lit selection, no glass, squared corners — on a colour or picture of your own, and the Classic lyrics keep their off-white paper. If you were on Bone, Podium opens on Glass.
+- **Rotation (D-108):** Podium is portrait only now. It's a device you hold upright, and it no longer turns on its side.
+
+### Changed
+- **Haptics, rebuilt (D-105):** every touch now says what it did. The Wheel clicks like a bearing when you turn it slowly, ticks faster and purrs in a spin, and thuds at the end of a list; the centre is a firm key that builds pressure as you hold it and locks in. Toggles rise on and fall off, skips lean the way they go, play is a firm click and pause a soft fall, a favourite blooms, and a song moved in Up Next lifts, ticks past each slot and lands. This needs a vibration motor Podium can fully control; on other phones Podium keeps the vibration it always had. With full control, Settings ▸ Haptics has five profiles: Balanced, More tactile, Reduced, System default and Off; otherwise it's on or off.
+- **The title bar (D-103):** the back key and the title sit on the left. On the right, the time sits in a small housing of its own, and where the music plays, whether it's playing and the battery share another, a line between each. A housing that appears buds off its neighbour like a drop of liquid, or pops up as a bubble on its own, and an icon joining a housing stretches it out.
+- **One Now Playing for every theme (D-103):** the cover lies flat and large with the song's title, artist and album beneath it, the controls in one group of keys, and the other actions in one tray with a line between each. Only the material changes with the theme. On Glass and Carbon the cover's colours flow slowly behind it while the music plays.
+- **Bolder, smoother, clearer (D-103):** text and icons are a step bolder, and on dark screens they sit a little above the display. Corners follow Apple's smooth continuous curve. Spacing is the same everywhere: whatever sits against the display's edges keeps 10 dp from them on every side, with corners that follow the display's, and Now Playing's parts are evenly spaced. The Wheel's MENU is set in the PODIUM wordmark's heavy face and its legends have depth. Pressing the Wheel's edge darkens it softly instead of in a hard wedge. The lyrics look as they did.
+- **Livelier colours (D-104):** Now Playing's colours are a little richer and travel all around the display, a little faster, and a new song's colours blend in gradually, however quickly you skip.
+- **Glass (D-103):** its controls and housings catch the light of the cover, and the transport keys sit in quiet glass housings.
+
+### Fixed
+- **Two playlists with the same name** no longer stop Podium in Online ▸ Playlists or in Add to playlist, nor do two recent songs with the same title in Online ▸ Radio.
+- **Dragging a song in Up Next** by its handle puts it where you let go.
+- **Glass's colours from the album:** on the Glass theme, Now Playing is tinted by the playing cover again, as it was designed to be; the device body keeps its own neutral light.
+
 ## [0.1.4] - 2026-10-26
 
 Release notes: [docs/releases/v0.1.4.md](docs/releases/v0.1.4.md).

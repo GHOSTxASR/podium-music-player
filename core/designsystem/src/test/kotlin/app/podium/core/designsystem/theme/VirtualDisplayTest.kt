@@ -59,10 +59,10 @@ class VirtualDisplayTest {
     }
 
     @Test
-    fun `carbon and bone keep their own display whatever background was chosen`() {
+    fun `carbon keeps its own display whatever background was chosen`() {
         val chosen = VirtualDisplay(background = DisplayBackground.SOLID, solidArgb = 0xFFFF0000.toInt())
-        assertEquals(CarbonColors, DisplayColors.colors(DisplayTheme.CARBON, true, chosen, null))
-        assertEquals(BoneColors, DisplayColors.colors(DisplayTheme.BONE, true, chosen, null))
+        // Carbon's display is its tonal palette (D-101); the album lights it, never a chosen colour.
+        assertEquals(CarbonTonalColors, DisplayColors.colors(DisplayTheme.CARBON, true, chosen, null))
         assertNull(DisplayColors.surface(DisplayTheme.CARBON, chosen, null))
         // And Glass with no background is exactly as before.
         assertEquals(DarkColors, DisplayColors.colors(DisplayTheme.GLASS, true, VirtualDisplay(), null))
@@ -92,8 +92,8 @@ class VirtualDisplayTest {
 
     @Test
     fun `high contrast brings secondary text forward`() {
-        val standard = DisplayColors.colors(DisplayTheme.BONE, true, VirtualDisplay(), null)
-        val high = DisplayColors.colors(DisplayTheme.BONE, true, VirtualDisplay(contrast = TextContrast.HIGH), null)
+        val standard = DisplayColors.colors(DisplayTheme.CARBON, true, VirtualDisplay(), null)
+        val high = DisplayColors.colors(DisplayTheme.CARBON, true, VirtualDisplay(contrast = TextContrast.HIGH), null)
         assertTrue(contrastOf(high.labelSecondary, high.canvas) > contrastOf(standard.labelSecondary, standard.canvas))
         assertEquals(standard.labelPrimary, high.labelPrimary)
     }

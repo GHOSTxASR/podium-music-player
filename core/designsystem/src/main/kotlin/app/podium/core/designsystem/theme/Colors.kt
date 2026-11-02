@@ -27,13 +27,26 @@ data class PodiumColors(
     val glassTint: Color,
     val glassRim: Color,
     val shadow: Color,
-    /** Glass look, or the matte industrial instrument look (Carbon, Bone): D-29. */
+    /** Glass, the matte industrial instrument (Bone, Custom: D-29), or Carbon's tonal display (D-101). */
     val style: DisplayStyle = DisplayStyle.GLASS,
 ) {
     val isIndustrial: Boolean get() = style == DisplayStyle.INDUSTRIAL
+
+    /** Carbon (D-101): solid, rounded surfaces over the playing album's atmosphere. */
+    val isTonal: Boolean get() = style == DisplayStyle.TONAL
 }
 
-enum class DisplayStyle { GLASS, INDUSTRIAL }
+enum class DisplayStyle {
+    GLASS,
+    INDUSTRIAL,
+
+    /**
+     * Carbon (D-101): no glass anywhere on the display, like the industrial look, but its controls are
+     * solid rounded surfaces with real depth, tinted by the playing album, over a defocused field of
+     * its colours. Text stays neutral.
+     */
+    TONAL,
+}
 
 val DarkColors = PodiumColors(
     isDark = true,
@@ -76,8 +89,36 @@ val LightColors = PodiumColors(
 )
 
 /**
- * Carbon (D-29): a matte black instrument display. Off-white type, muted grays, and a white
- * indicator in place of any coloured highlight; album artwork is the only colour on screen.
+ * Carbon's display (D-101): deep graphite lit by the playing album. Text stays warm white and neutral
+ * greys; the album's colour reaches the screen only through the tonal surfaces and accent
+ * (`tonal.AlbumTone`) and the atmosphere behind the content. [highlight] is the accent Carbon falls
+ * back to with no cover to take one from: platinum.
+ */
+val CarbonTonalColors = PodiumColors(
+    isDark = true,
+    canvas = Color(0xFF0B0B0D),
+    canvasRaised = Color(0xFF1A1A1D),
+    labelPrimary = Color(0xFFF3F1EC),
+    labelSecondary = Color(0xFFB4B1A9),
+    labelTertiary = Color(0xFF7B7973),
+    separator = Color(0xFF2A2A2E),
+    highlight = Color(0xFFE6E3DC),
+    highlightText = Color(0xFFE6E3DC),
+    onHighlight = Color(0xFF121214),
+    like = Color(0xFFE6E3DC),
+    critical = Color(0xFFF08470),
+    warning = Color(0xFFE5B158),
+    positive = Color(0xFF93CE9C),
+    glassTint = Color(0xFF000000),
+    glassRim = Color(0xFFFFFFFF),
+    shadow = Color(0xFF000000),
+    style = DisplayStyle.TONAL,
+)
+
+/**
+ * The matte black instrument ink (D-29): off-white type, muted greys, a white indicator. Carbon's
+ * display before D-101; still the black paper of Classic lyrics, the space's panels, and Custom's
+ * template on a dark colour.
  */
 val CarbonColors = PodiumColors(
     isDark = true,
@@ -100,8 +141,12 @@ val CarbonColors = PodiumColors(
     style = DisplayStyle.INDUSTRIAL,
 )
 
-/** Bone (D-29): the same instrument on a warm off-white display, with near-black type and indicator. */
-val BoneColors = PodiumColors(
+/**
+ * The warm off-white instrument: the matte display with near-black type and indicator. It was Bone
+ * (D-29) until D-108 withdrew that theme; it is still what Custom builds a light display from and what
+ * Classic lyrics use for their paper.
+ */
+val PaperColors = PodiumColors(
     isDark = false,
     canvas = Color(0xFFECE8DF),
     canvasRaised = Color(0xFFE2DDD2),

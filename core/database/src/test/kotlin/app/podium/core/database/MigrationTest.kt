@@ -196,6 +196,35 @@ class MigrationTest {
         assertTrue(File(file.parentFile, "${file.name}.bak-v4").isFile, "the v4 file was copied aside before migrating")
     }
 
+    @Test
+    fun `a v5 database opens on v6 with everything intact and local playlists ready`() = runTest {
+        val file = context.getDatabasePath(PodiumDatabase.FILE_NAME)
+        file.delete()
+        val local = TrackMapping.toEntity(song("Coastline"), inLibrary = true, now = 1)
+        createFromSchema(file, 5) { c ->
+            c.execSQL("INSERT INTO source_account (id, display_name, last_sync_at) VALUES ('local', 'This phone', 1)")
+            insertTrack(c, local, inLibrary = true)
+            c.execSQL("INSERT INTO liked_track (track_id, liked_at, sync_state) VALUES ('local|coastline', 5, 'LOCAL_ONLY')")
+            c.execSQL("INSERT INTO queue_state (id, current_index, position_ms, repeat_mode, shuffle_enabled, context_label, updated_at) VALUES (1, 0, 4200, 'ALL', 1, 'Woodland', 9)")
+            c.execSQL("INSERT INTO queue_item (ordinal, original_ordinal, track_id, origin) VALUES (0, 0, 'local|coastline', 'CONTEXT')")
+        }
+
+        val db = PodiumDatabase.create(context)
+        try {
+            assertEquals("Coastline", LibraryStore(db).track(TrackId("local|coastline"))!!.title)
+            assertEquals(listOf("local|coastline"), db.likes().likedIds().first())
+            assertEquals(4200, DatabaseQueueStore(db).load()!!.positionMs)
+            // The new tables are there, empty, and usable.
+            val playlists = LocalPlaylistStore(db)
+            assertTrue(playlists.playlists().first().isEmpty())
+            val id = playlists.create("Evening", listOf(TrackId("local|coastline")))
+            assertEquals(listOf("Coastline"), playlists.playlist(id).first()!!.entries.map { it.track.title })
+        } finally {
+            db.close()
+        }
+        assertTrue(File(file.parentFile, "${file.name}.bak-v5").isFile, "the v5 file was copied aside before migrating")
+    }
+
     private fun insertTrack(c: androidx.sqlite.SQLiteConnection, song: TrackEntity, inLibrary: Boolean) {
         c.prepare(
             "INSERT INTO track (id, source_id, source_track_id, title, title_sort, artist_display, artist_id, artists_json, album_id, " +

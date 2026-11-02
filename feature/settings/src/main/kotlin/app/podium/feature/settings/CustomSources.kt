@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -44,6 +43,7 @@ import app.podium.core.designsystem.component.MenuSpec
 import app.podium.core.designsystem.component.PodiumTextField
 import app.podium.core.designsystem.theme.PodiumTheme
 import app.podium.core.designsystem.theme.Spacing
+import app.podium.core.designsystem.tonal.ContinuousShape
 import app.podium.core.designsystem.type.PodiumText
 import app.podium.core.interaction.InputTargetEffect
 import app.podium.core.interaction.PodiumInput
@@ -450,8 +450,8 @@ private fun SourceTextEntry(
             Modifier
                 .fillMaxWidth()
                 .height(52.dp)
-                .background(colors.canvasRaised, RoundedCornerShape(14.dp))
-                .border(1.dp, if (hintIsProblem) colors.critical else colors.separator, RoundedCornerShape(14.dp))
+                .background(colors.canvasRaised, ContinuousShape(14.dp))
+                .border(1.dp, if (hintIsProblem) colors.critical else colors.separator, ContinuousShape(14.dp))
                 .padding(horizontal = Spacing.l),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -497,8 +497,8 @@ private fun EntryButton(label: String, primary: Boolean, modifier: Modifier, onC
     Box(
         modifier
             .height(48.dp)
-            .background(if (primary) colors.highlight else colors.canvasRaised, RoundedCornerShape(14.dp))
-            .then(if (primary) Modifier else Modifier.border(1.dp, colors.separator, RoundedCornerShape(14.dp)))
+            .background(if (primary) colors.highlight else colors.canvasRaised, ContinuousShape(14.dp))
+            .then(if (primary) Modifier else Modifier.border(1.dp, colors.separator, ContinuousShape(14.dp)))
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {

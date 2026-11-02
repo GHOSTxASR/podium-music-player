@@ -39,6 +39,14 @@ Auto-migration 3 → 4 adds `track_equivalence` (see §3), nothing else. Only tw
 - Account-scoped online operations (`OnlineDao.deleteLikes/likeAll/likeCount/deletePlaylists`, `OnlineLibraryStore.replaceLikes/forgetAccount`): the online tables were already keyed by account; YouTube Music's account key is `ytm-<sha-256 prefix>` — never a name or e-mail. Signing out deletes that account's likes, playlists and observed history.
 - Tested by `MigrationTest` (v4 → v5 with data) and `SchemaV5Test` (4). Schema JSON `core/database/schemas/…/5.json` committed.
 
+### Schema v6 — LOCAL playlists (D-106)
+AutoMigration 5 → 6 adds the local library's own playlists, never shared with ONLINE's (D-34):
+- `local_playlist` (id UUID, name, created_at, updated_at).
+- `local_playlist_track` (autoincrement id, so a song can be there twice; playlist_id FK → `local_playlist` ON DELETE CASCADE; track_id; fractional `position`, renumbered only when two neighbours come closer than 1e-6; added_at). Indices `(playlist_id, position)` and `(track_id)`.
+- No foreign key to `track`: like `liked_track`, an entry outlives a sync that can't see its song. Reads join `track` with `in_library = 1`, so a song that left the library is hidden (and counted out) until it's back, and an online song (`in_library = 0`) never shows. Moves place an entry among the entries shown; adding goes after every entry.
+- `LocalPlaylistStore` (`core:database`) reads the playlists with their covers straight from SQL (artwork columns only, nothing decoded) and decodes a playlist's songs off the main thread.
+- Tested by `MigrationTest` (v5 → v6 with data; `bak-v5` is taken) and `LocalPlaylistStoreTest` (6). Schema JSON `core/database/schemas/…/6.json` committed.
+
 ## 2. Entity overview
 
 ```

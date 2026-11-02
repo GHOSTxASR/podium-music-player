@@ -26,16 +26,20 @@ import java.io.File
         OnlinePlaylistTrackEntity::class,
         OnlineHistoryEntity::class,
         TrackEquivalenceEntity::class,
+        LocalPlaylistEntity::class,
+        LocalPlaylistTrackEntity::class,
     ],
     version = PodiumDatabase.VERSION,
     exportSchema = true,
     // v2 (D-34) only adds the ONLINE tables; v3 (D-35) adds online_history.served_by (nullable);
-    // v4 (D-36) adds track_equivalence; v5 (D-38) adds track.media_kind (default SONG).
+    // v4 (D-36) adds track_equivalence; v5 (D-38) adds track.media_kind (default SONG); v6 (D-106)
+    // adds the LOCAL playlist tables.
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
         AutoMigration(from = 2, to = 3),
         AutoMigration(from = 3, to = 4),
         AutoMigration(from = 4, to = 5),
+        AutoMigration(from = 5, to = 6),
     ],
 )
 abstract class PodiumDatabase : RoomDatabase() {
@@ -44,9 +48,10 @@ abstract class PodiumDatabase : RoomDatabase() {
     abstract fun queue(): QueueDao
     abstract fun online(): OnlineDao
     abstract fun equivalence(): EquivalenceDao
+    abstract fun localPlaylists(): LocalPlaylistDao
 
     companion object {
-        const val VERSION = 5
+        const val VERSION = 6
         const val FILE_NAME = "podium.db"
 
         /**

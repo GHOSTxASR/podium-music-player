@@ -134,7 +134,7 @@ internal fun handleDebugIntent(intent: Intent?, graph: AppGraph) {
         // Open a screen without the Wheel: --es podium.place lyrics | now-playing | home
         "open" -> graph.debugOpen.value = intent.getStringExtra("podium.place")
         // The finish and display theme, as Settings sets them (device tests of each look's cost):
-        // --es podium.finish GLASS | CARBON | ... --es podium.display GLASS | CARBON | BONE | CUSTOM
+        // --es podium.finish GLASS | CARBON | ... --es podium.display GLASS | CARBON | CUSTOM
         "appearance" -> {
             val current = graph.deviceSettings.appearance.value
             val finish = app.podium.core.designsystem.shell.FinishPreset.entries.firstOrNull { it.name == intent.getStringExtra("podium.finish") } ?: current.preset
@@ -184,6 +184,13 @@ internal fun handleDebugIntent(intent: Intent?, graph: AppGraph) {
         "play" -> if (graph.playbackController.snapshot.value.intent != PlayIntent.PLAY) graph.playbackController.play()
         "next" -> graph.playbackController.next()
         "previous" -> graph.playbackController.previous()
+        // Full screen, as Settings sets it (D-85): --ez podium.on true | false.
+        "full-screen" -> graph.deviceSettings.setImmersive(intent.getBooleanExtra("podium.on", true))
+        // Music folders, as Settings sets them (D-32): --es podium.include Music/ reads only that
+        // folder; no extra reads everything again.
+        "music-folders" -> graph.musicFolders.select(
+            app.podium.sources.api.FolderSelection(included = setOfNotNull(intent.getStringExtra("podium.include"))),
+        )
     }
 }
 

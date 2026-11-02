@@ -42,7 +42,7 @@ class ScrollingTitleTest {
         RuntimeEnvironment.setQualifiers("w411dp-h891dp-port-420dpi")
         compose.mainClock.autoAdvance = false
         compose.setContent {
-            PodiumTheme(displayTheme = DisplayTheme.BONE) {
+            PodiumTheme(displayTheme = DisplayTheme.CUSTOM) {
                 Box(Modifier.width(300.dp)) { MenuRow(label, focused = true, showChevron = false) }
             }
         }

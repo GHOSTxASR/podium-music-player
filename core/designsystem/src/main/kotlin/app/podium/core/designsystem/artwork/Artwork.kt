@@ -43,6 +43,8 @@ import app.podium.core.designsystem.glass.GlassTier
 import app.podium.core.designsystem.glass.LocalGlassTier
 import app.podium.core.designsystem.theme.PodiumTheme
 import app.podium.core.designsystem.theme.oklchToColor
+import app.podium.core.designsystem.tonal.CarbonRadius
+import app.podium.core.designsystem.tonal.ContinuousShape
 import app.podium.core.designsystem.type.PodiumText
 import kotlin.math.roundToInt
 
@@ -91,9 +93,6 @@ fun rememberArtworkState(uri: String?, size: Dp): ArtworkState {
     }
 }
 
-@Composable
-fun rememberArtwork(uri: String?, size: Dp): ImageBitmap? = rememberArtworkState(uri, size).bitmap
-
 /** Radius proportional to size, capped (design-system.md §4): small thumbnails stay crisp. */
 fun artworkRadius(size: Dp): Dp = (size * 0.045f).coerceIn(4.dp, 14.dp)
 
@@ -109,9 +108,17 @@ fun ArtworkImage(
     modifier: Modifier = Modifier,
     /** Artists are round, like a portrait; everything else is square. */
     round: Boolean = false,
+    /** A corner concentric with the surface it sits in (D-103), in place of the size's own. */
+    corner: Dp? = null,
 ) {
     val colors = PodiumTheme.colors
-    val shape = if (round) CircleShape else RoundedCornerShape(if (colors.isIndustrial) 2.dp else artworkRadius(size))
+    val shape = when {
+        round -> CircleShape
+        colors.isIndustrial -> RoundedCornerShape(2.dp)
+        corner != null -> ContinuousShape(corner)
+        colors.isTonal -> ContinuousShape(CarbonRadius.artwork(size))
+        else -> ContinuousShape(artworkRadius(size))
+    }
     val art = rememberArtworkState(uri, size)
     Box(
         modifier
@@ -205,11 +212,16 @@ fun FittedArtwork(
     }
     val width by animateDpAsState(w, spring(stiffness = 500f, dampingRatio = 0.9f), label = "artWidth")
     val height by animateDpAsState(h, spring(stiffness = 500f, dampingRatio = 0.9f), label = "artHeight")
-    val shape = RoundedCornerShape(if (colors.isIndustrial) 2.dp else artworkRadius(minOf(width, height)) + 2.dp)
+    val shape = when {
+        colors.isIndustrial -> RoundedCornerShape(2.dp)
+        colors.isTonal -> ContinuousShape(CarbonRadius.artwork(minOf(width, height)))
+        else -> ContinuousShape(artworkRadius(minOf(width, height)) + 2.dp)
+    }
     Box(
         modifier
             .size(width, height)
-            .then(if (colors.isIndustrial) Modifier else Modifier.shadow(if (colors.isDark) 22.dp else 14.dp, shape, clip = false, ambientColor = Color.Black, spotColor = Color.Black))
+            // Carbon (D-101): the cover sits flat on the display, a long soft shadow under it.
+            .then(if (colors.isIndustrial) Modifier else Modifier.shadow(if (colors.isTonal) 18.dp else if (colors.isDark) 22.dp else 14.dp, shape, clip = false, ambientColor = Color.Black, spotColor = Color.Black))
             .clip(shape)
             .background(colors.canvasRaised)
             .artworkRim(shape),

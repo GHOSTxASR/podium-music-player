@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -23,6 +22,7 @@ import androidx.compose.ui.unit.dp
 import app.podium.core.designsystem.theme.CarbonColors
 import app.podium.core.designsystem.theme.PodiumTheme
 import app.podium.core.designsystem.theme.Spacing
+import app.podium.core.designsystem.tonal.ContinuousShape
 import app.podium.core.designsystem.type.PodiumText
 import app.podium.space.PanelButton
 import app.podium.space.PodiumSpaceState
@@ -82,4 +82,4 @@ fun BoxScope.StickerEditorBar(space: PodiumSpaceState, editor: StickerEditorStat
     }
 }
 
-private val Shape = RoundedCornerShape(18.dp)
+private val Shape = ContinuousShape(18.dp)

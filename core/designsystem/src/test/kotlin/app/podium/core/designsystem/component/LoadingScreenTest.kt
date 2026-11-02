@@ -13,7 +13,6 @@ import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onRoot
-import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import app.podium.core.designsystem.shell.DeviceAppearance
 import app.podium.core.designsystem.shell.DeviceBody
@@ -24,6 +23,7 @@ import app.podium.core.designsystem.shell.ScreenHeaderHeight
 import app.podium.core.designsystem.shell.palette
 import app.podium.core.designsystem.theme.DisplayTheme
 import app.podium.core.designsystem.theme.PodiumTheme
+import app.podium.core.designsystem.theme.Spacing
 import app.podium.core.interaction.InputRouter
 import app.podium.core.interaction.LocalInputRouter
 import org.junit.Rule
@@ -54,7 +54,7 @@ class LoadingScreenTest {
                         DeviceLayout(
                             modifier = Modifier.fillMaxSize(),
                             screen = {
-                                CompositionLocalProvider(LocalScreenInsets provides ScreenInsets(top = ScreenHeaderHeight, bottom = 8.dp)) {
+                                CompositionLocalProvider(LocalScreenInsets provides ScreenInsets(top = ScreenHeaderHeight, bottom = Spacing.edge)) {
                                     LoadingScreen()
                                 }
                                 ScreenHeader("Trending", canGoBack = true, onBack = {}, playing = false)
@@ -66,7 +66,7 @@ class LoadingScreenTest {
                 }
             }
         }
-        for (t in listOf(DisplayTheme.CARBON, DisplayTheme.BONE, DisplayTheme.GLASS)) {
+        for (t in listOf(DisplayTheme.CARBON, DisplayTheme.CUSTOM, DisplayTheme.GLASS)) {
             theme = t
             compose.mainClock.advanceTimeBy(600)
             compose.waitForIdle()

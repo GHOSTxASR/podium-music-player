@@ -32,7 +32,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -57,6 +56,7 @@ import app.podium.core.designsystem.theme.CarbonColors
 import app.podium.core.designsystem.theme.LocalPodiumType
 import app.podium.core.designsystem.theme.PodiumTheme
 import app.podium.core.designsystem.theme.Spacing
+import app.podium.core.designsystem.tonal.ContinuousShape
 import app.podium.core.designsystem.type.DisplayFont
 import app.podium.core.designsystem.type.LocalTypographyPreset
 import app.podium.core.designsystem.type.PodiumText
@@ -402,9 +402,9 @@ private fun HelpSection(title: String, lines: List<Pair<String, String>>) {
     }
 }
 
-private val PageShape = RoundedCornerShape(22.dp)
-private val KeyShape = RoundedCornerShape(10.dp)
-private val ToggleShape = RoundedCornerShape(14.dp)
+private val PageShape = ContinuousShape(22.dp)
+private val KeyShape = ContinuousShape(10.dp)
+private val ToggleShape = ContinuousShape(14.dp)
 private val ToggleHeight = 44.dp
 private val ToggleHalfWidth = 104.dp
 private const val PageWidthFraction = 0.6f

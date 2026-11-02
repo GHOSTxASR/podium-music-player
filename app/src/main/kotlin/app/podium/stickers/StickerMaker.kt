@@ -23,7 +23,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
@@ -61,6 +60,7 @@ import androidx.compose.ui.unit.dp
 import app.podium.core.designsystem.theme.CarbonColors
 import app.podium.core.designsystem.theme.PodiumTheme
 import app.podium.core.designsystem.theme.Spacing
+import app.podium.core.designsystem.tonal.ContinuousShape
 import app.podium.core.designsystem.type.PodiumText
 import app.podium.space.PanelButton
 import app.podium.space.SegmentedKeys
@@ -232,7 +232,7 @@ fun StickerMaker(
                 else -> null
             }
             if (working != null) {
-                Box(Modifier.background(ink.canvasRaised.copy(alpha = 0.92f), RoundedCornerShape(12.dp)).padding(horizontal = Spacing.l, vertical = Spacing.s)) {
+                Box(Modifier.background(ink.canvasRaised.copy(alpha = 0.92f), ContinuousShape(12.dp)).padding(horizontal = Spacing.l, vertical = Spacing.s)) {
                     PodiumText(working, PodiumTheme.type.rowSecondary, ink.labelPrimary)
                 }
             }
@@ -287,7 +287,7 @@ private fun CutView(
     Canvas(
         Modifier
             .fillMaxSize()
-            .clip(RoundedCornerShape(12.dp))
+            .clip(ContinuousShape(12.dp))
             .semantics {
                 contentDescription = when (tool) {
                     CutTool.SUBJECT -> "The picture. Tap the subject to keep it."
@@ -390,7 +390,7 @@ private fun BorderPreview(preview: ImageBitmap?) {
     Canvas(
         Modifier
             .fillMaxSize()
-            .clip(RoundedCornerShape(12.dp))
+            .clip(ContinuousShape(12.dp))
             .background(NeutralGrey)
             .semantics { contentDescription = "Your sticker" },
     ) {

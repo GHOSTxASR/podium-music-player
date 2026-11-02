@@ -79,11 +79,11 @@ data class VirtualDisplay(
     val contrast: TextContrast = TextContrast.STANDARD,
 ) {
     /**
-     * The background a theme actually shows. Carbon and Bone keep their own display (D-29: album art
-     * is the only colour there); Custom is always at least its solid colour.
+     * The background a theme actually shows. Carbon keeps its own display (D-101: the album lights it,
+     * never a chosen colour); Custom is always at least its solid colour.
      */
     fun backgroundFor(theme: DisplayTheme): DisplayBackground = when (theme) {
-        DisplayTheme.CARBON, DisplayTheme.BONE -> DisplayBackground.NONE
+        DisplayTheme.CARBON -> DisplayBackground.NONE
         DisplayTheme.CUSTOM -> if (background == DisplayBackground.NONE) DisplayBackground.SOLID else background
         DisplayTheme.GLASS -> background
     }
@@ -152,8 +152,7 @@ object DisplayColors {
     fun colors(theme: DisplayTheme, darkSystem: Boolean, display: VirtualDisplay, image: DisplayImage?): PodiumColors {
         val surface = surface(theme, display, image)
         val base = when (theme) {
-            DisplayTheme.CARBON -> CarbonColors
-            DisplayTheme.BONE -> BoneColors
+            DisplayTheme.CARBON -> CarbonTonalColors
             DisplayTheme.GLASS -> if (surface == null) {
                 if (darkSystem) DarkColors else LightColors
             } else {
@@ -167,12 +166,12 @@ object DisplayColors {
     }
 
     /**
-     * Custom: the matte instrument (Carbon's and Bone's system — lit selection, no glass) on the
-     * listener's own display colour, with near-black or near-white ink, whichever reads better.
+     * Custom: the matte instrument (lit selection, no glass) on the listener's own display colour, with
+     * near-black or near-white ink, whichever reads better. The one display left that uses it (D-108).
      */
     private fun custom(surface: DisplaySurface, image: DisplayImage?): PodiumColors {
         val darkInk = prefersDarkInk(effectiveLuminance(surface, image))
-        val template = if (darkInk) BoneColors else CarbonColors
+        val template = if (darkInk) PaperColors else CarbonColors
         val ink = if (darkInk) DARK_INK else LIGHT_INK
         val paper = if (surface.image == null) readablePaper(surface.solid, ink) else surface.solid
         return template.copy(

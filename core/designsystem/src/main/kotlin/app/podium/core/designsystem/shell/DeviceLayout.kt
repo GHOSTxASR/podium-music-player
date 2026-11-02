@@ -23,11 +23,13 @@ import androidx.compose.ui.unit.dp
 import app.podium.core.designsystem.theme.Spacing
 
 /**
- * The device's physical arrangement (D-26): the screen above the Wheel in portrait, beside it in
- * landscape, with the power button next to the Wheel. The screen keeps a device-like proportion
- * (portrait 0.60–0.82 width:height, landscape 1.20–1.70) and is otherwise as large as the Wheel
- * allows; whatever is left over is body. Everything the display shows goes in [screen], which is
- * clipped to the display — nothing on the screen can reach the body.
+ * The device's physical arrangement (D-26): the screen above the Wheel, with the power button next to
+ * it. The screen keeps a device-like proportion (0.60–0.82 width:height) and is otherwise as large as
+ * the Wheel allows; whatever is left over is body. Everything the display shows goes in [screen],
+ * which is clipped to the display — nothing on the screen can reach the body.
+ *
+ * Portrait only (D-108): Podium is held upright, and the app is locked to it, so there is no
+ * landscape arrangement to turn into.
  */
 @Composable
 fun DeviceLayout(
@@ -47,37 +49,19 @@ fun DeviceLayout(
 ) {
     val insets = if (immersive) WindowInsets.displayCutout else WindowInsets.systemBars.union(WindowInsets.displayCutout)
     BoxWithConstraints(modifier.windowInsetsPadding(insets)) {
-        if (maxWidth <= maxHeight) {
-            val diameter = (maxWidth * 0.58f).coerceIn(216.dp, 300.dp).coerceAtMost(maxHeight * 0.31f)
-            Column(Modifier.fillMaxSize().padding(top = Spacing.s), horizontalAlignment = Alignment.CenterHorizontally) {
-                BoxWithConstraints(
-                    Modifier.weight(1f).fillMaxWidth().padding(horizontal = Spacing.m),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    val (w, h) = fitProportion(maxWidth, maxHeight, PORTRAIT_MIN, PORTRAIT_MAX)
-                    VirtualScreen(Modifier.size(w, h), content = screen)
-                }
-                Box(Modifier.fillMaxWidth().padding(vertical = WheelGap)) {
-                    Box(Modifier.align(Alignment.Center)) { wheel(diameter) }
-                    Accessory(!keyboardOpen, Modifier.align(Alignment.TopEnd).padding(end = Spacing.s)) { powerButton() }
-                    Accessory(!keyboardOpen, Modifier.align(Alignment.BottomStart).padding(start = Spacing.m)) { indicators() }
-                }
+        val diameter = (maxWidth * 0.58f).coerceIn(216.dp, 300.dp).coerceAtMost(maxHeight * 0.31f)
+        Column(Modifier.fillMaxSize().padding(top = Spacing.s), horizontalAlignment = Alignment.CenterHorizontally) {
+            BoxWithConstraints(
+                Modifier.weight(1f).fillMaxWidth().padding(horizontal = Spacing.m),
+                contentAlignment = Alignment.Center,
+            ) {
+                val (w, h) = fitProportion(maxWidth, maxHeight, PORTRAIT_MIN, PORTRAIT_MAX)
+                VirtualScreen(Modifier.size(w, h), content = screen)
             }
-        } else {
-            val diameter = (maxHeight * 0.62f).coerceIn(180.dp, 300.dp).coerceAtMost(maxWidth * 0.36f)
-            Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
-                BoxWithConstraints(
-                    Modifier.weight(1f).fillMaxHeight().padding(Spacing.m),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    val (w, h) = fitProportion(maxWidth, maxHeight, LANDSCAPE_MIN, LANDSCAPE_MAX)
-                    VirtualScreen(Modifier.size(w, h), content = screen)
-                }
-                Box(Modifier.fillMaxHeight().padding(horizontal = WheelGap)) {
-                    Box(Modifier.align(Alignment.Center)) { wheel(diameter) }
-                    Accessory(!keyboardOpen, Modifier.align(Alignment.TopEnd)) { powerButton() }
-                    Accessory(!keyboardOpen, Modifier.align(Alignment.BottomStart)) { indicators() }
-                }
+            Box(Modifier.fillMaxWidth().padding(vertical = WheelGap)) {
+                Box(Modifier.align(Alignment.Center)) { wheel(diameter) }
+                Accessory(!keyboardOpen, Modifier.align(Alignment.TopEnd).padding(end = Spacing.s)) { powerButton() }
+                Accessory(!keyboardOpen, Modifier.align(Alignment.BottomStart).padding(start = Spacing.m)) { indicators() }
             }
         }
     }
@@ -97,8 +81,6 @@ private fun Accessory(visible: Boolean, modifier: Modifier, content: @Composable
 private val WheelGap = 18.dp
 private const val PORTRAIT_MIN = 0.60f
 private const val PORTRAIT_MAX = 0.82f
-private const val LANDSCAPE_MIN = 1.20f
-private const val LANDSCAPE_MAX = 1.70f
 
 /** The largest width × height inside [maxW] × [maxH] whose width:height lies in [min]..[max]. */
 internal fun fitProportion(maxW: Dp, maxH: Dp, min: Float, max: Float): Pair<Dp, Dp> {

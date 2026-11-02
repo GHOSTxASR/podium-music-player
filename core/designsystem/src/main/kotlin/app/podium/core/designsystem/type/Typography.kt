@@ -65,6 +65,12 @@ private val PixelifySans = FontFamily((400..700 step 100).map { variable(R.font.
 
 private fun static(res: Int, weight: Int = 400) = Font(res, FontWeight(weight))
 
+/**
+ * Archivo at weight 900 and 125 % width (OFL; third_party/FONTS.md): the wordmark's face (D-102),
+ * and the Wheel's MENU (D-103), heavy and wide like a legend stamped into the hardware.
+ */
+private val ArchivoBlack = FontFamily(static(R.font.archivo_wordmark, 900))
+
 /** Instrument Sans Italic (OFL): Podium's own face, slanted. */
 private val InstrumentSansItalic = FontFamily((400..700 step 100).map { variable(R.font.instrument_sans_italic, it) })
 
@@ -152,20 +158,24 @@ private fun style(size: Int, lineHeight: Int, weight: Int, tracking: Double = 0.
     fontFeatureSettings = if (tabular) "tnum" else null,
 )
 
+/**
+ * Podium's type scale (design-system.md §3.2). A step bolder since D-103: every role one weight up
+ * (titles and the focused row at 700, rows at 600, quiet lines at 500), Now Playing's title larger.
+ */
 val DefaultType = PodiumType(
     largeTitle = style(30, 36, 700, -0.3),
-    title = style(17, 22, 600, -0.1),
-    nowPlayingTitle = style(22, 28, 600, -0.2),
-    nowPlayingSubtitle = style(17, 22, 400),
-    row = style(17, 22, 500, -0.1),
-    rowFocused = style(17, 22, 600, -0.1),
-    rowSecondary = style(14, 18, 400),
-    body = style(15, 22, 400),
-    sectionHeader = style(15, 20, 600),
-    caption = style(13, 16, 500, tabular = true),
-    footnote = style(13, 18, 500, tabular = true),
+    title = style(17, 22, 700, -0.2),
+    nowPlayingTitle = style(24, 30, 700, -0.3),
+    nowPlayingSubtitle = style(17, 22, 600, -0.1),
+    row = style(17, 22, 600, -0.1),
+    rowFocused = style(17, 22, 700, -0.15),
+    rowSecondary = style(14, 18, 500),
+    body = style(15, 22, 500),
+    sectionHeader = style(15, 20, 700),
+    caption = style(13, 16, 600, tabular = true),
+    footnote = style(13, 18, 600, tabular = true),
     indexGlyph = style(56, 56, 700),
-    wheelLegend = style(12, 14, 600, 1.0),
+    wheelLegend = style(11, 14, 900, 0.5).copy(fontFamily = ArchivoBlack),
 )
 
 /** The display font in use (provided by PodiumTheme). */
@@ -356,6 +366,12 @@ private const val LYRIC_FACE_SCALE = 1.2f
 val LocalLyricsTypeface = staticCompositionLocalOf { LyricsTypeface.of(LyricsFont.SAME_AS_DISPLAY, TypographyPreset.of(DisplayFont.CLASSIC)) }
 
 /**
+ * Whether text sits a hair above the dark lit displays (D-103). Off where a screen lays its own
+ * paper over the display: the lyrics, which no display theme restyles (D-81, D-100).
+ */
+val LocalTextDepth = staticCompositionLocalOf { true }
+
+/**
  * Text with Podium's per-string family selection. Use for anything that may contain metadata
  * (titles, artists); for Podium-authored strings plain BasicText with a scale style is enough.
  */
@@ -371,10 +387,17 @@ fun PodiumText(
 ) {
     val preset = LocalTypographyPreset.current
     val family = remember(text, preset) { preset.familyFor(text) }
-    // Over a background picture (D-41), text carries a soft halo of the display's colour.
-    val halo = if (LocalDisplaySurface.current?.image != null && style.shadow == null) {
-        Shadow(LocalPodiumColors.current.canvas.copy(alpha = 0.9f), Offset.Zero, blurRadius = with(LocalDensity.current) { 4.dp.toPx() })
-    } else style.shadow
+    // Over a background picture (D-41), text carries a soft halo of the display's colour. On the dark
+    // lit displays (Carbon, dark Glass) it sits a hair above the screen, a soft shade beneath it, so
+    // it reads crisply on the album's light (D-103).
+    val colors = LocalPodiumColors.current
+    val density = LocalDensity.current
+    val halo = when {
+        style.shadow != null -> style.shadow
+        LocalDisplaySurface.current?.image != null -> Shadow(colors.canvas.copy(alpha = 0.9f), Offset.Zero, blurRadius = with(density) { 4.dp.toPx() })
+        colors.isDark && !colors.isIndustrial && LocalTextDepth.current -> Shadow(Color.Black.copy(alpha = 0.45f), Offset(0f, with(density) { 1.dp.toPx() }), blurRadius = with(density) { 3.dp.toPx() })
+        else -> null
+    }
     BasicText(
         text = text,
         modifier = modifier,

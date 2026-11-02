@@ -76,6 +76,7 @@ import app.podium.core.designsystem.shell.grain
 import app.podium.core.designsystem.symbol.PodiumSymbol
 import app.podium.core.designsystem.symbol.Symbol
 import app.podium.core.designsystem.theme.PodiumTheme
+import app.podium.core.designsystem.tonal.ContinuousShape
 import app.podium.core.interaction.rememberPodiumHaptics
 import kotlinx.coroutines.delay
 
@@ -321,7 +322,7 @@ internal fun KeyboardPanel(session: KeyboardSession, palette: ShellPalette, appe
         state = result.state
         if (result.action) session.onAction()
         if (result.hide) session.onHide()
-        haptics.detent()
+        haptics.keyPress()
     }
     Column(modifier, verticalArrangement = Arrangement.spacedBy(KeyGap)) {
         rows.forEachIndexed { r, row ->
@@ -353,7 +354,7 @@ private fun KeyCap(key: Key, state: KeyboardState, action: KeyboardAction, palet
     val scope = rememberCoroutineScope()
     val currentPress by rememberUpdatedState(onPress)
     val repeats = key == Key.Backspace
-    val shape = RoundedCornerShape(if (palette.matte) 3.dp else 9.dp)
+    val shape = if (palette.matte) RoundedCornerShape(3.dp) else ContinuousShape(9.dp)
     val strong = key == Key.Action || (key == Key.Shift && state.shift != ShiftState.OFF)
     val face = when {
         glass -> colors.labelPrimary.copy(alpha = if (pressed) 0.22f else if (strong) 0.16f else 0.08f)

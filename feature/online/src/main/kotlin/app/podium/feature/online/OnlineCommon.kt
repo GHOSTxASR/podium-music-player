@@ -90,6 +90,8 @@ data class OnlineEntry(
     val value: String? = null,
     val leading: PodiumSymbol? = null,
     val chevron: Boolean = true,
+    /** What tells this entry apart when two share a label (a playlist's id); the label otherwise. */
+    val key: String = label,
     val action: () -> Unit,
 )
 
@@ -100,7 +102,7 @@ fun OnlinePaperMenu(entries: List<OnlineEntry>, stateKey: String, onLongPress: (
     FocusList(
         items = entries,
         state = focus,
-        key = { it.label },
+        key = { it.key },
         contentPadding = LocalScreenInsets.current.listPadding(),
         onActivate = { entries.getOrNull(it)?.action?.invoke() },
         onLongPress = onLongPress,
@@ -231,17 +233,3 @@ fun OnlineArtistRow(artist: ArtistSummary, focused: Boolean) {
 /** Read the overlay host the screens share. */
 @Composable
 fun overlay(): OverlayHost = LocalOverlayHost.current
-
-/** Leaving a screen with a text field puts the keyboard away, so it never covers the next screen's Wheel. */
-@Composable
-fun KeyboardAwayOnLeave() {
-    val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
-    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
-    androidx.compose.runtime.DisposableEffect(Unit) {
-        onDispose {
-            focusManager.clearFocus(force = true)
-            keyboard?.hide()
-        }
-    }
-}
-

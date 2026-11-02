@@ -46,6 +46,17 @@ Album/playlist ─► Play, Shuffle, Add all to a playlist, songs
 ```
 Only rows the online sources support are shown (Search needs SEARCH, Home/Explore need BROWSE, Radio needs RECOMMENDATIONS). Each of these asks every enabled online source and shows the answers as one list, without naming the sources (D-35). Artist and album/playlist places carry their source in their id, so they always open on the source they came from.
 
+**Music ▸ Playlists (D-106):** the library's own playlists, apart from Online's — `Dest.Playlists`, `Dest.Playlist(id, name)`, `Dest.AddSongs(playlistId)`, `Dest.NamePlaylist(playlistId?, currentName)`:
+
+```
+Music ▸ Playlists (after Favorites)
+├── New playlist ─► name ─► the new playlist (focus on Add songs)
+└── playlist ─► Play, Shuffle, Add songs, Rename, Delete playlist, songs
+                 (hold Center on a song: Move · Remove from playlist · Play next · Add to Up Next · Add to playlist)
+Add songs ─► every song, A to Z (Center adds; on a song already there, takes its latest addition back)
+```
+Every song menu of the library (Songs, an album, Favorites, a playlist) and Now Playing's More, for the library's songs, offer **Add to playlist**: New playlist (named, then back where you were) or one of the playlists. An album's song menu adds **Add album to playlist**.
+
 **Settings ▸ Software update (D-99):** the last row, valued with Podium's version. It opens a menu: Check now, and (release builds) Automatic checks On/Off. The update notice itself is an overlay over whatever screen is up, not a destination.
 
 **Settings ▸ Online sources (D-35):** `Dest.OnlineSources`. It's a row in Settings, shown only when the build registers online sources, valued "On" / "Off" / "n of m on". The page lists each online source: Center turns it on or off, and with more than one source, holding Center moves it up or down. When every online source is off, Home hides Online.

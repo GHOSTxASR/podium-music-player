@@ -112,11 +112,11 @@ Computed once per artwork (`ArtworkRepository`, Default dispatcher), cached in `
 5. Also store `luminanceTop/Bottom` (mean L of artwork's top/bottom thirds) → used for clear-glass dimming (§5.4).
 6. Transition between atmospheres: 900 ms, emphasized-decelerate (reduced motion: 200 ms fade).
 
-Atmosphere follows the **now-playing** artwork app-wide; on album/artist screens it follows that screen's artwork while visible.
+Atmosphere follows the **now-playing** artwork app-wide; on album/artist screens it follows that screen's artwork while visible. (Until D-101 the shell read the cover before its artwork loader was provided, so the atmosphere stayed neutral; it now reads it through the loader. On Glass the album tints the display on Now Playing only; the Glass body keeps its neutral light, D-101.)
 
 ---
 
-**Custom theme and backgrounds (D-41).** Besides Glass, Carbon and Bone, the display can be Custom: the matte instrument on the listener's own colour or picture, ink chosen by contrast (primary ≥ 4.5:1, secondary ≥ 4.5:1, tertiary ≥ 3:1 on any solid colour), a veil and a text halo over pictures. Carbon and Bone never take a background. Spec: `architecture/PODIUM_CUSTOMIZATION.md` §4–§5.
+**Custom theme and backgrounds (D-41).** Besides Glass and Carbon, the display can be Custom: the matte instrument on the listener's own colour or picture, ink chosen by contrast (primary ≥ 4.5:1, secondary ≥ 4.5:1, tertiary ≥ 3:1 on any solid colour), a veil and a text halo over pictures. Carbon never takes a background. Since D-108 Custom is the only display that draws the instrument. Spec: `architecture/PODIUM_CUSTOMIZATION.md` §4–§5.
 
 ## 3. Typography
 
@@ -132,40 +132,45 @@ Atmosphere follows the **now-playing** artwork app-wide; on album/artist screens
 | Style | Size/LH | Weight | Tracking | Width | Use |
 |---|---|---|---|---|---|
 | `largeTitle` | 30/36 | 700 | −0.3 | 100 | Home "Podium", empty-state titles on large screens |
-| `title` | 17/22 | 600 | −0.1 | 100 | TitleBar title |
-| `nowPlayingTitle` | 22/28 | 600 | −0.2 | 100→85 | Track title on Now Playing (narrows to 85 before wrapping; max 2 lines) |
-| `nowPlayingSubtitle` | 17/22 | 400 | 0 | 100 | Artist on Now Playing |
-| `row` | 17/22 | 500 (600 focused) | −0.1 | 100 | Menu rows, primary line of track rows |
-| `rowSecondary` | 14/18 | 400 | 0 | 100 | Second line (artist, count) |
-| `body` | 15/22 | 400 | 0 | 100 | Settings descriptions, sheets |
+| `title` | 17/22 | 700 | −0.2 | 100 | TitleBar title |
+| `nowPlayingTitle` | 24/30 | 700 | −0.3 | 100 | Track title on Now Playing (one line; scrolls slowly when too long) |
+| `nowPlayingSubtitle` | 17/22 | 600 | −0.1 | 100 | Artist on Now Playing (the album at 500) |
+| `row` | 17/22 | 600 (700 focused) | −0.1 (−0.15 focused) | 100 | Menu rows, primary line of track rows |
+| `rowSecondary` | 14/18 | 500 | 0 | 100 | Second line (artist, count) |
+| `body` | 15/22 | 500 | 0 | 100 | Settings descriptions, sheets |
 | `lyric` | 24/32 | 600 | −0.2 | 100 | Lyrics lines |
-| `sectionHeader` | 15/20 | 600 | 0 | 100 | List section headers (title case, never caps) |
-| `caption` | 13/16 | 500 | 0 | 100 | Timecodes (tnum), counters "3 of 12" |
-| `footnote` | 13/18 | 500 | 0 | 100 | Quality label, secondary metadata |
+| `sectionHeader` | 15/20 | 700 | 0 | 100 | List section headers (title case, never caps) |
+| `caption` | 13/16 | 600 | 0 | 100 | Timecodes (tnum), counters "3 of 12" |
+| `footnote` | 13/18 | 600 | 0 | 100 | Quality label, secondary metadata |
 | `indexGlyph` | 56/56 | 700 | 0 | 100 | Fast-scroll letter HUD |
-| `wheelLegend` | 12/14 | 600 | +1.0 | 100 | `MENU` only (caps, heritage) |
+| `wheelLegend` | 11/14 | 900 (Archivo) | +0.5 | 125 | `MENU` only (caps, heritage; the wordmark's face, D-103) |
+
+**Weight and depth (D-103).** The scale is one step bolder than before: titles and the focused row at 700, rows at 600, quiet lines at 500. Symbols on keys and in the title bar are drawn at 700. On the dark lit displays (Carbon, Glass in dark mode) text sits a hair above the screen: a soft shade 1 dp beneath it (45 % black, 3 dp blur). Light displays and the instrument have none, and nor do the lyrics, which lay their own paper (`LocalTextDepth`, D-81, D-100); their lines keep their own weight.
 
 Font scale: honoured to 200% (Android nonlinear scaling). Rows grow (`minHeight`, never fixed height). Wheel legends cap at 1.3× (fixed geometry; semantics carry the label). Bold-text (`fontWeightAdjustment`) adds +100 to weights (cap 700).
 
 ### 3.3 Truncation
-Titles: end ellipsis; Now Playing: narrow width → wrap to 2 lines → ellipsis. Only the focused list row may scroll its title, and only when it doesn't fit (as the original iPod did; it follows the user's own focus, and is off with reduced motion). It rests at its start for 1.4 s, then eases into the scroll and eases out as the next copy arrives where it began (about 28 dp/s on average), rests 2 s and goes round again (D-46). No other marquees. The scrolling title may draw 8 dp beyond its box on every side (layout keeps its own size), so neither Carbon's glow nor a glyph reaching outside its line box is cut into a hard edge, and its ends fade over the last 12 dp instead of stopping mid-letter. A title that fits is drawn as it is, with no fade. Row labels that are calls to action are written to fit ("Allow music access"), so they never scroll.
+Titles: end ellipsis; Now Playing: narrow width → wrap to 2 lines → ellipsis. Only the focused list row may scroll its title, and only when it doesn't fit (as the original iPod did; it follows the user's own focus, and is off with reduced motion). It rests at its start for 1.4 s, then eases into the scroll and eases out as the next copy arrives where it began (about 28 dp/s on average), rests 2 s and goes round again (D-46). No other marquees. The scrolling title may draw 8 dp beyond its box above, below and at its leading end (layout keeps its own size), so neither Carbon's glow nor a glyph reaching outside its line box is cut into a hard edge; its trailing end fades over the box's last 12 dp and stops at the box, so whatever follows the title keeps its whole gap (D-103), and its leading end fades as it scrolls out instead of stopping mid-letter. A title that fits is drawn as it is, with no fade. Row labels that are calls to action are written to fit ("Allow music access"), so they never scroll.
 
 ---
 
 ## 4. Space, shape, elevation
 
 - **Spacing scale (dp):** 2, 4, 8, 12, 16, 20, 24, 32, 40, 48, 64. Side gutter 16 (≥ 400dp width: 20).
+- **One edge margin (D-103):** `Spacing.edge` = 10 dp from the display's edges to anything set against them, the same on every side it touches: the title bar's housings (top and sides), the mini player (sides and foot; 10 dp above it to the content), Now Playing's column and tray (sides and foot). The title bar is the margin, a 32 dp housing (`Spacing.housing`) and the margin: 52 dp. Lists start right below it and end at the bottom block, with no extra gap of their own. Between groups on Now Playing: 16 dp, measured between what's drawn (a line's ink, the playhead, a key's edge). Inside a surface, its own padding on every side: the mini player 8, the tray 4, a menu's lens 8 from the sheet.
 - **Row heights (min):** menu 52 · track 60 (44dp artwork) · album 64 (52dp artwork) · settings 52 (+ description).
 - **Touch targets:** ≥ 48×48dp everywhere; Wheel zones are ≈ 70–90dp bands.
 - **Concentric radii:** `r_inner = max(r_outer − inset, r_min)`. `r_outer` for full-width floating elements = display corner radius from `WindowInsets.getRoundedCorner` (API 31+; fallback 28dp).
   | Element | Radius |
   |---|---|
-  | Inset sheets (8dp from edges) | display radius − 8 |
-  | Menus | 22 |
-  | Focus lens | 14 (smooth/continuous corners) |
-  | Mini player | capsule (28) |
-  | Title-bar buttons, center button | circle |
-  | Artwork | `clamp(size × 0.045, 4, 14)` — 44dp → 4, 64dp → 4, 300dp → 14 |
+  | The display (Glass, Carbon) | 26 |
+  | Surfaces at the edge margin (`EdgeCorner`): the mini player, Now Playing's tray | 26 − 10 = 16 |
+  | Inside them | 16 less their padding: the mini player's artwork 8, the tray's key 12 |
+  | Menus | 22 (Carbon 20): the lens's 14 (Carbon 12) plus its 8 dp |
+  | Focus lens | 14 |
+  | Title-bar housings (back key, status), center button | circle / capsule, 32 dp (radius 16, concentric) |
+  | Artwork | `clamp(size × 0.045, 4, 14)` — 44dp → 4, 64dp → 4, 300dp → 14 (Carbon: 0.18 × size, 6–14) |
+- **Continuous corners (D-103):** every rounded rectangle outside the instrument takes Apple's continuous curve (`ContinuousShape`, `continuousRect`; smoothing 0.6, as iOS draws them): the corner eases into the straight edge instead of meeting it as a circular arc. That covers the display, menus and notices, the mini player, keys and trays, the focus lens and band, artwork, preview tiles and the search field. Capsules stay true capsules. The instrument (Custom) keeps its squared 2–4 dp corners.
 - **Shadows** (functional layer only + Now Playing artwork):
   | Token | Dark | Light |
   |---|---|---|
@@ -190,6 +195,8 @@ Titles: end ellipsis; Now Playing: narrow width → wrap to 2 lines → ellipsis
 **Rim:** 1dp inner stroke, linear gradient at 135°: white 55% → white 0% at 45% → white 12% at 100% (dark); light mode white 80% → 0% → 30%. This is the "edge catching light" that makes glass read as glass.
 
 ### 5.2 Tiers
+On Glass every tier catches the cover's light (D-103): a faint glow of the album's accent from a surface's upper edge (16 % dark, 10 % light, gone by 80 % of its height) and its rim leaning 30 % toward the accent. The solid tier keeps its fill and adds the same glow, its hairline tinted the same way.
+
 | Tier | Recipe change |
 |---|---|
 | `Full` | as above |
@@ -232,21 +239,33 @@ Below the artwork: the artwork mirrored vertically, blurred 48dp, opacity 30% (d
 - Solid palettes are derived in OKLCH from the base: body top +0.035 L / bottom −0.055 L, one diagonal sheen, ring ±L by lightness (L > 0.62 = light body), center = base. Grain (0–100 %, default 25 %) is a fixed, seeded, zero-mean noise tile overlaid on body, ring, center and power button.
 - Choosing a finish previews it live on the device as the focus moves; Center keeps it, Menu restores the old one. Custom color: type a hex code or walk the hue with the Wheel (lightness and chroma held, so a full turn returns to the start).
 - The screen is a text container, never glass; the power button is a control and is glass on the Glass finish.
-- Boot (D-32, "old hardware, new software"): a power-on self-test types itself in the system monospace face (11 sp, phosphor off-white `#D9D8D2` on black, blinking block cursor): "Podium ROM 3.1", a copyright line, then checks with dot leaders and results in a column — Processor (cores), Memory (counts up to the phone's RAM in MB), Display (pixels), Click wheel, Audio (speaker / headphones / bluetooth), Library (songs). Each result lands with a `tick` haptic (and click, if on); the memory count purrs with detent ticks. Then the screen clears to the wordmark (D-71): "PODIUM" in Archivo at weight 900 and width 125, as the website draws it, about three quarters of the screen wide. It is silver, white where the light falls and a soft silver lower down, with fine flakes set into the letters, bright and dark, that hold still. It settles from 94% to full size as it fades in (620 ms) and lands with a `press`. Then a hairline progress capsule under it (58% of the screen wide, at most 220 dp, 7 dp tall) fills over 1.5 s with two stalls (like a disk seeking), ending on `confirm`. ~4.5 s; any Wheel press skips; reduced motion shows the lines at once and the wordmark static (~1.2 s). The startup chord (`res/raw/podium_boot.ogg`, made by `tools/sounds/boot_chord.py`; synthesized for Podium, not Apple's trademarked chime) is an original strummed C major 9 over a soft low impact and a sub-octave C, with a lightly overdriven electric guitar strumming Cadd9 just behind it and a dark room tail, 5 s. It starts with the wordmark as a UI sound: system-sounds volume, silent on silent/vibrate, skipped when music is playing, toggle in Settings ▸ Startup sound.
+- Boot (D-102, after D-32 and D-71): Podium's mark reveals itself and the camera dives through it into the menu, the same on every theme. A dot swells (overshooting) from a circle into the icon's squircle: a near-black lens with an iridescent rim holding the P (Archivo 900/125, the icon's P) in fine horizontal lines whose colours part at the edges like a prism. It breathes and leaves two fading echoes of its rim; the lines close into solid silver as the lens fades; the P spins down to its edge; PODIUM unrolls from that sliver as from a turning cylinder (prism fringes fading as it flattens) and settles, silver with its flakes, a soft glow behind. Then the camera dives into the O: the mark grows about the O's counter until the counter covers the display, black everywhere but through it, where the live menu comes forward from the distance into focus. 3.55 s, one clock (`BootTimeline`); every frame is a function of time alone. Beats: the startup chord as the lens opens, a tick at the dot, a press as the lens lands, a tick as the P lands on its edge, a press as the wordmark settles, confirm when through. Any Wheel press skips into a 260 ms dive; reduced motion shows the still wordmark for 0.9 s and crossfades to the menu. The startup chord (`res/raw/podium_boot.ogg`, made by `tools/sounds/boot_chord.py`; synthesized for Podium, not Apple's trademarked chime) is an original strummed C major 9 over a soft low impact and a sub-octave C, with a lightly overdriven electric guitar strumming Cadd9 just behind it and a dark room tail, 5 s. It is a UI sound: system-sounds volume, silent on silent/vibrate, skipped when music is playing, toggle in Settings ▸ Startup sound.
 
 ### 5.8.1 Indicator lights (D-33)
 Bottom corner of the body, opposite the power button: two 18 dp diodes in recessed bezels with 8 sp legends ("Battery", "Disk"). Battery: `#4CE06A` > 60 %, `#B8E04C` > 30 %, `#FFB020` > 15 %, `#FF3B30` below; breathes (1.4 s) while charging, blinks (0.9 s) at ≤ 10 %. Disk: `#FFA726`, a double flicker (60 ms + 140 ms) per `DiskActivity` pulse.
 
-### 5.9 Display themes: Glass, Carbon, Bone (D-29)
-| | Glass | Carbon | Bone |
+### 5.9 Display themes: Glass, Carbon, Custom (D-29, D-108)
+| | Glass | Carbon (D-101) | Custom, the instrument (D-41) |
 |---|---|---|---|
-| Display | Graphite / light, atmosphere tint | `#0A0A0A` matte | `#ECE8DF` warm off-white |
-| Type | per §2 | `#F2F0EB` / `#9B988F` / `#65635D` | `#141311` / `#68645C` / `#9B968C` |
-| Selection | stained-glass lens (D-25) | lit text + faint band + white indicator, faint glow | lit text + faint band + near-black indicator |
-| Glass | functional layer | none on the display (flat surfaces, no shadows) | none |
-| Hardware | chosen finish | matte black, knurled mechanical wheel | matte black, knurled mechanical wheel |
-| Shapes | rounded capsules | squared: 2–3 dp corners, outlined keys, segmented strips, flat rule | same as Carbon |
-Album artwork is the only colour on Carbon and Bone. The theme never changes the content's layout, only its rendering.
+| Display | Graphite / light, atmosphere tint | `#0B0B0D`, lit by the playing album's atmosphere (§5.10) | the listener's own colour or picture; ink by contrast. The warm off-white `#ECE8DF` (`PaperColors`) is what Bone was until D-108 withdrew it, and is still the light template |
+| Type | per §2 | `#F3F1EC` / `#B4B1A9` / `#7B7973` | `#141311` / `#68645C` / `#9B968C` |
+| Selection | stained-glass lens (D-25) | lit text on a solid raised band, the album's accent on the indicator | lit text + faint band + near-black indicator |
+| Glass | functional layer | none (solid tonal surfaces with shadows; the display behind a menu defocuses) | none |
+| Hardware | chosen finish | blackened steel: brushed body, spun-metal wheel, matte centre | matte black, knurled mechanical wheel |
+| Shapes | continuous corners and capsules (§4) | continuous corners, concentric with the display (§5.10) | squared: 2–4 dp corners, outlined keys, segmented strips, flat rule |
+| Speciality (D-103) | the cover's light on the glass, and the status housings budding and pinching like liquid | the album's light and accent on solid surfaces | none of its own |
+On the instrument, album artwork is the only colour. On Carbon the album also lights the display and gives one accent; text stays neutral. The theme never changes the content's information or its layout, only its material: Now Playing is one composition on every theme (§6.7).
+
+### 5.10 Carbon's tonal system (D-101)
+Code: `core/designsystem/.../tonal/` (`TonePalette`, `AlbumTone`, `AtmosphereField`, `AlbumAtmosphere`, `TonalSurface`, `Defocus`), `component/Squiggle.kt`, `shell/Metal.kt`.
+
+- **Layers, back to front:** the base (`#0B0B0D`) → the album's atmosphere → solid surfaces (trays, the mini player, sheets) → keys (the transport) → active and selected states (the focus band, toggled actions on an accent backing) → small lights (the indicator, the playhead).
+- **Album tone:** from a 32 × 32 reduction of the playing cover, the hue family with the most colour seeds: accent OKLCH L 0.80, C 0.05–0.11 (gamut-mapped by chroma); on-accent L 0.23; accent container L 0.33; surfaces L 0.185 / 0.215 / 0.255 / 0.30, tinted ≤ 0.014 C. Colourless covers keep the neutral palette (accent `#E6E3DC`, surfaces `#141416` / `#1A1A1D` / `#232327` / `#2D2D32`). Text never takes it. All roles move together in 700 ms; read while drawing.
+- **Atmosphere:** the cover pressed into OKLab L 0.10–0.30, chroma ≤ 0.24 L, blurred at 96 px (three box passes, ≈ σ 10 %), drawn 1.3× past the display; header scrim, corner vignette, a dithering grain. Strength by screen: Now Playing 1, Up Next 0.6, menus 0.55, lists 0.4, Settings 0.22, Lyrics 0. No cover: a neutral light from the top. Crossfades over 900 ms; a cached layer. On Now Playing, while the music plays, it flows (D-103, D-104): two copies of the field drift across the display and turn against each other, a turn in 47 s and 35 s, easing in over 1.4 s and to rest over 2.2 s (`animation-system.md`); still with reduced motion. A new cover's colours blend in over 1.8 s, over whatever mixture is showing. Chroma is capped at 0.30 × L on Carbon (0.38 dark Glass, 0.13 light Glass), the cover's own chroma kept in full. Glass's Now Playing uses the same field, toned for glass (OKLab L 0.16–0.50 dark, 0.80–0.95 light).
+- **Surfaces (`tonalSurface`):** opaque; lit from above (1 dp inner highlight, darker lower edge); shadow 1 dp (tray), 3 dp (key), 8 dp (floating), 16 dp (sheets); pressed sinks (shade +16 % black, shadow × 0.35).
+- **Radii (`CarbonRadius`, continuous):** display 26 · sheets 20 · inset surfaces 14 · keys and trays 16 · band and tiles 12 · labels 8 · artwork 0.18 × size (6–14).
+- **Overlays:** behind an open menu or notice the display defocuses (14 dp blur, 220 ms in, 140 ms out, Android 12+) under a 30 % dim (50 % without blur). The panel is never blurred.
+- **Hardware:** brushed blackened steel body (horizontal streaks, chamfer highlights, a seam around the display); the Wheel's ring spun graphite (fine concentric machining that turns with the finger; a faint two-lobe reflection that stays with the light and swings with the phone's tilt, at most ±50°); the centre a matte bead-blasted coat, recessed; engraved legends; contact shadows and seams. Geometry, zones and touch unchanged.
 
 ### 5.7 Enforcement
 Lint rule (custom detector in `build-logic`): `Modifier.blur`, `RenderEffect`, `RuntimeShader`, and `com.kyant.backdrop.*` are errors outside `:core:designsystem`. A debug overlay counts simultaneous glass surfaces; > 5 persistent surfaces logs a warning.
@@ -257,9 +276,9 @@ Lint rule (custom detector in `build-logic`): `Modifier.blur`, `RenderEffect`, `
 
 ### 6.1 `PodWheel`
 - **Geometry:** D = `clamp(0.66 × width, 232, 312)dp` (portrait), size setting S/M/L × 0.9/1.0/1.1. Center button d = 0.38 D. Gap ring 3dp between ring and center (atmosphere shows through: two pieces of glass).
-- **Legends** on the ring midline: `MENU` (12 o'clock, `wheelLegend`), ⏭ (3), ⏯ (6), ⏮ (9) — symbols 22dp, weight 600, `labelSecondary` (on glass, vibrant).
+- **Legends** on the ring midline: `MENU` (12 o'clock, `wheelLegend`: Archivo 900 at 125 % width, 11 sp, one line), ⏭ (3), ⏯ (6), ⏮ (9) — symbols 22dp, weight 700, `labelSecondary` (on glass, vibrant). Depth on every finish (D-103): light legends stand off the ring on a soft shadow (1.25 dp down, 1.5 dp blur, 60 % black; 85 % on metal), dark legends are pressed in, with a white catch-light 1 dp below.
 - **Materials:** ring `GlassRegular`; center `GlassControl` (sampled from a combined backdrop so it refracts the ring + content).
-- **Feedback:** finger specular (radial white 20%, r 48dp) follows touch on the ring; zone press = darken 8% + legend scale 0.9; center press = lens squish; haptics per `interaction-model.md` §6.
+- **Feedback:** finger specular (radial white 20%, r 48dp) follows touch on the ring; zone press = darken 8% (16 % on dark finishes) + legend scale 0.9, the shade full across the zone's middle (±26°) and fading out by ±58° so it blends into the ring (D-103); center press = lens squish; haptics per `interaction-model.md` §6.
 - **Idle:** completely static.
 - **Disabled zones:** legend 35%, no response (e.g., ⏮/⏭ with an empty queue).
 - **States per context:** the Wheel never changes appearance by context except an optional tiny center glyph in non-list modes (speaker in Volume, diamond in Scrub) at 40% opacity.
@@ -268,7 +287,7 @@ Lint rule (custom detector in `build-logic`): `Modifier.blur`, `RenderEffect`, `
 ### 6.2 `FocusLens`
 - Shape: rounded rect r 14, inset 8dp horizontally from list edges, 3dp vertically within the row.
 - Material: `GlassFocus` (Full/Blur) / solid highlight (Solid, HC).
-- Motion: spring `focus` (stiffness 1400, damping 0.86); detents arriving < 90 ms apart (a spin) use `focusFast` (2400, 1.0) (D-65). Boundary hit: boundary haptic.
+- Motion: spring `focus` (stiffness 1400, damping 0.86); detents arriving < 90 ms apart (a spin) use `focusFast` (2400, 1.0) (D-65). Boundary hit: boundary haptic. A move of more than three rows jumps lens and list together. The same on every theme (Glass's liquid lens of D-103 was withdrawn, D-104).
 - Non-glass indicators (always): focused row text weight 600 (animated with the same spring), trailing chevron `FILL=1`, semantics `selected`.
 - Keep-in-view (D-40): on the paper the focused row rides at the readable region's middle and the list's own scroll limits put the first and last rows flush with the region's edges; plain lists (menus) keep one neighbour in view each side, the first and last rows flush. On the paper the list follows the lens: it is scrolled from the lens's own `focus` animation frames (`FocusListState.centreLensNow`), so however fast the Wheel turns the two can't drift apart — mid-list the lens and its indicator hold still at the middle while the rows move, and only an end of the list (where the scroll stops) lets the lens travel. A move of more than three rows jumps lens and list together. Plain lists glide with their own short scroll; jumps (> 1.5 rows) are immediate.
 - The lens is glued to the rows: it slides between rows in content space (a fractional row position), so it moves with the list while the list scrolls, and it is clipped to the readable region. It never clamps to a fixed band.
@@ -285,29 +304,41 @@ Lint rule (custom detector in `build-logic`): `Modifier.blur`, `RenderEffect`, `
 Separators: none between rows (focus lens and rhythm do the work); 0.5dp hairline only between sections in settings.
 
 ### 6.4 `TitleBar`
-Floating, not a slab: left back button (`GlassNavigation`, chevron) when stack depth > 1; centered `title`; right action (search on browse screens, More on Now Playing). Offline glyph appears left of the right action when offline. Scroll-edge effect beneath (§5.5).
+Floating, not a slab (`ScreenHeader`, D-103), 52 dp tall: every housing sits 10 dp from the display's top and sides (§4). On the left the back key (a 32 dp housing in the display's material, in a 40 dp touch target) when the stack is deeper than one, then the `title`, left-aligned, 10 dp past the key (at the margin without one), travelling with the paper. On the right the status, every item in a housing (`StatusPills`): the time alone in one (full screen, D-85); the output (D-52), the play state and the battery (full screen) sharing another, a hairline between each. Housings are 32 dp capsules, 6 dp apart, 8 dp either side of an item, painted as one outline: Carbon's low tonal surface, Glass's clear glass catching the cover's accent along its upper edge, the instrument's squared hairline housing. They move like liquid: an arriving item stretches its housing with a small overshoot; a housing arriving beside another buds off its side through a neck that pinches off; alone, it pops up as a bubble (motion in `animation-system.md`). Scroll-edge effect beneath (§5.5).
 
 ### 6.5 `MiniPlayer`
-Capsule 56dp, width `min(window − 32, 420)`, 12dp above the Wheel; `GlassFloating`. Artwork 40 (r8) · title (15/20 600) / artist (13/16 400 secondary) · ⏯ button (44dp). Progress: 2dp hairline inset 20dp along the inner bottom edge (`labelPrimary` 80% on 20%). Tap → Now Playing (container transform). Hidden on Now Playing, Up Next, Lyrics, and when idle.
+56 dp tall, 10 dp from the display's sides and foot (the edge margin, §4), corners 16 (concentric with the display); `GlassFloating`. Artwork 40 (r 8) 8 dp from its top, foot and start · title / artist (secondary) · ⏯ and ⏭ keys 40 × 56, the last glyph 8 dp from the end. Progress: 2dp hairline inset 20dp along the inner bottom edge (`labelPrimary` 80% on 20%). Tap → Now Playing (container transform). Hidden on Now Playing, Up Next, Lyrics, and when idle.
 
 ### 6.6 `AlbumArtwork`
 Coil-backed; size-bucketed requests (48, 96, 192, 512, 1024 px); radius per §4; placeholder = monogram (first letter of album, `labelTertiary` on `canvasRaised`) — never a generic music note. Now Playing artwork has `shadow.artwork`. Crossfade 150ms on load (no fade if from memory cache).
 
 ### 6.7 Now Playing composition (D-28)
 Inside the virtual screen, under the shell's ScreenHeader ("Now Playing", back, play state):
-- **Stacked** (default): artwork box (takes all height the controls leave) · title (`nowPlayingTitle`, scrolls slowly when too long, never wraps) · artist (secondary) · album (tertiary) · progress row (elapsed — bar — remaining; tap or drag to seek; becomes the volume bar while volume changes) · status slot, two fixed lines ("N of M" + measured quality; then one note: error, scrubbing, "Playing from …", "Source reported …") · transport (⏮ 30 dp, ⏯ 42 dp, ⏭ 30 dp, bare glyphs) · one glass capsule with shuffle, repeat, favorite, Up Next, More (20 dp glyphs, quieter; slots 36–46 dp to fit).
+One composition on every theme (D-103, from D-101's parts in `NowPlayingControls.kt`); each theme paints only its material (Carbon's solid keys, Glass's clear glass, the instrument's outlines).
+- **Stacked** (default), on the display's 10 dp edge margin, shared by the cover's edge, the text and the controls, its groups 16 dp apart (§4): the cover, flat, taking 72 % of the column, with its facts beside its lower edge ("N of M"; the measured quality as a small label in the theme's material; "Online" for an online song; the sleep timer; one note: what the player is doing about a problem, the error, scrubbing, "Source reported …") · title (`nowPlayingTitle`, left-aligned, scrolls slowly when too long, never wraps) · artist (`nowPlayingSubtitle`, secondary) · album (600 weight down to 500, secondary) · the seek bar with elapsed and remaining beneath it, in a fixed 52 dp block (the wave on Carbon and Glass, the flat rule on the instrument; tap or drag to seek; the volume bar in its place while the Wheel turns the volume) · the transport (⏮ 72 · the orb 72 · ⏭ 72 dp wide, the keys 56 tall, 10 dp apart; the keys' outer corners 26, their inner ones 20, curving away from the orb; the orb is the play key and carries no glyph — round while the music plays, a settled pebble when it is stopped, §6.10.2) · one tray, 10 dp from the display's foot and sides with corners 16, holding shuffle, repeat, favourite, lyrics, Up Next and More, a hairline between each (20 dp glyphs; an action that's on sits on an accent backing on Carbon; the Wheel's action mode slides a key under the focused one on the lens's `focus` spring). With Settings ▸ Now Playing's tray set to hide (D-108, off by default), the tray slides down off the display and fades 7 s after anything was last touched, keeping its place so nothing else moves; the Wheel's next move only brings it back.
 - **Compact** (artwork box would be < 0.45 × width): artwork beside the text block, the rest below.
 - **Landscape screen** (width > 1.15 × height): artwork on the left (square box), everything else beside it.
-- **Artwork:** `FittedArtwork` keeps the image's proportions (square stays square; portrait/landscape aren't cropped, extremes beyond 1:2 are); shadow; hairline rim; while loading it shows a smaller cached copy, else a quiet surface; missing art gets `ArtworkFallback` (two tones from the title, Podium's ring, the initial). Breathes 0.93 (paused) → 1.0 (playing). Track change (D-78): every new song moves the cover on, even when it shares the cover. The playing cover slides flat off the display to the left as the next comes in from beyond the right edge and settles in its place, each leaning as it always does (360 ms, spatial curve). Previous (the song just before, in the same queue) runs the other way; a song chosen from a list or a search counts as new. The covers either side of the song are loaded ahead, so the incoming one is already showing. Reduced motion: a crossfade.
-- **Environment:** `BackgroundExtension` (blurred art, top/bottom fade) plus a scrim keyed to the art's luminance, so bright covers in dark mode (dark covers in light mode) keep text legible. It is the captured layer the capsule's glass refracts.
+- **Artwork:** `FittedArtwork` keeps the image's proportions (square stays square; portrait/landscape aren't cropped, extremes beyond 1:2 are); shadow; hairline rim; while loading it shows a smaller cached copy, else a quiet surface; missing art gets `ArtworkFallback` (two tones from the title, Podium's ring, the initial). Breathes 0.93 (paused) → 1.0 (playing), from its lower corner on the margin in the stacked layout so it stays lined up with the text. It lies flat on every theme (D-58's lean retired by D-103). Track change (D-78): every new song moves the cover on, even when it shares the cover. The playing cover slides flat off the display to the left as the next comes in from beyond the right edge and settles in its place (360 ms, spatial curve). Previous (the song just before, in the same queue) runs the other way; a song chosen from a list or a search counts as new. The covers either side of the song are loaded ahead, so the incoming one is already showing. Reduced motion: a crossfade.
+- **Environment:** on Glass, the cover's field toned for glass (`AlbumAtmosphere`, §5.10), flowing while the music plays; it is the captured layer the controls' glass refracts. On Carbon, the display's own atmosphere at full strength, flowing the same way. On the instrument, the display itself.
+
+### 6.7.2 Vinyl (D-104)
+Now Playing's tray ▸ Vinyl (the record glyph) opens a record player over the whole display (`VinylStage`, through the shell's `ImmersiveHost`), the display behind out of focus (28 dp, all themes) under a 50 % black scrim.
+- **Way in** (2.4 s): the cover lifts from its place to the middle; the record slides up out of it; the sleeve drops away below the display as the record comes down to the middle and settles; the tonearm arrives and swings onto the outer groove, starting the music; the visualiser opens; the title and artist fade in at the foot (`body` 600 white, `footnote` 60 %).
+- **Record:** 74 % of the display's width (at most 47 % of its height), centred at 41 % down. Black vinyl, grooves in bands, a lit rim; the label a disc of the cover (35 % of the radius) with a spindle hole. 33⅓ rpm while playing; seeks turn it by as much music as they skip. The room's light lies still across it.
+- **Tonearm:** chrome, its base beyond the record's top right; rest hangs past the record, play sets the needle 86 % of the way out.
+- **Visualiser:** a dark capsule (78 % of the record's width, 40 dp tall) of dots seven rows deep, two mirrored waves crossing along it at the music's loudness, tapering into its ends; silent, one lit line. While seeking, elapsed and remaining times beside it.
+- **Wheel:** Menu back (out of seeking first), ⏮ ⏭ change the song (the record rolls away left, the next rolls in from the right; ⏮ the other way), Center seeks (turn to seek; 4 s untouched ends it). Nothing else does anything (a reject haptic); touches stop at the stage.
+- **Way back** (2 s): the tonearm lifts away; the sleeve, with the current cover, rises from below; the record goes into it; the sleeve returns to Now Playing's cover as the display comes back into focus.
+- Reduced motion: fades in and out, the record still.
 
 ### 6.7.1 ONLINE (D-34)
-ONLINE uses the same paper, themes and Wheel — no new paradigm. Menus are paper lists whose previews come from the source's artwork (Home: a carousel of trending covers; Liked songs and History: their covers; Radio: recent covers); shelves open as song lists (cover, title over artist, length) or playlist lists, paged as the focus nears the end. Album and playlist pages keep the cover beside every row (it's the point). Artist pages: round picture header, Radio, Play popular songs, then sections with quiet footnote labels (Popular, Albums and EPs, Playlists, Related artists). Search: a hairline field (2 dp corners on Carbon/Bone, 10 dp on Glass) as the list's first row; results stream in below by section. Unplayable songs say why in place of the artist. Now Playing marks an online song with the single word "Online" in its status line — nothing more. Offline and errors use the centred message state with a next step.
+ONLINE uses the same paper, themes and Wheel — no new paradigm. Menus are paper lists whose previews come from the source's artwork (Home: a carousel of trending covers; Liked songs and History: their covers; Radio: recent covers); shelves open as song lists (cover, title over artist, length) or playlist lists, paged as the focus nears the end. Album and playlist pages keep the cover beside every row (it's the point). Artist pages: round picture header, Radio, Play popular songs, then sections with quiet footnote labels (Popular, Albums and EPs, Playlists, Related artists). Search: a hairline field (2 dp corners on Carbon and the instrument, 10 dp on Glass) as the list's first row; results stream in below by section. Unplayable songs say why in place of the artist. Now Playing marks an online song with the single word "Online" in its status line — nothing more. Offline and errors use the centred message state with a next step.
 
 ### 6.8 `ProgressScrubber` / `VolumeBar`
 - Track 4dp (8dp in Scrub mode), radius full, fill `labelPrimary`, remaining `labelPrimary` 20%. Thumb appears only in Scrub mode / touch drag (12dp circle, `GlassControl`).
 - Position read in draw phase only (no recomposition per frame).
 - VolumeBar replaces the scrubber in place during wheel volume changes (speaker glyphs at both ends), fades back 1.5s after the last detent.
+- **Carbon (D-101), `SquiggleProgress`:** the played part undulates in the album's accent (3 dp line, 22 dp wavelength, 2.5 dp amplitude, travelling a wavelength every 2.1 s toward the playhead) while playing, and lies flat when paused; it tapers into the start and the playhead. The rest is a straight line at 20 %. Playhead: an upright 5 × 18 dp bar with a dark halo (6 × 24 while touched or scrubbing). Times sit under the bar's ends. Touch seeks on down, drag and lift; TalkBack has range info and set-progress. Reduced motion: the wave holds still.
 
 ### 6.9 Overlays
 - `GlassMenu` (context menus): `GlassRegular`, r22, rows 48dp, max 8 items then scroll; anchored to the focused row or the invoking control; wheel navigates it (focus lens inside).
@@ -317,9 +348,21 @@ ONLINE uses the same paper, themes and Wheel — no new paradigm. Menus are pape
 - `IndexGlyph`: 96dp rounded square `GlassFloating` centered in the readable region; shows the current initial letter during fast rotation in sorted lists; fades out 600ms after rotation slows.
 
 ### 6.10 Small components
-`QualityLabel` (footnote, secondary, tappable, e.g., "FLAC 24-bit/96 kHz"; absent when unknown) · `DownloadIndicator` (12dp glyph states: queued ○, progress ring, done ●, failed !, in `labelTertiary`/`positive`/`critical`) · `LikeButton` (heart outline ↔ filled `like`, TOGGLE haptic) · `Toggle` (track 51×31 classic proportions; knob becomes `GlassControl` while dragged, per HIG) · `PodiumTextField` (D-45; the one text field: with the Podium keyboard it opens the keyboard the Wheel becomes, with the Phone setting it is a `BasicTextField` that summons the phone's keyboard; see interaction-model.md §2.1).
+`QualityLabel` (footnote, secondary, tappable, e.g., "FLAC 24-bit/96 kHz"; absent when unknown) · `DownloadIndicator` (12dp glyph states: queued ○, progress ring, done ●, failed !, in `labelTertiary`/`positive`/`critical`) · `LikeButton` (heart outline ↔ filled `like`, TOGGLE haptic) · `Toggle` (track 51×31 classic proportions; knob becomes `GlassControl` while dragged, per HIG) · `PodiumTextField` (D-45; the one text field: with the Podium keyboard it opens the keyboard the Wheel becomes, with the Phone setting it is a `BasicTextField` that summons the phone's keyboard; see interaction-model.md §2.1) · `PaperTextField` (a field as a list's row: a hairline on the lit displays, a solid field set into Carbon's; Online's search and both environments' playlist names, D-106).
 
 **Quality label wording:** `<Codec> <bitDepth>-bit/<sampleRate> kHz` for lossless (`FLAC 24-bit/96 kHz`), `<Codec> <bitrate> kbps` for lossy (`AAC 256 kbps`). Sample rates print as 44.1, 48, 88.2, 96, 176.4, 192. Never "Lossless"/"Hi-Res" unless `audio-architecture.md` §5.1 holds. No all-caps, no middle dots. Unknown → no label.
+
+### 6.10.2 `LiveOrb` (D-107)
+Now Playing's play key, as a creature: a body in the theme's own material with two eyes, moved every
+frame by an `OrbFace` (squash, bob, forward roll, lean; the eyes' size, bow, lean, skew and gaze; a
+burst of stars). 72 dp (60 compact), between ⏮ and ⏭. No play or pause glyph — the shape says it, and
+the title bar's play light blinks while paused. **An eye** is a round-capped line as thick as its short
+side and as long as its long side, bowed across its length: a capsule at rest, a flat dash shut, a wide
+arch happy; the two meet at a dot, so it widens and squishes without a seam. **Materials:** Carbon solid
+ivory (`#F2EBDC`) with near-black eyes and no light around it; Glass a thicker frost than a key's
+(`GlassMaterial.Orb`); the instrument a hairline and its ink eyes. Stars are the album's accent on Carbon, the
+display's ink elsewhere. What it feels, and when, is `OrbMind` in `:feature:nowplaying`
+(`animation-system.md`). Content inside the display; glass only through `Modifier.glass`.
 
 ### 6.10.1 `OrbRenderer` (D-83)
 The lyrics' orb: a luminous ivory ring with a touch of champagne gold around a dark hollow, on black,
@@ -347,17 +390,35 @@ The motion language and its tokens are in animation-system.md §2 (D-65): TACTIL
 
 ---
 
-## 9. Haptics (tokens)
-| Token | Constant (API ≥ 34 / fallback) | Event |
+## 9. Haptics (D-105)
+Haptics are a design layer of their own: the screens name what happened (`HapticEvent`), `HapticDesign` decides how it feels on this phone in the listener's profile, and one `HapticEngine` plays it (code: `:core:interaction`, `HapticDesign.kt`, `Haptics.kt`).
+
+**Full control first:** Podium shapes its own haptics only where it has full control of the motor (amplitude control and at least the click and tick primitives). Any other phone gets the vibration Podium always had: the phone's own constants, event for event as before D-105 (`HapticDesign.legacy`), and Settings ▸ Haptics there is On or Off.
+
+**Profiles** (Settings ▸ Haptics, with full control): Balanced (default), More tactile (×1.2, richer contours), Reduced (×0.6, no micro textures), System default (the old vibration), Off. All within the phone's touch-feedback setting.
+
+**The ladder**, per event: (1) an envelope (Android 16+) for what is continuous by nature, a held centre's rising pressure; (2) a composition of primitives the vibrator reports, a missing one swapped for its nearest cousin (low tick → lighter tick, thud → click, spin → tick) and a missing rise or fall dropped; (3) a predefined effect by weight (tick, click, heavy click, double click); (4) nothing. A phone without full control never reaches the ladder: it plays the old vibration.
+
+| Event | Composition (Balanced) | Category |
 |---|---|---|
-| `detent` | SEGMENT_FREQUENT_TICK / CLOCK_TICK | focus moves one item; flow moves one album |
-| `step` | SEGMENT_TICK / CLOCK_TICK | volume step; picker option; scrub 1% |
-| `boundary` | GESTURE_THRESHOLD_DEACTIVATE / CONTEXT_CLICK | hit list start/end; volume 0/max |
-| `press` | VIRTUAL_KEY (KEYBOARD_TAP) | wheel button down |
-| `longPress` | LONG_PRESS | long-press recognised |
-| `toggleOn/Off` | TOGGLE_ON/OFF / CONTEXT_CLICK | like, switches |
-| `confirm` / `reject` | CONFIRM / REJECT | action completed / not allowed |
-Rate-limited to 60/s; coalesced during fast spins. Master toggle in Appearance.
+| Wheel detent | slow (< 8 detents/s) CLICK 0.75→0.65; medium (< 20) TICK 0.55→0.45; spin LOW_TICK 0.35→0.20 | light / micro |
+| Wheel boundary (list ends, volume 0 / max, scrub ends) | THUD 0.85 (tactile: + CLICK 0.5 at 20 ms) | heavy |
+| Centre down | CLICK 0.8 (tactile: TICK 0.45 + CLICK 0.85 at 14 ms, a two-part latch) | medium |
+| Quarter / key down | CLICK 0.7 · keyboard key TICK 0.6 | light |
+| Centre held | envelope 0.10 → 0.42 over 220 ms (else SLOW_RISE 0.35), from 40 % of the hold; stops on release or turn | light |
+| Long press | THUD 0.85 + CLICK 0.75 at 20 ms | emphasis |
+| Menu opens | TICK 0.5 + QUICK_FALL 0.5 | medium |
+| Into / out of a screen (touch) | TICK 0.45 + CLICK 0.65 at 30 ms / CLICK 0.6 + TICK 0.35 at 30 ms | medium |
+| Toggle on / off | TICK 0.5 + CLICK 0.8 at 25 ms / CLICK 0.6 + LOW_TICK 0.4 at 25 ms | light |
+| Confirm / reject | TICK 0.5 + CLICK 0.85 at 40 ms / THUD 0.7 + THUD 0.5 at 70 ms | medium / emphasis |
+| Step (volume, band, line) | TICK 0.35 + 0.35 × level | light |
+| Skip next / previous | CLICK 0.75 + LOW_TICK 0.4 at 35 ms / mirrored | medium |
+| Play / pause | CLICK 0.85 / TICK 0.6 + QUICK_FALL 0.45 | medium |
+| Favourite on / off | QUICK_RISE 0.35 + CLICK 0.9 / TICK 0.45 | light |
+| Pick up / pass a slot / set down | QUICK_RISE 0.5 + CLICK 0.7 / LOW_TICK 0.4 / THUD 0.85 | medium / micro / heavy |
+| Collision (the vinyl's needle) | THUD at the impact, 0.15–1 | heavy |
+
+**Cooldown law:** textures never closer than max(15 ms, duration + 4 ms), extra detents of a spin dropped; heavier events always cut in, each kind no more than once per 40 ms (boundary 120 ms, reject 150 ms), and no texture interrupts one while it plays. A detent goes first to whoever handles it: a screen that answers it itself (a boundary, a volume step) replaces the Wheel's click rather than adding to it. The click sound (D-32) plays with its haptic, under the same limits.
 
 ---
 

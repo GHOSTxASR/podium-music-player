@@ -12,12 +12,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.podium.core.designsystem.component.FocusList
 import app.podium.core.designsystem.component.ListInputEffect
 import app.podium.core.designsystem.component.LoadingScreen
-import app.podium.core.designsystem.component.LocalOverlayHost
 import app.podium.core.designsystem.component.LocalScreenInsets
-import app.podium.core.designsystem.component.MenuAction
 import app.podium.core.designsystem.component.MenuPreview
 import app.podium.core.designsystem.component.MenuRow
-import app.podium.core.designsystem.component.MenuSpec
 import app.podium.core.designsystem.component.MessageState
 import app.podium.core.designsystem.component.TrackRow
 import app.podium.core.designsystem.component.formatDuration
@@ -26,6 +23,8 @@ import app.podium.core.interaction.rememberFocusListState
 import app.podium.core.model.Track
 import app.podium.player.api.FavoritesRepository
 import app.podium.sources.api.CapabilityAction
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 
 /** A menu entry: its label, what its next column looks like, and what choosing it does. */
 private data class MenuEntry(
@@ -99,6 +98,9 @@ fun MusicScreen(
     onSongs: () -> Unit,
     onFavorites: () -> Unit,
     onSourceAction: (CapabilityAction) -> Unit,
+    /** The listener's playlists (D-106); null leaves Playlists out. */
+    playlists: PlaylistRepository? = null,
+    onPlaylists: () -> Unit = {},
 ) {
     val songs by repository.songs.collectAsStateWithLifecycle()
     val actions by repository.pendingActions.collectAsStateWithLifecycle()
@@ -110,6 +112,8 @@ fun MusicScreen(
     val artistArt = remember(artists) { artists.mapNotNull { it.artworkUri }.take(8) }
     val songArt = remember(tracks) { LibraryIndex.artwork(tracks) }
     val favoriteArt = remember(tracks, favoriteIds) { tracks.filter { it.id in favoriteIds }.mapNotNull { it.artwork?.uri }.distinct().take(8) }
+    val playlistList by (playlists?.playlists ?: NoPlaylists).collectAsStateWithLifecycle()
+    val playlistArt = remember(playlistList) { playlistList.orEmpty().flatMap { it.covers.take(2) }.distinct().take(8) }
     val entries = buildList {
         actions.forEach { add(MenuEntry(it.note, MenuPreview.None, { onSourceAction(it.action) }, leading = PodiumSymbol.Lock, chevron = false)) }
         add(MenuEntry("Cover Flow", MenuPreview.Carousel(albumArt), onCoverFlow))
@@ -117,6 +121,7 @@ fun MusicScreen(
         add(MenuEntry("Artists", if (artistArt.isEmpty()) MenuPreview.None else MenuPreview.Artwork(artistArt, round = true), onArtists))
         add(MenuEntry("Songs", MenuPreview.Artwork(songArt), onSongs))
         add(MenuEntry("Favorites", if (favoriteArt.isEmpty()) MenuPreview.None else MenuPreview.Artwork(favoriteArt), onFavorites))
+        if (playlists != null) add(MenuEntry("Playlists", if (playlistArt.isEmpty()) MenuPreview.None else MenuPreview.Artwork(playlistArt), onPlaylists))
     }
     PaperMenu(entries, "music")
 }
@@ -135,21 +140,10 @@ fun SongsScreen(
     val state by repository.songs.collectAsStateWithLifecycle()
     val actions by repository.pendingActions.collectAsStateWithLifecycle()
     val insets = LocalScreenInsets.current
-    val overlay = LocalOverlayHost.current
     val tracks = (state as? LibraryState.Ready)?.tracks.orEmpty()
     val focus = rememberFocusListState("songs")
-    val showMenu: (Int) -> Unit = { index ->
-        val track = tracks[index]
-        overlay.show(
-            MenuSpec(
-                title = track.title,
-                actions = listOf(
-                    MenuAction("Play next") { onPlayNext(track) },
-                    MenuAction("Add to Up Next") { onAddToQueue(track) },
-                ),
-            ),
-        )
-    }
+    val menu = songMenu(onPlayNext, onAddToQueue)
+    val showMenu: (Int) -> Unit = { index -> tracks.getOrNull(index)?.let(menu) }
     ListInputEffect(focus, onActivate = { onPlay(tracks, it) }, onLongPress = showMenu)
 
     when {
@@ -177,3 +171,5 @@ fun SongsScreen(
         }
     }
 }
+
+private val NoPlaylists: StateFlow<List<LibraryPlaylist>?> = MutableStateFlow(null)

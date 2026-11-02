@@ -49,7 +49,11 @@ import app.podium.core.designsystem.symbol.Symbol
 import app.podium.core.designsystem.theme.PodiumMotion
 import app.podium.core.designsystem.theme.PodiumTheme
 import app.podium.core.designsystem.theme.Spacing
+import app.podium.core.designsystem.shell.EdgeCorner
 import app.podium.core.designsystem.type.PodiumText
+import app.podium.core.designsystem.tonal.ContinuousShape
+import app.podium.core.designsystem.tonal.LocalAlbumTone
+import app.podium.core.interaction.rememberPodiumHaptics
 import kotlinx.coroutines.delay
 
 /** A round glass button for the functional layer (title bar). */
@@ -113,16 +117,18 @@ fun rememberProgressTick(running: Boolean, hz: Int = 15): Long {
     return tick
 }
 
-/** A thin progress line (mini player). */
+/** A thin progress line (mini player); on Carbon it fills with the album's accent (D-101). */
 @Composable
 fun ProgressHairline(progress: () -> Float, running: Boolean, modifier: Modifier = Modifier) {
     val colors = PodiumTheme.colors
+    val tone = LocalAlbumTone.current
     val tick = rememberProgressTick(running, hz = 10)
     Canvas(modifier.fillMaxWidth().height(2.dp)) {
         @Suppress("UNUSED_EXPRESSION") tick
         val r = CornerRadius(size.height / 2)
-        drawRoundRect(colors.labelPrimary.copy(alpha = 0.18f), cornerRadius = r)
-        drawRoundRect(colors.labelPrimary.copy(alpha = 0.8f), size = Size(size.width * progress().coerceIn(0f, 1f), size.height), cornerRadius = r)
+        drawRoundRect(colors.labelPrimary.copy(alpha = if (colors.isTonal) 0.14f else 0.18f), cornerRadius = r)
+        val fill = if (colors.isTonal) tone.accent else colors.labelPrimary.copy(alpha = 0.8f)
+        drawRoundRect(fill, size = Size(size.width * progress().coerceIn(0f, 1f), size.height), cornerRadius = r)
     }
 }
 
@@ -144,20 +150,26 @@ fun MiniPlayer(
 ) {
     val colors = PodiumTheme.colors
     val type = PodiumTheme.type
+    val haptics = rememberPodiumHaptics()
     Box(
         modifier
             .height(Spacing.miniPlayer)
             // A large surface goes down only a little; its own keys go further (TACTILE, D-65).
             .pressFeedback(0.985f)
-            .glass(GlassMaterial.Floating, RoundedCornerShape(if (colors.isIndustrial) 3.dp else 28.dp))
-            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onOpen)
+            .glass(GlassMaterial.Floating, if (colors.isIndustrial) RoundedCornerShape(3.dp) else ContinuousShape(EdgeCorner))
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
+                haptics.navigate(forward = true)
+                onOpen()
+            }
             .semantics { contentDescription = "Now playing: $title, $subtitle. Opens Now Playing" },
     ) {
+        // The artwork sits 8 dp from the top, the bottom and the start, and the last key's glyph
+        // 8 dp from the end (D-103).
         Row(
-            Modifier.fillMaxSize().padding(start = Spacing.s + Spacing.xxs, end = Spacing.xs),
+            Modifier.fillMaxSize().padding(start = MiniPlayerPadding),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            ArtworkImage(artworkUri, 40.dp, fallbackText = title)
+            ArtworkImage(artworkUri, 40.dp, fallbackText = title, corner = EdgeCorner - MiniPlayerPadding)
             Spacer(Modifier.width(Spacing.m))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.Center) {
                 PodiumText(title, type.rowFocused.copy(fontSize = type.body.fontSize, lineHeight = type.body.lineHeight), colors.labelPrimary)
@@ -165,9 +177,12 @@ fun MiniPlayer(
             }
             Box(
                 Modifier
-                    .size(44.dp)
+                    .size(MiniPlayerKeyWidth, Spacing.miniPlayer)
                     .pressFeedback(0.86f)
-                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onPlayPause)
+                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
+                        haptics.playPause(playing = !isPlaying)
+                        onPlayPause()
+                    }
                     .semantics {
                         role = Role.Button
                         contentDescription = if (isPlaying) "Pause" else "Play"
@@ -179,9 +194,12 @@ fun MiniPlayer(
             if (onNext != null) {
                 Box(
                     Modifier
-                        .size(44.dp)
+                        .size(MiniPlayerKeyWidth, Spacing.miniPlayer)
                         .pressFeedback(0.86f)
-                        .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onNext)
+                        .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
+                            haptics.skip(forward = true)
+                            onNext()
+                        }
                         .semantics {
                             role = Role.Button
                             contentDescription = "Next track"
@@ -196,17 +214,38 @@ fun MiniPlayer(
     }
 }
 
-/** Scrubber / volume bar (design-system.md §6.8). Value is read in the draw phase. */
+/** Inside the mini player, from its edges to its artwork (top, bottom and start) and to its last key's glyph. */
+private val MiniPlayerPadding = Spacing.s
+
+/** A mini player key: the full height, its 24 dp glyph centred 8 dp from the key's sides. */
+private val MiniPlayerKeyWidth = 40.dp
+
+/**
+ * Scrubber / volume bar (design-system.md §6.8). Value is read in the draw phase. On Carbon (D-101)
+ * a rounded track that fills with the album's accent, with Carbon's upright playhead when emphasized.
+ */
 @Composable
 fun ProgressBar(value: () -> Float, running: Boolean, modifier: Modifier = Modifier, emphasized: Boolean = false, thickness: Dp = 4.dp) {
     val colors = PodiumTheme.colors
+    val tone = LocalAlbumTone.current
     val tick = rememberProgressTick(running, hz = 30)
     val h = if (emphasized) thickness * 2 else thickness
-    Canvas(modifier.fillMaxWidth().height(14.dp)) {
+    Canvas(modifier.fillMaxWidth().height(if (colors.isTonal && emphasized) 22.dp else 14.dp)) {
         @Suppress("UNUSED_EXPRESSION") tick
         val barH = h.toPx()
         val y = (size.height - barH) / 2
         val fraction = value().coerceIn(0f, 1f)
+        if (colors.isTonal) {
+            val track = (if (emphasized) 6.dp else thickness).toPx()
+            val ty = (size.height - track) / 2
+            val head = if (emphasized) Size(5.dp.toPx(), 20.dp.toPx()) else Size(0f, 0f)
+            val r = CornerRadius(track / 2)
+            drawRoundRect(colors.labelPrimary.copy(alpha = 0.16f), Offset(0f, ty), Size(size.width, track), r)
+            val x = (size.width - head.width) * fraction
+            drawRoundRect(tone.accent, Offset(0f, ty), Size(x + head.width / 2, track), r)
+            if (emphasized) drawPlayhead(Offset(x + head.width / 2, size.height / 2), head, colors.labelPrimary)
+            return@Canvas
+        }
         if (colors.isIndustrial) {
             // A flat rule with a square playhead: an instrument's meter, not a pill.
             val rule = (barH / 2).coerceAtLeast(1.5.dp.toPx())

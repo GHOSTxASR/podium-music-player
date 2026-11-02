@@ -17,6 +17,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -56,6 +57,14 @@ fun PowerButton(on: Boolean, palette: ShellPalette, onToggle: () -> Unit, modifi
     val glyph by animateColorAsState(if (on) glyphBase else glyphBase.copy(alpha = 0.45f), label = "powerGlyph")
     val face = if (palette.isGlass) {
         Modifier.glass(GlassMaterial.Control, CircleShape, pressed = pressed)
+    } else if (palette.metal) {
+        // Carbon (D-101): a small spun-steel button in its own seam, standing a little proud.
+        Modifier
+            .shadow(3.dp, CircleShape, clip = false, ambientColor = Color.Black, spotColor = Color.Black)
+            .drawBehind {
+                drawSeam(center, size.minDimension / 2f)
+                drawSpunDisc(if (pressed) lerp(palette.ring, Color.Black, 0.2f) else palette.ring, null, angle = 0f, sheen = 1f, textureAlpha = 0f)
+            }
     } else {
         Modifier
             .then(if (palette.matte) Modifier else Modifier.shadow(3.dp, CircleShape, clip = false))

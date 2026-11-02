@@ -274,9 +274,10 @@ fun OnlineRadioScreen(repository: OnlineRepository, actions: OnlineActions) {
     val recent by repository.recentlyPlayed.collectAsStateWithLifecycle(initialValue = emptyList())
     val genres = rememberRemote(Unit) { repository.genres() }
     val entries = buildList {
-        nowPlaying?.let { t -> add(OnlineEntry("From ${t.title}", MenuPreview.Artwork(listOfNotNull(t.artwork?.uri)), chevron = false) { actions.startRadio(t) }) }
-        recent.filter { it.id != nowPlaying?.id }.take(6).forEach { t ->
-            add(OnlineEntry("From ${t.title}", MenuPreview.Artwork(listOfNotNull(t.artwork?.uri)), chevron = false) { actions.startRadio(t) })
+        // Two songs may share a title (a song and its video): each entry is keyed by its song.
+        nowPlaying?.let { t -> add(OnlineEntry("From ${t.title}", MenuPreview.Artwork(listOfNotNull(t.artwork?.uri)), chevron = false, key = "radio:${t.id.value}") { actions.startRadio(t) }) }
+        recent.filter { it.id != nowPlaying?.id }.distinctBy { it.id }.take(6).forEach { t ->
+            add(OnlineEntry("From ${t.title}", MenuPreview.Artwork(listOfNotNull(t.artwork?.uri)), chevron = false, key = "radio:${t.id.value}") { actions.startRadio(t) })
         }
         (genres as? Remote.Ready)?.value?.take(10)?.forEach { g ->
             add(OnlineEntry("$g radio", MenuPreview.None, chevron = false) { actions.startGenreRadio(g) })

@@ -21,7 +21,7 @@ import app.podium.core.designsystem.shell.DeviceLayout
 import app.podium.core.designsystem.shell.FinishPreset
 import app.podium.core.designsystem.shell.PowerButton
 import app.podium.core.designsystem.shell.palette
-import app.podium.core.designsystem.theme.BoneColors
+import app.podium.core.designsystem.theme.PaperColors
 import app.podium.core.designsystem.theme.CarbonColors
 import app.podium.core.designsystem.theme.DisplayTheme
 import app.podium.core.designsystem.theme.LocalLyricsBackground
@@ -249,7 +249,7 @@ class LyricsScreenTest {
         File(File("build/screenshots").apply { mkdirs() }, "$name.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
         // Sample the display's paper near its top-left corner (inside the screen, away from the words).
         val paper = dominantNear(bitmap)
-        val light = BoneColors.canvas.toArgbInt()
+        val light = PaperColors.canvas.toArgbInt()
         val expected = if (expectLight) light else dark.toArgbInt()
         assertTrue(close(paper, expected), "the display should be ${if (expectLight) "light" else "dark"} ($name): ${Integer.toHexString(paper)}")
     }

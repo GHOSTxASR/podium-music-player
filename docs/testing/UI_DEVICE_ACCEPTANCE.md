@@ -14,7 +14,7 @@ How to install: `adb install -r artifacts/apk/podium-debug.apk` (or `./gradlew :
 
 Automated (`FocusListGeometryTest`, `FocusGeometryTest`, `PaperLayoutTest`, `OnlineLayoutTest`):
 1/2/3/5/10/50 rows, focus walked with the Wheel one detent at a time to the first, middle and last
-row and back, Carbon/Bone/Glass, phone (411 × 891 dp) and small (360 × 640 dp) screens, rows with
+row and back, Carbon/the instrument/Glass, phone (411 × 891 dp) and small (360 × 640 dp) screens, rows with
 titles too long to fit. Asserted: the focused row is fully inside the readable region; no row inside
 it is clipped at either side; a list that fits starts at the top; the first and last rows sit flush;
 in a long list the focused row rides at the middle.

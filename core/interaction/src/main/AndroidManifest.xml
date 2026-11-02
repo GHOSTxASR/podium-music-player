@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Podium's own haptics play on the vibrator (D-105); without this Android refuses every one of
+         them. The phone's touch-feedback setting still governs them (they're touch feedback). -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+</manifest>

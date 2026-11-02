@@ -87,10 +87,12 @@ Latency budget: detent emission → focus state change in the same frame; lens b
 | `Scrub` (Now Playing) | Seek ≈ 0.5 % of duration per detent (0.5–3 s), ×2/×5/×10 at 11/20/32 detents/s | Enter `Actions` | More menu | Return to `Volume` (does **not** navigate) | Auto-returns after 4 s idle |
 | `Actions` (Now Playing) | Move the focus lens across shuffle, repeat, favorite, Up Next, More | Activate the focused action | More menu | Return to `Volume` | Auto-returns after 6 s idle (iPod: Center cycles the Now Playing items) |
 | `Queue move` (Up Next ▸ song menu ▸ Move) | Move the lifted song among upcoming songs (preview) | Place it (`QueueManager.move`) | — | Cancel | Section follows its new neighbours, as in the queue |
+| `Playlist move` (a playlist ▸ song menu ▸ Move, D-106) | Move the lifted song among the playlist's songs (preview) | Place it | — | Put it back | Stops at the first and last song |
 | `Flow` (Album Flow) | Move album ±1 (accelerated) | Flip cover → track list; Center again plays the focused track | Album context menu | Back (flip back first if flipped) | |
 | `Queue` (Up Next) | Move focus | Skip to focused item | Item menu: Play next, Move, Remove, Go to album | Back | |
 | `Reorder` (Up Next / playlist edit) | Move the grabbed item ±1 position | Drop | — | Cancel (item returns) | Entered via item menu ▸ Move |
 | `Lyrics` | Move line focus (auto-follow paused 4 s after input) | Seek to focused line's timestamp | — | Back | Plain lyrics: Rotate scrolls |
+| `Vinyl` (Now Playing ▸ Vinyl, D-104) | Nothing; seeking, seek (as `Scrub`) | Start / stop seeking | — | Leave seeking, else back to Now Playing | ⏮ ⏭ change the song; ⏯ and every hold do nothing (reject haptic); nothing passes to the global handlers |
 | `Picker` (option lists inside settings/sheets) | Move option | Choose & close | — | Close without change | |
 | `Overlay` (menu/sheet open) | Move focus in overlay | Choose | — | Dismiss overlay | Overlays are separate `InputTarget`s on top of the stack |
 | `TextEntry` (search field focused) | Move focus into results (field loses focus, keyboard hides) | — | — | Clear query; if empty → back | |
@@ -120,22 +122,28 @@ The focus is derived only from what the list measured — the readable region (t
 - **The lens** sits on the focused row and slides between rows in content space, so it is glued to the rows while the list scrolls; it is clipped to the readable region and never clamped to a band. Reduced motion: it jumps; a move of more than three rows jumps. On the paper the list is scrolled from the lens's own animation frames, so a fast spin never leaves the indicator chasing the rows: it holds at the middle and the list moves under it.
 - **The ends** fade and soften only where the list continues beyond them (`FocusGeometry.endStrength`), ramping in over the first row of hidden content.
 - **Touch:** unchanged (§5). A tap focuses a row, which then rides to the middle like any other focus move.
-- Tests: `FocusGeometryTest` (pure), `FocusListGeometryTest` (Robolectric, 1/2/3/5/10/50 rows, first/middle/last and back, Carbon/Bone/Glass, phone and small screens, long titles; asserts the focused row is fully inside the readable region, no row is clipped, flush ends and the centred middle).
+- Tests: `FocusGeometryTest` (pure), `FocusListGeometryTest` (Robolectric, 1/2/3/5/10/50 rows, first/middle/last and back, Carbon/instrument/Glass, phone and small screens, long titles; asserts the focused row is fully inside the readable region, no row is clipped, flush ends and the centred middle).
 
-## 6. Haptics mapping
-| Event | Token |
+## 6. Haptics mapping (D-105)
+| Event | Haptic event |
 |---|---|
-| Wheel button down | `press` |
-| Focus moved by rotation | `detent` (coalesced to ≤ 60/s; during acceleration ×2/×4 one haptic per emitted step, not per item) |
-| List boundary / volume 0 or max / scrub at 0 or end | `boundary` |
-| Volume step, scrub step, picker step | `step` |
-| Long-press recognised | `longPress` |
-| Like on/off | `toggleOn` / `toggleOff` |
-| Added to queue / playlist, download complete (foreground) | `confirm` |
-| Disallowed action (e.g., Download on a non-permitted track) | `reject` |
-Touch taps on rows: no haptic (system default only). Haptics off → no other behaviour changes.
+| Centre down / a quarter down | `CenterPress` / `ButtonPress` (at touch-down) |
+| Wheel turned a detent | `WheelDetent(velocity)`, unless the screen answered it itself |
+| List boundary / volume 0 or max / scrub at 0 or end | `WheelBoundary` |
+| Volume step (firmer as it rises), band step, lyric line | `Step(level)` |
+| Centre held | `HoldBuild` from 40 % of the hold, then `HoldLock` at the long press; released or turned, it stops |
+| Menu opens | `MenuOpen` |
+| Header back key, mini player, Now Playing's Lyrics / Vinyl / Up Next (touch) | `Navigate` |
+| Shuffle, repeat, switches in Settings, seeking on the vinyl, a song added or taken back in a playlist's Add songs | `Toggle(on)` |
+| Favourite | `Favorite(on)` |
+| Transport keys, mini player keys | `Skip(forward)`, `PlayPause(playing)` |
+| Up Next (Wheel or drag) and playlists (Wheel): Move / each slot / placed / cancelled | `DragStart` / `DragStep` / `Drop` / `Reject` |
+| Songs added to a playlist from a menu, a playlist named | `Confirm` |
+| The vinyl's needle landing | `Collision` |
+| Done / not allowed | `Confirm` / `Reject` |
+Touch taps on rows: no haptic (system default only). Wheel-driven navigation adds nothing to the press the finger already felt. Haptics off → no other behaviour changes.
 
-Settings (D-32): **Haptics** (on by default; on top of the system touch-feedback setting) and **Click sound** (off by default, D-08). The click pairs with the haptics: `detent` and `step` play a short tick (`res/raw/podium_click.ogg`, rate-limited to one per 24 ms so a fast spin purrs), `press` a firmer click (`podium_press.ogg`). Both sounds are original and synthesized; they play as UI sounds and stay quiet on silent/vibrate. Code: `Feedback`/`LocalFeedback` and `Clicker` in `:core:interaction`; `DeviceSounds` in the app.
+Settings (D-32, D-105): **Haptics** (on a phone with full control of its motor, a profile: Balanced by default, More tactile, Reduced, System default, Off, a newly chosen profile playing itself; on any other phone On or Off, with the vibration Podium always had; always within the system touch-feedback setting) and **Click sound** (off by default, D-08). The click pairs with the haptics: `detent` and `step` play a short tick (`res/raw/podium_click.ogg`, rate-limited to one per 24 ms so a fast spin purrs), `press` a firmer click (`podium_press.ogg`). Both sounds are original and synthesized; they play as UI sounds and stay quiet on silent/vibrate. Code: `Feedback`/`LocalFeedback` and `Clicker` in `:core:interaction`; `DeviceSounds` in the app.
 
 ## 7. Debounce & robustness
 - `Press(CENTER)` on the same target within 400 ms after an activation is ignored (prevents double-play / double-push).

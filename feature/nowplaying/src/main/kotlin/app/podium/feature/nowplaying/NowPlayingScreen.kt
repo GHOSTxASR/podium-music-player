@@ -2,7 +2,6 @@ package app.podium.feature.nowplaying
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.SizeTransform
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
@@ -21,14 +20,9 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -40,13 +34,11 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -57,15 +49,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -75,27 +63,28 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.podium.core.common.PodiumError
-import app.podium.core.designsystem.artwork.BackgroundExtension
 import app.podium.core.designsystem.artwork.FittedArtwork
 import app.podium.core.designsystem.artwork.LocalArtworkLoader
 import app.podium.core.designsystem.artwork.artworkBucketPx
-import app.podium.core.designsystem.artwork.rememberArtwork
+import app.podium.core.designsystem.artwork.rememberArtworkState
+import app.podium.core.designsystem.theme.DisplayStyle
+import app.podium.core.designsystem.tonal.AlbumAtmosphere
+import app.podium.core.designsystem.tonal.rememberCoverAnalysis
 import app.podium.core.designsystem.component.LocalColumnTransition
 import app.podium.core.designsystem.component.LocalOverlayHost
+import app.podium.core.designsystem.component.LocalImmersiveHost
 import app.podium.core.designsystem.component.LocalScreenInsets
 import app.podium.core.designsystem.component.MenuAction
 import app.podium.core.designsystem.component.MenuSpec
 import app.podium.core.designsystem.component.MessageState
-import app.podium.core.designsystem.component.ProgressBar
-import app.podium.core.designsystem.component.formatDuration
 import app.podium.core.designsystem.component.pressFeedback
-import app.podium.core.designsystem.component.rememberProgressTick
 import app.podium.core.designsystem.glass.GlassHost
-import app.podium.core.designsystem.glass.GlassMaterial
 import app.podium.core.designsystem.glass.glass
 import app.podium.core.designsystem.symbol.PodiumSymbol
 import app.podium.core.designsystem.symbol.Symbol
@@ -118,6 +107,7 @@ import app.podium.core.model.TrackId
 import app.podium.player.api.FavoritesRepository
 import app.podium.player.api.NowPlayingItem
 import app.podium.player.api.PlayIntent
+import app.podium.player.api.AudioPulse
 import app.podium.player.api.PlaybackController
 import app.podium.player.api.PlaybackOwner
 import app.podium.player.api.RemoteProblem
@@ -140,9 +130,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
  * What the Wheel does on Now Playing. Center cycles through the modes as on the original
  * (volume → scrubber → the action row); Menu returns to volume; each mode times out back to it.
  */
-private enum class WheelMode { Volume, Scrub, Actions }
+internal enum class WheelMode { Volume, Scrub, Actions }
 
-private enum class Action { Shuffle, Repeat, Favorite, Lyrics, Queue, More }
+internal enum class Action { Shuffle, Repeat, Favorite, Lyrics, Vinyl, Queue, More }
 
 /**
  * Now Playing (design-system.md §6.7, D-28): the artwork is the content and leads; text, progress
@@ -157,6 +147,8 @@ fun NowPlayingScreen(
     onUpNext: () -> Unit,
     /** A quiet word on where the song belongs ("Online"), or null for the local library (D-34). */
     environmentOf: (TrackId) -> String? = { null },
+    /** Add to playlist for a song of the library (D-106); null leaves it out. */
+    onAddToPlaylist: ((TrackId) -> Unit)? = null,
     /** Now Playing ▸ Lyrics (LYRICS_ARCHITECTURE.md §7). */
     onLyrics: () -> Unit = {},
     /** The playing song in full, for its album and artists (D-74); null when it can't be found. */
@@ -167,6 +159,10 @@ fun NowPlayingScreen(
     onOpenArtist: (ArtistCredit) -> Unit = {},
     /** The sleep timer (D-75); null hides it. */
     sleepTimer: SleepTimer? = null,
+    /** How the music sounds, for the vinyl's visualiser (D-104). */
+    pulse: AudioPulse = AudioPulse.None,
+    /** Settings ▸ Now Playing's tray (D-108): the tray slides away when nothing has been touched. */
+    autoHideTray: Boolean = false,
 ) {
     val snapshot by controller.snapshot.collectAsStateWithLifecycle()
     val queue by controller.queue.collectAsStateWithLifecycle()
@@ -175,7 +171,14 @@ fun NowPlayingScreen(
     val insets = LocalScreenInsets.current
     val haptics = rememberPodiumHaptics()
     val overlay = LocalOverlayHost.current
+    val immersive = LocalImmersiveHost.current
+    val vinyl = remember { VinylState() }
     val item = snapshot.item
+    // The music's sound is measured for this screen only while it shows (D-83): the orb dances to it.
+    LifecycleResumeEffect(pulse) {
+        val listening = pulse.listen()
+        onPauseOrDispose { listening.close() }
+    }
 
     var mode by remember { mutableStateOf(WheelMode.Volume) }
     var lastWheelAt by remember { mutableLongStateOf(0L) }
@@ -183,6 +186,22 @@ fun NowPlayingScreen(
     var detentRemainder by remember { mutableIntStateOf(0) }
     var scrubTarget by remember { mutableStateOf<Long?>(null) }
     var actionFocus by remember { mutableIntStateOf(0) }
+
+    /**
+     * The tray has slid away (D-108). It goes once nothing has been touched for [TrayIdleMillis], and
+     * only while the Wheel is resting on the volume — never out from under someone using the actions,
+     * and never behind the vinyl. Any touch, anywhere, puts the clock back.
+     */
+    var trayHidden by remember { mutableStateOf(false) }
+    var lastTouchAt by remember { mutableLongStateOf(0L) }
+    val touched: () -> Unit = { lastTouchAt = System.nanoTime() }
+    LaunchedEffect(autoHideTray, lastTouchAt, lastWheelAt, mode, trayHidden, vinyl.open) {
+        if (!autoHideTray || trayHidden || mode != WheelMode.Volume || vinyl.open) return@LaunchedEffect
+        delay(TrayIdleMillis)
+        trayHidden = true
+    }
+    // Turning the setting off brings it straight back, so nobody is left hunting for it.
+    LaunchedEffect(autoHideTray) { if (!autoHideTray) trayHidden = false }
 
     // The volume bar lingers 1.5 s after the last detent; scrubbing and the action row time out.
     LaunchedEffect(lastWheelAt, mode) {
@@ -236,6 +255,9 @@ fun NowPlayingScreen(
                         add(MenuAction("Lyrics", onSelect = onLyrics))
                         add(MenuAction("Up Next", onSelect = onUpNext))
                         add(MenuAction(if (isFavorite) "Remove from favorites" else "Add to favorites") { favorites.toggle(item.trackId) })
+                        if (onAddToPlaylist != null && remoteOwner == null && environmentOf(item.trackId) == null) {
+                            add(MenuAction("Add to playlist") { onAddToPlaylist(item.trackId) })
+                        }
                         goTo.forEach(::add)
                         if (sleepTimer != null) add(MenuAction("Sleep timer") { overlay.show(sleepTimerMenu(sleepTimer)) })
                         if (remoteOwner != null) {
@@ -249,14 +271,63 @@ fun NowPlayingScreen(
             )
         }
     }
+    // The vinyl (D-104): it takes the whole display, over the title bar, until Menu brings it back.
+    val openVinyl: () -> Unit = {
+        if (item != null && !vinyl.open) {
+            vinyl.open = true
+            immersive.show(onBack = { vinyl.backPresses++ }) {
+                VinylStage(controller, pulse, vinyl, immersive) {
+                    immersive.close()
+                    vinyl.open = false
+                }
+            }
+        }
+    }
+    // Leaving Now Playing takes the vinyl with it.
+    DisposableEffect(Unit) {
+        onDispose {
+            if (vinyl.open) immersive.close()
+            vinyl.open = false
+            vinyl.holdsCover = false
+        }
+    }
     val perform: (Action) -> Unit = { action ->
-        when (action) {
+        touched()
+        // An action tapped while the tray is still sliding away only brings it back (D-108).
+        if (trayHidden) {
+            trayHidden = false
+        } else when (action) {
             // Only what the playing owner supports does anything (§8.4); the rest says no.
-            Action.Shuffle -> if (controls.shuffle) controller.setShuffle(!snapshot.shuffleEnabled) else haptics.reject()
-            Action.Repeat -> if (controls.repeat) controller.setRepeat(snapshot.repeatMode.next()) else haptics.reject()
-            Action.Favorite -> item?.let { favorites.toggle(it.trackId) }
-            Action.Lyrics -> onLyrics()
-            Action.Queue -> onUpNext()
+            // Each says what it did (D-105): on or off, into a screen.
+            Action.Shuffle -> if (controls.shuffle) {
+                haptics.toggle(on = !snapshot.shuffleEnabled)
+                controller.setShuffle(!snapshot.shuffleEnabled)
+            } else {
+                haptics.reject()
+            }
+            Action.Repeat -> if (controls.repeat) {
+                val next = snapshot.repeatMode.next()
+                haptics.toggle(on = next != RepeatMode.OFF)
+                controller.setRepeat(next)
+            } else {
+                haptics.reject()
+            }
+            Action.Favorite -> item?.let {
+                haptics.favorite(on = !isFavorite)
+                favorites.toggle(it.trackId)
+            }
+            Action.Lyrics -> {
+                haptics.navigate(forward = true)
+                onLyrics()
+            }
+            Action.Vinyl -> {
+                haptics.navigate(forward = true)
+                openVinyl()
+            }
+            Action.Queue -> {
+                haptics.navigate(forward = true)
+                onUpNext()
+            }
             Action.More -> showMore()
         }
     }
@@ -268,6 +339,19 @@ fun NowPlayingScreen(
             WheelMode.Actions -> WheelContext.LIST_FOCUS
         },
     ) { input ->
+        // The tray has slid away (D-108): whatever the Wheel does next only brings it back — no
+        // selecting, no pausing, no going back — and from the frame after that it works as it always
+        // does. A release is swallowed too, so the button that woke it cannot act on the way up.
+        if (trayHidden) {
+            if (input !is PodiumInput.Release) {
+                trayHidden = false
+                lastWheelAt = System.nanoTime()
+                touched()
+                showVolume = false
+                haptics.toggle(on = true)
+            }
+            return@InputTargetEffect true
+        }
         when (input) {
             is PodiumInput.Rotate -> {
                 lastWheelAt = System.nanoTime()
@@ -284,7 +368,12 @@ fun NowPlayingScreen(
                         if (steps != 0) {
                             val before = volumeState.level
                             volume.step(steps)
-                            if ((steps > 0 && before >= volumeState.max) || (steps < 0 && before <= 0)) haptics.boundary() else haptics.step()
+                            if ((steps > 0 && before >= volumeState.max) || (steps < 0 && before <= 0)) {
+                                haptics.boundary()
+                            } else {
+                                // Firmer as the music gets louder.
+                                haptics.step(level = (before + steps).coerceIn(0, volumeState.max).toFloat() / volumeState.max.coerceAtLeast(1))
+                            }
                         }
                     }
                     WheelMode.Scrub -> {
@@ -316,8 +405,10 @@ fun NowPlayingScreen(
                             scrubTarget = null
                         }
                         WheelMode.Actions -> {
-                            haptics.confirm()
+                            // The action's own feel (on, off, into a screen); a confirm if it has none.
+                            val mark = haptics.mark()
                             perform(Action.entries[actionFocus])
+                            if (!haptics.askedSince(mark)) haptics.confirm()
                         }
                     }
                     showVolume = false
@@ -361,21 +452,38 @@ fun NowPlayingScreen(
         queueHidden = queue.hidden,
         sleepNote = sleepNote,
         queueOrder = queue.entries.map { it.uid },
+        vinyl = vinyl,
+        pulse = pulse,
+        trayHidden = trayHidden,
+        touched = touched,
         neighbourArtwork = listOfNotNull(
             queue.entries.getOrNull(queue.currentIndex + 1)?.artworkUri,
             queue.entries.getOrNull(queue.currentIndex - 1)?.artworkUri,
         ).distinct(),
     )
-    // The cluster's glass refracts the artwork's environment, so the environment is the captured layer.
+    // The controls' glass refracts the cover's light, so that light is the captured layer. On Glass
+    // the cover's colours flow behind Now Playing while the music plays (D-103); Carbon's flow is the
+    // display's own atmosphere, behind every screen.
     GlassHost(
         modifier = Modifier.fillMaxSize(),
-        content = { BackgroundExtension(rememberArtwork(item.artworkUri, 96.dp), Modifier.fillMaxSize()) },
+        content = {
+            if (PodiumTheme.colors.style == DisplayStyle.GLASS) {
+                val art = rememberArtworkState(item.artworkUri, 96.dp)
+                val cover = rememberCoverAnalysis(art.bitmap, art.settled)
+                AlbumAtmosphere(
+                    cover?.glassField(PodiumTheme.colors.isDark),
+                    level = { 1f },
+                    Modifier.fillMaxSize(),
+                    moving = { snapshot.intent == PlayIntent.PLAY },
+                )
+            }
+        },
         functional = {
             BoxWithConstraints(Modifier.fillMaxSize().padding(top = insets.top, bottom = insets.bottom)) {
                 CompositionLocalProvider(LocalWindowWidth provides maxWidth) {
+                // Portrait only (D-108), so the display is always taller than it is wide; a short one
+                // still moves the cover beside the title, where a stacked cover would stop meaning much.
                 when {
-                    maxWidth > maxHeight * 1.15f -> LandscapeLayout(parts)
-                    // Too short for a stacked cover to stay meaningful: the cover moves beside the title.
                     maxHeight - StackedControlsHeight < maxWidth * 0.45f -> CompactLayout(parts)
                     else -> PortraitLayout(parts)
                 }
@@ -385,7 +493,7 @@ fun NowPlayingScreen(
     )
 }
 
-private class NowPlayingParts(
+internal class NowPlayingParts(
     val snapshot: PlaybackSnapshot,
     val item: NowPlayingItem,
     val playing: Boolean,
@@ -406,89 +514,53 @@ private class NowPlayingParts(
     val queueOrder: List<QueueUid> = emptyList(),
     /** The covers of the songs either side of this one, loaded ahead so they slide in showing (D-78). */
     val neighbourArtwork: List<String> = emptyList(),
+    /** What the vinyl shares with the cover: where it is, and whether the vinyl holds it (D-104). */
+    val vinyl: VinylState = VinylState(),
+    /** How the music sounds, for the orb to dance to (D-107) and the vinyl's visualiser (D-104). */
+    val pulse: AudioPulse = AudioPulse.None,
+    /** The tray has slid away and the Wheel is waiting to be woken (D-108). */
+    val trayHidden: Boolean = false,
+    /** Something on the display was touched: the tray's clock starts again (D-108). */
+    val touched: () -> Unit = {},
 )
 
+/** Tall screens: the same stacked composition in every theme (D-103). */
 @Composable
-private fun PortraitLayout(p: NowPlayingParts) {
-    Column(
-        Modifier.fillMaxSize().padding(horizontal = Spacing.xl).padding(top = Spacing.xxs, bottom = Spacing.s),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        // The screen decides the composition: the cover and its facts take whatever the controls
-        // leave — the cover at the left, the song's place, quality and any note beside it, in every
-        // theme. A new cover travels in from the right edge of the display; the old one leaves left.
-        BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
-            val travel = artTravel(rowWidth = maxWidth, startInset = Spacing.xl)
-            Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
-                BoxWithConstraints(Modifier.weight(0.62f).fillMaxHeight().zIndex(1f), contentAlignment = Alignment.CenterStart) {
-                    ArtworkStage(p, maxWidth, maxHeight, travel)
-                }
-                Spacer(Modifier.width(Spacing.m))
-                StatusColumn(p, Modifier.weight(0.38f))
-            }
-        }
-        Spacer(Modifier.height(Spacing.m))
-        TrackText(p.item, Alignment.CenterHorizontally, TextAlign.Center)
-        Spacer(Modifier.height(Spacing.s + Spacing.xxs))
-        ProgressRow(p)
-        Spacer(Modifier.height(Spacing.s))
-        TransportRow(p)
-        Spacer(Modifier.height(Spacing.xs))
-        ActionCluster(p)
-    }
-}
+private fun PortraitLayout(p: NowPlayingParts) = StackedPortrait(p)
 
 /** Short screens: the cover sits beside the title, like the original's Now Playing. */
 @Composable
 private fun CompactLayout(p: NowPlayingParts) {
     Column(
-        Modifier.fillMaxSize().padding(horizontal = Spacing.l).padding(bottom = Spacing.s),
+        Modifier.fillMaxSize().padding(horizontal = Spacing.edge),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
         Row(Modifier.fillMaxWidth().weight(1f, fill = false), verticalAlignment = Alignment.CenterVertically) {
             val rowWidth = LocalWindowWidth.current
             BoxWithConstraints(Modifier.weight(0.42f).aspectRatio(1f).zIndex(1f), contentAlignment = Alignment.Center) {
-                ArtworkStage(p, maxWidth, maxHeight, artTravel(rowWidth, Spacing.l))
+                ArtworkStage(p, maxWidth, maxHeight, artTravel(rowWidth, Spacing.edge))
             }
             Spacer(Modifier.width(Spacing.m))
             Box(Modifier.weight(0.58f)) { TrackText(p.item, Alignment.Start, TextAlign.Start) }
         }
         Spacer(Modifier.height(Spacing.s))
-        ProgressRow(p)
+        NowPlayingProgress(p)
         StatusSlot(p)
-        TransportRow(p)
-        Spacer(Modifier.height(Spacing.xs))
-        ActionCluster(p)
+        NowPlayingTransport(p, compact = true)
+        Spacer(Modifier.height(Spacing.s))
+        NowPlayingActions(p, compact = true)
     }
 }
+
+/**
+ * How long Now Playing goes untouched before the tray slides away (D-108). Longer than the Wheel's own
+ * timeouts (the action row's is 6 s), so the tray never leaves while a mode is still timing out.
+ */
+private const val TrayIdleMillis = 7_000L
 
 /** What the stacked layout needs below the cover (text, progress, status, transport, actions). */
 private val StackedControlsHeight = 250.dp
-
-/** Landscape screens read like the original: artwork on the left, everything else beside it. */
-@Composable
-private fun LandscapeLayout(p: NowPlayingParts) {
-    Row(
-        Modifier.fillMaxSize().padding(horizontal = Spacing.l).padding(bottom = Spacing.s),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        val rowWidth = LocalWindowWidth.current
-        BoxWithConstraints(Modifier.fillMaxHeight().aspectRatio(1f, matchHeightConstraintsFirst = true).zIndex(1f), contentAlignment = Alignment.Center) {
-            ArtworkStage(p, maxWidth, maxHeight, artTravel(rowWidth, Spacing.l))
-        }
-        Spacer(Modifier.width(Spacing.l))
-        Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-            TrackText(p.item, Alignment.Start, TextAlign.Start)
-            Spacer(Modifier.height(Spacing.s))
-            ProgressRow(p)
-            StatusSlot(p)
-            TransportRow(p)
-            Spacer(Modifier.height(Spacing.xs))
-            ActionCluster(p)
-        }
-    }
-}
 
 /** The cover on show: one per song in the queue, so every new song slides, even with the same cover (D-78). */
 private data class ArtKey(val uid: QueueUid, val uri: String?, val fallback: String, val index: Int)
@@ -507,13 +579,13 @@ internal fun songChangeIsBack(oldUid: QueueUid, newIndex: Int, queueOrder: List<
  * the cover's own width and the margin before it). Previous runs the other way.
  */
 @Immutable
-private data class ArtTravel(val enterFromPx: Int, val exitToPx: (fullWidth: Int) -> Int)
+internal data class ArtTravel(val enterFromPx: Int, val exitToPx: (fullWidth: Int) -> Int)
 
 /** The width Now Playing lays out in: a cover leaving or arriving crosses all of it. */
 private val LocalWindowWidth = staticCompositionLocalOf { 0.dp }
 
 @Composable
-private fun artTravel(rowWidth: Dp, startInset: Dp): ArtTravel {
+internal fun artTravel(rowWidth: Dp, startInset: Dp): ArtTravel {
     val density = LocalDensity.current
     return remember(rowWidth, startInset, density) {
         with(density) {
@@ -529,13 +601,9 @@ private val ArtTravelOvershoot = 12.dp
 /** A skip moves the cover on the SPATIAL curve (D-65): it leaves on the press. */
 private const val ART_TRAVEL_MS = 360
 
-/** Entering Now Playing, the cover arrives leaning a little further and a little smaller, and settles (D-65). */
-private const val ART_ARRIVAL_EXTRA_TILT_DEG = 8f
+/** Entering Now Playing, the cover arrives a little smaller and settles (D-65). */
 private const val ART_ARRIVAL_SCALE = 0.9f
 
-/** The cover's lean (D-58): a turn about its vertical axis, seen from not far off. */
-private const val ART_TILT_DEG = 26f
-private const val ART_CAMERA_DISTANCE = 6f
 
 /**
  * The artwork, as large as the box allows in its own proportions. It "breathes" with playback
@@ -545,7 +613,14 @@ private const val ART_CAMERA_DISTANCE = 6f
  * already showing.
  */
 @Composable
-private fun ArtworkStage(p: NowPlayingParts, maxWidth: Dp, maxHeight: Dp, travel: ArtTravel? = null) {
+internal fun ArtworkStage(
+    p: NowPlayingParts,
+    maxWidth: Dp,
+    maxHeight: Dp,
+    travel: ArtTravel? = null,
+    /** Where the cover breathes from: its corner on the gutter, where it lines up with the text (D-103). */
+    origin: TransformOrigin = TransformOrigin.Center,
+) {
     val motion = PodiumTheme.motion
     val breathe by animateFloatAsState(
         if (p.playing || motion.reduced) 1f else 0.93f,
@@ -560,8 +635,8 @@ private fun ArtworkStage(p: NowPlayingParts, maxWidth: Dp, maxHeight: Dp, travel
         p.neighbourArtwork.forEach { uri -> runCatching { loader.load(uri, bucket) } }
     }
     val queueOrder = p.queueOrder
-    // DRAMATIC (D-65): entering Now Playing, the cover is the anchor — it settles into its place and
-    // its lean on its own spring as the screen arrives, so the move reads "I chose this and went in".
+    // DRAMATIC (D-65): entering Now Playing, the cover is the anchor — it settles into its place on
+    // its own spring as the screen arrives, so the move reads "I chose this and went in".
     // Read only while drawing; nothing waits for it.
     val arrival = LocalColumnTransition.current
     val unsettled = if (arrival != null && !motion.reduced) {
@@ -592,11 +667,16 @@ private fun ArtworkStage(p: NowPlayingParts, maxWidth: Dp, maxHeight: Dp, travel
                         slideOutHorizontally(tween(240)) { -dir * it / 9 })
             }.using(SizeTransform(clip = false))
         },
-        modifier = Modifier.graphicsLayer {
-            val arriving = 1f - (1f - ART_ARRIVAL_SCALE) * (unsettled?.value ?: 0f)
-            scaleX = breathe * arriving
-            scaleY = breathe * arriving
-        },
+        modifier = Modifier
+            // Where the vinyl's sleeve lifts from and comes back to (D-104); hidden while it holds the cover.
+            .onGloballyPositioned { p.vinyl.coverBounds = it.boundsInRoot() }
+            .graphicsLayer {
+                val arriving = 1f - (1f - ART_ARRIVAL_SCALE) * (unsettled?.value ?: 0f)
+                transformOrigin = origin
+                scaleX = breathe * arriving
+                scaleY = breathe * arriving
+                alpha = if (p.vinyl.holdsCover) 0f else 1f
+            },
         contentAlignment = Alignment.Center,
         label = "artwork",
     ) { art ->
@@ -606,16 +686,6 @@ private fun ArtworkStage(p: NowPlayingParts, maxWidth: Dp, maxHeight: Dp, travel
             maxWidth = maxWidth,
             maxHeight = maxHeight,
             modifier = Modifier
-                // Each cover leans on its own: turned a little to the right, like a record leaning on
-                // a shelf, the near edge at the left, hinged there so it keeps its place. The slide
-                // moves the leaning cover flat across the display (D-78); were the lean around the
-                // whole stage, a cover moving right would recede into the distance, not leave.
-                .graphicsLayer {
-                    val u = unsettled?.value ?: 0f
-                    rotationY = ART_TILT_DEG + ART_ARRIVAL_EXTRA_TILT_DEG * u
-                    cameraDistance = ART_CAMERA_DISTANCE * density
-                    transformOrigin = TransformOrigin(0f, 0.5f)
-                }
                 .semantics { contentDescription = "Artwork" },
         )
     }
@@ -624,7 +694,7 @@ private fun ArtworkStage(p: NowPlayingParts, maxWidth: Dp, maxHeight: Dp, travel
 /** Title (strongest), artist, album. Long titles scroll slowly; the rest ellipsize. */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun TrackText(item: NowPlayingItem, alignment: Alignment.Horizontal, textAlign: TextAlign) {
+internal fun TrackText(item: NowPlayingItem, alignment: Alignment.Horizontal, textAlign: TextAlign) {
     val colors = PodiumTheme.colors
     val type = PodiumTheme.type
     val motion = PodiumTheme.motion
@@ -644,83 +714,13 @@ private fun TrackText(item: NowPlayingItem, alignment: Alignment.Horizontal, tex
                     .semantics { heading() },
                 textAlign = textAlign,
             )
-            PodiumText(shown.artistDisplay, type.nowPlayingSubtitle.copy(fontSize = type.body.fontSize), colors.labelSecondary, textAlign = textAlign)
+            // Artist and album read as one quieter pair under the title (D-103).
+            PodiumText(shown.artistDisplay, type.nowPlayingSubtitle, colors.labelSecondary, textAlign = textAlign)
             shown.albumTitle?.takeIf { it.isNotBlank() }?.let {
-                PodiumText(it, type.footnote, colors.labelTertiary, textAlign = textAlign)
+                PodiumText(it, type.nowPlayingSubtitle.copy(fontWeight = FontWeight(500)), colors.labelSecondary, textAlign = textAlign)
             }
             videoNote(shown.kind)?.let {
                 PodiumText(it, type.footnote, colors.labelTertiary, textAlign = textAlign)
-            }
-        }
-    }
-}
-
-/** Elapsed — bar — remaining on one line; the bar becomes the volume bar while volume changes. */
-@Composable
-private fun ProgressRow(p: NowPlayingParts) {
-    val colors = PodiumTheme.colors
-    val type = PodiumTheme.type
-    val motion = PodiumTheme.motion
-    val controller = p.controller
-    val duration = p.item.durationMs ?: 0L
-    val running = p.snapshot.status == PlaybackStatus.Playing
-    val tick = rememberProgressTick(running, hz = 4)
-    Row(Modifier.fillMaxWidth().height(24.dp), verticalAlignment = Alignment.CenterVertically) {
-        AnimatedContent(
-            targetState = p.showVolume,
-            transitionSpec = { fadeIn(motion.fadeFast()) togetherWith fadeOut(motion.fadeFast()) },
-            modifier = Modifier.fillMaxWidth(),
-            label = "progressOrVolume",
-        ) { volumeVisible ->
-            if (volumeVisible) {
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.semantics { contentDescription = "Volume" }) {
-                    Symbol(PodiumSymbol.VolumeDown, colors.labelSecondary, size = 18.dp)
-                    ProgressBar({ p.volumeFraction }, running = false, modifier = Modifier.weight(1f).padding(horizontal = Spacing.s))
-                    Symbol(PodiumSymbol.VolumeUp, colors.labelSecondary, size = 18.dp)
-                }
-            } else if (p.snapshot.status == PlaybackStatus.Loading) {
-                // Until the song first plays (an online song's stream is being found), the bar says so.
-                LoadingBar()
-            } else {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    @Suppress("UNUSED_EXPRESSION") tick
-                    val position = p.scrubTarget ?: controller.positionMs()
-                    BasicText(
-                        formatDuration(position) ?: "0:00",
-                        style = type.caption.copy(color = colors.labelSecondary, textAlign = TextAlign.Start),
-                        modifier = Modifier.width(40.dp),
-                    )
-                    // Touch: tap or drag along the bar to seek.
-                    Box(
-                        Modifier
-                            .weight(1f)
-                            .height(24.dp)
-                            .pointerInput(duration, p.snapshot.controls.seek) {
-                                if (duration <= 0 || !p.snapshot.controls.seek) return@pointerInput
-                                detectTapGestures { o -> controller.seekTo((o.x / size.width * duration).toLong().coerceIn(0, duration)) }
-                            }
-                            .pointerInput(duration, p.snapshot.controls.seek) {
-                                if (duration <= 0 || !p.snapshot.controls.seek) return@pointerInput
-                                detectHorizontalDragGestures { change, _ ->
-                                    controller.seekTo((change.position.x / size.width * duration).toLong().coerceIn(0, duration))
-                                }
-                            }
-                            .semantics { contentDescription = "Song position" },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        ProgressBar(
-                            value = { if (p.item.kind == MediaKind.LIVE) 1f else if (duration > 0) (p.scrubTarget ?: controller.positionMs()).toFloat() / duration else 0f },
-                            running = running,
-                            emphasized = p.mode == WheelMode.Scrub,
-                        )
-                    }
-                    BasicText(
-                        // A live station has no end: it says so where the time left would be (D-90).
-                        if (p.item.kind == MediaKind.LIVE) "Live" else "−" + (formatDuration((duration - position).coerceAtLeast(0)) ?: "0:00"),
-                        style = type.caption.copy(color = colors.labelSecondary, textAlign = TextAlign.End),
-                        modifier = Modifier.width(44.dp),
-                    )
-                }
             }
         }
     }
@@ -732,14 +732,15 @@ private fun ProgressRow(p: NowPlayingParts) {
  * lines as it needs (up to five), so nothing is ever cut off whatever the font.
  */
 @Composable
-private fun StatusColumn(p: NowPlayingParts, modifier: Modifier = Modifier) {
+internal fun StatusColumn(p: NowPlayingParts, modifier: Modifier = Modifier) {
     val colors = PodiumTheme.colors
     val type = PodiumTheme.type
     val (note, problem) = statusNote(p, includeEnvironment = false)
-    Column(modifier.semantics(mergeDescendants = true) {}, verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+    val quiet = colors.labelSecondary
+    Column(modifier.semantics(mergeDescendants = true) {}, verticalArrangement = Arrangement.spacedBy(Spacing.s)) {
         if (!p.queueHidden) PodiumText("${p.item.indexInQueue + 1} of ${p.item.queueSize}", type.caption, colors.labelSecondary)
-        QualityLabel.forNowPlaying(p.snapshot.quality)?.let { PodiumText(it, type.caption, colors.labelTertiary, maxLines = 2) }
-        p.environment?.let { PodiumText(it, type.caption, colors.labelTertiary) }
+        QualityLabel.forNowPlaying(p.snapshot.quality)?.let { QualityChip(it) }
+        p.environment?.let { PodiumText(it, type.caption, quiet) }
         p.sleepNote?.let { PodiumText(it, type.caption, colors.labelSecondary) }
         if (note != null) {
             PodiumText(
@@ -784,7 +785,7 @@ private fun statusNote(p: NowPlayingParts, includeEnvironment: Boolean): Pair<St
  * It waits a moment before showing, so a local song that opens at once never flashes it.
  */
 @Composable
-private fun LoadingBar() {
+internal fun LoadingBar() {
     val colors = PodiumTheme.colors
     var shown by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
@@ -819,10 +820,11 @@ private fun StatusSlot(p: NowPlayingParts) {
     val quality = QualityLabel.forNowPlaying(p.snapshot.quality)
     val (note, problem) = statusNote(p, includeEnvironment = true)
     val lineHeight = with(LocalDensity.current) { type.caption.lineHeight.toDp() }
+    val quiet = if (colors.isTonal) colors.labelSecondary else colors.labelTertiary
     Column(Modifier.fillMaxWidth().height(maxOf(34.dp, lineHeight * 2 + 4.dp)), verticalArrangement = Arrangement.Center) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            PodiumText(if (p.queueHidden) "" else "${p.item.indexInQueue + 1} of ${p.item.queueSize}", type.caption, colors.labelTertiary)
-            quality?.let { PodiumText(it, type.caption, colors.labelTertiary) }
+            PodiumText(if (p.queueHidden) "" else "${p.item.indexInQueue + 1} of ${p.item.queueSize}", type.caption, quiet)
+            quality?.let { PodiumText(it, type.caption, quiet) }
         }
         PodiumText(
             note ?: "",
@@ -834,184 +836,8 @@ private fun StatusSlot(p: NowPlayingParts) {
     }
 }
 
-/**
- * The primary controls: visually dominant. Glass shows bare glyphs; Carbon and Bone show them as
- * outlined rectangular keys, like an instrument's transport (D-29).
- */
-@Composable
-private fun TransportRow(p: NowPlayingParts) {
-    val controller = p.controller
-    val controls = p.snapshot.controls
-    val dim = PodiumTheme.colors.labelTertiary
-    if (PodiumTheme.colors.isIndustrial) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.s)) {
-            Key(PodiumSymbol.Previous, "Previous track", 26.dp, 64.dp, enabled = controls.previous, onClick = controller::previous)
-            Key(if (p.playing) PodiumSymbol.Pause else PodiumSymbol.Play, if (p.playing) "Pause" else "Play", 30.dp, 84.dp, onClick = controller::togglePlayPause)
-            Key(PodiumSymbol.Next, "Next track", 26.dp, 64.dp, enabled = controls.next, onClick = controller::next)
-        }
-        return
-    }
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.xl)) {
-        ControlButton(PodiumSymbol.Previous, "Previous track", 30.dp, 52.dp, tint = if (controls.previous) PodiumTheme.colors.labelPrimary else dim, onClick = controller::previous)
-        ControlButton(
-            if (p.playing) PodiumSymbol.Pause else PodiumSymbol.Play,
-            if (p.playing) "Pause" else "Play",
-            42.dp,
-            56.dp,
-            onClick = controller::togglePlayPause,
-        )
-        ControlButton(PodiumSymbol.Next, "Next track", 30.dp, 52.dp, tint = if (controls.next) PodiumTheme.colors.labelPrimary else dim, onClick = controller::next)
-    }
-}
-
-/**
- * Secondary actions: one glass capsule (a control cluster over media, the one place glass earns its
- * keep here), quieter glyphs, and the focus lens beneath the focused action in the Wheel's action mode.
- */
-@Composable
-private fun ActionCluster(p: NowPlayingParts) {
-    BoxWithConstraints {
-        // Six slots of up to 46 dp, narrower when the screen is: the cluster never overflows.
-        ActionClusterContent(p, slot = ((maxWidth - Spacing.s) / Action.entries.size).coerceIn(36.dp, 46.dp))
-    }
-}
-
-@Composable
-private fun ActionClusterContent(p: NowPlayingParts, slot: Dp) {
-    if (PodiumTheme.colors.isIndustrial) {
-        ActionStrip(p, slot)
-        return
-    }
-    val colors = PodiumTheme.colors
-    val motion = PodiumTheme.motion
-    val lensVisible = p.mode == WheelMode.Actions
-    val lensX by animateDpAsState(
-        slot * p.actionFocus,
-        if (motion.reduced) tween(0) else spring(dampingRatio = 0.86f, stiffness = 1_400f),
-        label = "actionLens",
-    )
-    Box(
-        Modifier
-            .height(40.dp)
-            .glass(GlassMaterial.Control, RoundedCornerShape(20.dp))
-            .padding(horizontal = Spacing.xs),
-        contentAlignment = Alignment.CenterStart,
-    ) {
-        if (lensVisible && colors.isIndustrial) {
-            // Industrial: a small lit indicator under the focused action, no pill (D-29).
-            Box(
-                Modifier
-                    .offset { IntOffset(lensX.roundToPx(), 0) }
-                    .size(slot, 40.dp)
-                    .drawBehind {
-                        val c = Offset(size.width / 2f, size.height - 4.dp.toPx())
-                        if (colors.isDark) drawCircle(colors.highlight.copy(alpha = 0.22f), radius = 6.dp.toPx(), center = c)
-                        drawCircle(colors.highlight, radius = 2.5.dp.toPx(), center = c)
-                    },
-            )
-        } else if (lensVisible) {
-            Box(
-                Modifier
-                    .offset { IntOffset(lensX.roundToPx(), 0) }
-                    .size(slot, 32.dp)
-                    .drawBehind {
-                        val r = CornerRadius(16.dp.toPx())
-                        drawRoundRect(colors.highlight.copy(alpha = if (colors.isDark) 0.42f else 0.24f), cornerRadius = r)
-                        drawRoundRect(
-                            Color.White.copy(alpha = if (colors.isDark) 0.35f else 0.7f),
-                            topLeft = Offset(0.5f, 0.5f),
-                            size = Size(size.width - 1f, size.height - 1f),
-                            cornerRadius = r,
-                            style = Stroke(1.dp.toPx()),
-                        )
-                    },
-            )
-        }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Action.entries.forEach { action ->
-                val (symbol, label, on) = when (action) {
-                    Action.Shuffle -> Triple(if (p.snapshot.shuffleEnabled) PodiumSymbol.ShuffleOn else PodiumSymbol.Shuffle, "Shuffle", p.snapshot.shuffleEnabled)
-                    Action.Repeat -> Triple(
-                        if (p.snapshot.repeatMode == RepeatMode.ONE) PodiumSymbol.RepeatOne else PodiumSymbol.Repeat,
-                        when (p.snapshot.repeatMode) {
-                            RepeatMode.OFF -> "Repeat"
-                            RepeatMode.ALL -> "Repeat all"
-                            RepeatMode.ONE -> "Repeat one"
-                        },
-                        p.snapshot.repeatMode != RepeatMode.OFF,
-                    )
-                    Action.Favorite -> Triple(PodiumSymbol.Favorite, "Favorite", p.isFavorite)
-                    Action.Lyrics -> Triple(PodiumSymbol.Lyrics, "Lyrics", null)
-                    Action.Queue -> Triple(PodiumSymbol.Queue, "Up Next", null)
-                    Action.More -> Triple(PodiumSymbol.More, "More", null)
-                }
-                val focusedHere = lensVisible && Action.entries.indexOf(action) == p.actionFocus
-                val unsupported = (action == Action.Shuffle && !p.snapshot.controls.shuffle) || (action == Action.Repeat && !p.snapshot.controls.repeat)
-                val tint = when {
-                    unsupported -> colors.labelTertiary
-                    action == Action.Favorite && on == true -> colors.like
-                    on == true -> colors.highlightText
-                    focusedHere && colors.isIndustrial -> colors.labelPrimary
-                    else -> colors.labelSecondary
-                }
-                ControlButton(
-                    symbol,
-                    label,
-                    20.dp,
-                    slot,
-                    tint = tint,
-                    filled = action == Action.Favorite && on == true,
-                    toggled = on,
-                    height = 40.dp,
-                    onClick = { p.perform(action) },
-                )
-            }
-        }
-    }
-}
-
-/**
- * The industrial action row (D-29): one hairline-outlined strip divided into cells. The Wheel's
- * action mode lights a short bar under the focused cell — an indicator, not a highlight.
- */
-@Composable
-private fun ActionStrip(p: NowPlayingParts, slot: Dp) {
-    val colors = PodiumTheme.colors
-    val shape = RoundedCornerShape(2.dp)
-    Row(
-        Modifier.height(40.dp).border(1.dp, colors.separator, shape),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Action.entries.forEachIndexed { i, action ->
-            if (i > 0) Box(Modifier.width(1.dp).fillMaxHeight().background(colors.separator))
-            val (symbol, label, on) = actionLook(p, action)
-            val focused = p.mode == WheelMode.Actions && i == p.actionFocus
-            Box(Modifier.size(slot, 40.dp), contentAlignment = Alignment.Center) {
-                ControlButton(
-                    symbol,
-                    label,
-                    20.dp,
-                    slot,
-                    tint = when {
-                        (action == Action.Shuffle && !p.snapshot.controls.shuffle) || (action == Action.Repeat && !p.snapshot.controls.repeat) -> colors.labelTertiary
-                        on == true || focused -> colors.labelPrimary
-                        else -> colors.labelSecondary
-                    },
-                    filled = action == Action.Favorite && on == true,
-                    toggled = on,
-                    height = 40.dp,
-                    onClick = { p.perform(action) },
-                )
-                if (focused) {
-                    Box(Modifier.align(Alignment.BottomCenter).padding(bottom = 4.dp).size(14.dp, 2.dp).background(colors.labelPrimary))
-                }
-            }
-        }
-    }
-}
-
 /** Glyph, label and on/off state for an action. */
-private fun actionLook(p: NowPlayingParts, action: Action): Triple<PodiumSymbol, String, Boolean?> = when (action) {
+internal fun actionLook(p: NowPlayingParts, action: Action): Triple<PodiumSymbol, String, Boolean?> = when (action) {
     Action.Shuffle -> Triple(if (p.snapshot.shuffleEnabled) PodiumSymbol.ShuffleOn else PodiumSymbol.Shuffle, "Shuffle", p.snapshot.shuffleEnabled)
     Action.Repeat -> Triple(
         if (p.snapshot.repeatMode == RepeatMode.ONE) PodiumSymbol.RepeatOne else PodiumSymbol.Repeat,
@@ -1024,41 +850,14 @@ private fun actionLook(p: NowPlayingParts, action: Action): Triple<PodiumSymbol,
     )
     Action.Favorite -> Triple(PodiumSymbol.Favorite, "Favorite", p.isFavorite)
     Action.Lyrics -> Triple(PodiumSymbol.Lyrics, "Lyrics", null)
+    Action.Vinyl -> Triple(PodiumSymbol.Album, "Vinyl", null)
     Action.Queue -> Triple(PodiumSymbol.Queue, "Up Next", null)
     Action.More -> Triple(PodiumSymbol.More, "More", null)
 }
 
-/** An outlined rectangular key (industrial transport). Pressing darkens it briefly. */
-@Composable
-private fun Key(symbol: PodiumSymbol, label: String, iconSize: Dp, width: Dp, enabled: Boolean = true, onClick: () -> Unit) {
-    val colors = PodiumTheme.colors
-    val haptics = rememberPodiumHaptics()
-    val interaction = remember { MutableInteractionSource() }
-    val pressed by interaction.collectIsPressedAsState()
-    val shape = RoundedCornerShape(2.dp)
-    Box(
-        Modifier
-            .size(width, 48.dp)
-            .pressFeedback(0.97f)
-            .border(1.dp, colors.separator, shape)
-            .background(if (pressed) colors.labelPrimary.copy(alpha = 0.08f) else Color.Transparent, shape)
-            .clickable(interactionSource = interaction, indication = null) {
-                haptics.press()
-                onClick()
-            }
-            .semantics {
-                role = Role.Button
-                contentDescription = label
-            },
-        contentAlignment = Alignment.Center,
-    ) {
-        Symbol(symbol, if (enabled) colors.labelPrimary else colors.labelTertiary, size = iconSize, weight = 600, filled = true)
-    }
-}
-
 /** A glyph button for the screen: generous touch target, press feedback, TalkBack state. */
 @Composable
-private fun ControlButton(
+internal fun ControlButton(
     symbol: PodiumSymbol,
     label: String,
     iconSize: Dp,
@@ -1076,8 +875,10 @@ private fun ControlButton(
             .size(width, height)
             .pressFeedback(0.88f)
             .clickable(interactionSource = interaction, indication = null) {
-                haptics.press()
+                // The action's own feel when it has one (on, off, into a screen); else a press.
+                val mark = haptics.mark()
                 onClick()
+                if (!haptics.askedSince(mark)) haptics.press()
             }
             .semantics {
                 role = Role.Button
@@ -1086,7 +887,7 @@ private fun ControlButton(
             },
         contentAlignment = Alignment.Center,
     ) {
-        Symbol(symbol, tint, size = iconSize, weight = 600, filled = filled)
+        Symbol(symbol, tint, size = iconSize, weight = 700, filled = filled)
     }
 }
 

@@ -31,8 +31,9 @@ DeviceAppearance
   `CustomizationScreenshotTest.glitterInTheBody` compares the body's pixels).
 - **Readability can't be broken by a choice.** Ink colours are chosen by contrast with what is
   actually drawn behind them, never fixed (§5).
-- **Carbon and Bone stay themselves (D-29).** No background colour or picture on them; album art is
-  the only colour there. Custom is the theme for your own background.
+- **Carbon and Bone stay themselves (D-29, D-101).** No background colour or picture on them: on
+  Bone album art is the only colour; on Carbon the playing album lights the display and gives its
+  accent. Custom is the theme for your own background.
 - **No new paradigm.** Every setting is a Podium paper menu or a Wheel-driven level; choices preview
   live on the device as the Wheel turns, Center keeps, Menu restores.
 
@@ -200,7 +201,7 @@ Settings
         └── Contrast (Standard / High)
 ```
 
-Rows that don't apply say why ("Solid finishes only"; on Carbon and Bone one row, "Backgrounds come
+Carbon's hardware is blackened steel and Bone's and Custom's matte black, so Finish shows "Blackened steel" or "Matte black" there and can't be changed (D-101). Rows that don't apply say why ("Solid finishes only"; on Carbon and Bone one row, "Backgrounds come
 with Glass and Custom", replaces the background rows; Background opacity appears only with a
 picture) and reject with a haptic. The paper column is narrow, so rows carry no redundant values
 (a swatch instead of a hex code), and a row's label keeps its room before its value (`MenuRow`). Levels are edited by `LevelScreen` (Wheel ±, live preview,

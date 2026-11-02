@@ -42,7 +42,13 @@ import app.podium.core.designsystem.shell.ScreenHeader
 import app.podium.core.designsystem.shell.ScreenHeaderHeight
 import app.podium.core.designsystem.shell.palette
 import app.podium.core.designsystem.theme.DisplayTheme
+import app.podium.core.designsystem.artwork.rememberArtworkState
+import app.podium.core.designsystem.tonal.AlbumAtmosphere
+import app.podium.core.designsystem.tonal.LocalAlbumTone
+import app.podium.core.designsystem.tonal.rememberAlbumTone
+import app.podium.core.designsystem.tonal.rememberCoverAnalysis
 import app.podium.core.designsystem.theme.PodiumTheme
+import app.podium.core.designsystem.theme.Spacing
 import app.podium.core.interaction.InputRouter
 import app.podium.core.interaction.LocalInputRouter
 import app.podium.core.model.AlbumId
@@ -52,8 +58,10 @@ import app.podium.core.model.SourceId
 import app.podium.core.model.TrackId
 import app.podium.player.api.FavoritesRepository
 import app.podium.sources.testing.track
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.flowOf
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -75,7 +83,7 @@ class PaperLayoutTest {
 
     @Test fun carbonHome() = check("carbon-home", PHONE, DisplayTheme.CARBON, "Podium") { Home() }
 
-    @Test fun boneHome() = check("bone-home", PHONE, DisplayTheme.BONE, "Podium") { Home() }
+    @Test fun instrumentHome() = check("instrument-home", PHONE, DisplayTheme.CUSTOM, "Podium") { Home() }
 
     @Test fun carbonMusicSmall() = check("carbon-music-small", SMALL, DisplayTheme.CARBON, "Music", previous = { Home() }, focusKey = "Music") {
         Music()
@@ -85,7 +93,7 @@ class PaperLayoutTest {
         Music()
     }
 
-    @Test fun boneAlbums() = check("bone-albums", PHONE, DisplayTheme.BONE, "Albums", previous = { Music() }, focusKey = "Albums") {
+    @Test fun instrumentAlbums() = check("instrument-albums", PHONE, DisplayTheme.CUSTOM, "Albums", previous = { Music() }, focusKey = "Albums") {
         AlbumsScreen(Library) {}
     }
 
@@ -99,13 +107,39 @@ class PaperLayoutTest {
 
     @Test fun carbonCoverFlow() = check("carbon-coverflow", PHONE, DisplayTheme.CARBON, "Cover Flow") { CoverFlowScreen(Library) {} }
 
-    @Test fun boneCoverFlowSmall() = check("bone-coverflow-small", SMALL, DisplayTheme.BONE, "Cover Flow") { CoverFlowScreen(Library) {} }
+    @Test fun instrumentCoverFlowSmall() = check("instrument-coverflow-small", SMALL, DisplayTheme.CUSTOM, "Cover Flow") { CoverFlowScreen(Library) {} }
+
+    @Test fun carbonPlaylists() = check("carbon-playlists", PHONE, DisplayTheme.CARBON, "Playlists", previous = { Music() }, focusKey = "Playlists") {
+        PlaylistsScreen(Playlists, onOpen = {}, onNew = {})
+    }
+
+    @Test fun instrumentPlaylistsEmptySmall() = check("instrument-playlists-empty-small", SMALL, DisplayTheme.CUSTOM, "Playlists", previous = { Music() }, focusKey = "Playlists") {
+        PlaylistsScreen(NoPlaylistsYet, onOpen = {}, onNew = {})
+    }
+
+    @Test fun glassPlaylist() = check("glass-playlist", PHONE, DisplayTheme.GLASS, "Road trip", previous = { PlaylistsScreen(Playlists, {}, {}) }, focusKey = "p1") {
+        Playlist()
+    }
+
+    @Test fun carbonPlaylistSmall() = check("carbon-playlist-small", SMALL, DisplayTheme.CARBON, "Road trip", previous = { PlaylistsScreen(Playlists, {}, {}) }, focusKey = "p1") {
+        Playlist()
+    }
+
+    @Test fun carbonAddSongs() = check("carbon-add-songs", PHONE, DisplayTheme.CARBON, "Add songs", previous = { Playlist() }, focusKey = PlaylistKeys.ADD_SONGS) {
+        AddSongsScreen(Library, Playlists, "p1")
+    }
+
+    @Composable
+    private fun Playlist() = PlaylistScreen(
+        Playlists, "p1", "Road trip",
+        onPlay = { _, _, _ -> }, onShuffle = { _, _ -> }, onPlayNext = {}, onAddToQueue = {}, onAddSongs = {}, onRename = {}, onDeleted = {},
+    )
 
     @Composable
     private fun Home() = HomeScreen(Library, "test://a0", nowPlayingActive = true, {}, {}, {}, {})
 
     @Composable
-    private fun Music() = MusicScreen(Library, NoFavorites, {}, {}, {}, {}, {}, {})
+    private fun Music() = MusicScreen(Library, NoFavorites, {}, {}, {}, {}, {}, {}, playlists = Playlists)
 
     private fun check(
         name: String,
@@ -125,13 +159,19 @@ class PaperLayoutTest {
                     LocalOverlayHost provides OverlayHost(),
                     LocalArtworkLoader provides Covers,
                 ) {
+                    // Carbon (D-101): the playing cover lights the display, as the app provides it.
+                    val carbon = theme == DisplayTheme.CARBON
+                    val artState = rememberArtworkState(if (carbon) "test://a0" else null, 96.dp)
+                    val cover = rememberCoverAnalysis(artState.bitmap, artState.settled)
+                    CompositionLocalProvider(LocalAlbumTone provides rememberAlbumTone(cover?.palette)) {
                     Box(Modifier.fillMaxSize()) {
                         DeviceBody(palette, Modifier.fillMaxSize())
                         DeviceLayout(
                             modifier = Modifier.fillMaxSize(),
                             screen = {
+                                if (carbon) AlbumAtmosphere(cover?.field, level = { 0.5f }, Modifier.fillMaxSize())
                                 CompositionLocalProvider(
-                                    LocalScreenInsets provides ScreenInsets(top = ScreenHeaderHeight, bottom = 8.dp),
+                                    LocalScreenInsets provides ScreenInsets(top = ScreenHeaderHeight, bottom = Spacing.edge),
                                     // The previous column, live, as the shell provides it.
                                     LocalPaperPeek provides previous?.let { prev ->
                                         { m ->
@@ -152,11 +192,18 @@ class PaperLayoutTest {
                             powerButton = { PowerButton(on = true, palette = palette, onToggle = {}) },
                         )
                     }
+                    }
                 }
             }
         }
         compose.mainClock.advanceTimeBy(1_500)
         compose.waitForIdle()
+        if (theme == DisplayTheme.CARBON) {
+            // The cover's analysis runs off the main thread: give it its moment, then let the tone settle.
+            Thread.sleep(400)
+            compose.mainClock.advanceTimeBy(1_500)
+            compose.waitForIdle()
+        }
 
         val display = compose.onNodeWithTag(DisplayTestTag, useUnmergedTree = true).fetchSemanticsNode()
         display.descendants().forEach { node ->
@@ -181,6 +228,33 @@ class PaperLayoutTest {
         override val pendingActions: StateFlow<List<SourceAction>> = MutableStateFlow(emptyList())
     }
 
+    private open class FakePlaylists(list: List<LibraryPlaylist>) : PlaylistRepository {
+        override val playlists: StateFlow<List<LibraryPlaylist>?> = MutableStateFlow(list)
+        override fun playlist(id: String): Flow<PlaylistDetail?> = flowOf(
+            playlists.value.orEmpty().firstOrNull { it.id == id }?.let { p ->
+                // A song of each album, and one twice: a playlist is the listener's own order.
+                val songs = listOf(TRACKS[0], TRACKS[5], TRACKS[10], TRACKS[15], TRACKS[18], TRACKS[0])
+                PlaylistDetail(p, songs.mapIndexed { i, t -> LibraryPlaylistEntry(i.toLong(), t) })
+            },
+        )
+        override suspend fun create(name: String, songs: List<TrackId>) = "p9"
+        override fun rename(id: String, name: String) = Unit
+        override fun delete(id: String) = Unit
+        override fun add(id: String, songs: List<TrackId>) = Unit
+        override fun remove(id: String, entryId: Long) = Unit
+        override fun move(id: String, entryId: Long, toIndex: Int) = Unit
+    }
+
+    private object Playlists : FakePlaylists(
+        listOf(
+            LibraryPlaylist("p1", "Road trip", 6, listOf(cover(0), cover(1), cover(2), cover(3), cover(4))),
+            LibraryPlaylist("p2", "Quiet evenings, with a name long enough to scroll", 3, listOf(cover(3))),
+            LibraryPlaylist("p3", "Just made", 0),
+        ),
+    )
+
+    private object NoPlaylistsYet : FakePlaylists(emptyList())
+
     private object NoFavorites : FavoritesRepository {
         override val favorites: StateFlow<Set<TrackId>> = MutableStateFlow(emptySet())
         override fun toggle(id: TrackId) = Unit
@@ -204,6 +278,8 @@ class PaperLayoutTest {
         const val SMALL = "w360dp-h640dp-port-xhdpi"
 
         val ALBUMS = listOf("Coastline", "Woodland", "Nuit", "Signal Path", "Long Form").mapIndexed { i, t -> AlbumId.of(SourceId("test"), "a$i") to t }
+
+        fun cover(album: Int) = ArtworkRef(SourceId("test"), "a$album").uri
 
         val TRACKS = ALBUMS.flatMapIndexed { a, (id, album) ->
             (1..4).map { n ->

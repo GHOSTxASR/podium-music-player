@@ -163,6 +163,8 @@ fun UpNextScreen(controller: PlaybackController) {
                     listOf(
                         MenuAction("Play next") { controller.move(entry.uid, queue.currentIndex + 1) },
                         MenuAction("Move", enabled = queue.upNext.size > 1) {
+                            // Picked up (D-105).
+                            haptics.dragStart()
                             moving = entry.uid
                             moveTo = queue.entries.indexOfFirst { it.uid == entry.uid }
                         },
@@ -180,18 +182,21 @@ fun UpNextScreen(controller: PlaybackController) {
             when (input) {
                 is PodiumInput.Rotate -> {
                     val next = (moveTo + input.detents).coerceIn(queue.currentIndex + 1, queue.entries.lastIndex)
-                    if (next == moveTo) haptics.boundary()
+                    // Past each song a slot's tick; at the ends, the stop.
+                    if (next == moveTo) haptics.boundary() else haptics.dragStep()
                     moveTo = next
                     true
                 }
                 is PodiumInput.Press -> when (input.button) {
                     WheelButton.CENTER -> {
                         controller.move(uid, moveTo)
-                        haptics.confirm()
+                        haptics.drop()
                         moving = null
                         true
                     }
                     WheelButton.MENU -> {
+                        // Put back where it was.
+                        haptics.reject()
                         moving = null
                         true
                     }
@@ -258,19 +263,26 @@ fun UpNextScreen(controller: PlaybackController) {
                                 DragHandle(
                                     title = row.entry.title,
                                     onStart = {
+                                        haptics.dragStart()
                                         dragging = uid
                                         dragFrom = latestQueue.entries.indexOfFirst { it.uid == uid }
                                         dragSteps = 0
                                     },
-                                    onSteps = { dragSteps = it },
+                                    onSteps = {
+                                        if (it != dragSteps) haptics.dragStep()
+                                        dragSteps = it
+                                    },
                                     onEnd = {
                                         if (dragSteps != 0) {
                                             controller.move(uid, dragTarget)
-                                            haptics.confirm()
+                                            haptics.drop()
                                         }
                                         dragging = null
                                     },
-                                    onCancel = { dragging = null },
+                                    onCancel = {
+                                        haptics.reject()
+                                        dragging = null
+                                    },
                                     onMove = { delta ->
                                         val from = latestQueue.entries.indexOfFirst { it.uid == uid }
                                         controller.move(uid, from + delta)
@@ -315,7 +327,9 @@ private fun InsertionLine() {
 
 /**
  * The reorder handle: drag vertically to move the song (counted in rows); TalkBack gets "Move up"
- * and "Move down" actions instead.
+ * and "Move down" actions instead. A drag under way calls the latest callbacks: the gesture keeps
+ * running the handler it started with, which would otherwise drop the song where the row first
+ * thought it would go.
  */
 @Composable
 private fun DragHandle(
@@ -328,6 +342,10 @@ private fun DragHandle(
 ) {
     val colors = PodiumTheme.colors
     val rowPx = with(LocalDensity.current) { Spacing.trackRow.toPx() }
+    val start by rememberUpdatedState(onStart)
+    val steps by rememberUpdatedState(onSteps)
+    val end by rememberUpdatedState(onEnd)
+    val cancel by rememberUpdatedState(onCancel)
     Box(
         Modifier
             .size(44.dp)
@@ -336,14 +354,14 @@ private fun DragHandle(
                 detectDragGestures(
                     onDragStart = {
                         travelled = 0f
-                        onStart()
+                        start()
                     },
-                    onDragEnd = onEnd,
-                    onDragCancel = onCancel,
+                    onDragEnd = { end() },
+                    onDragCancel = { cancel() },
                 ) { change, amount ->
                     change.consume()
                     travelled += amount.y
-                    onSteps((travelled / rowPx).roundToInt())
+                    steps((travelled / rowPx).roundToInt())
                 }
             }
             .semantics {

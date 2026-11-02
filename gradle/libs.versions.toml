@@ -13,6 +13,8 @@ media3 = "1.11.1"
 javascriptengine = "1.1.1"
 coil = "3.6.3"
 backdrop = "2.0.1"
+# Backdrop's own shapes, at the version it depends on: its lens refracts only through these (D-103).
+kyantShapes = "1.2.1"
 room3 = "3.0.3"
 sqlite = "2.7.1"
 ksp = "2.3.12"
@@ -65,6 +67,7 @@ media3-test-utils-robolectric = { module = "androidx.media3:media3-test-utils-ro
 
 coil-compose = { module = "io.coil-kt.coil3:coil-compose", version.ref = "coil" }
 backdrop = { module = "io.github.kyant0:backdrop", version.ref = "backdrop" }
+kyant-shapes = { module = "io.github.kyant0:shapes", version.ref = "kyantShapes" }
 room3-runtime = { module = "androidx.room3:room3-runtime", version.ref = "room3" }
 room3-compiler = { module = "androidx.room3:room3-compiler", version.ref = "room3" }
 room3-testing = { module = "androidx.room3:room3-testing", version.ref = "room3" }

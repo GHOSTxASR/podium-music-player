@@ -83,16 +83,16 @@ import kotlinx.coroutines.launch
 typealias PlayTracks = (tracks: List<Track>, index: Int, label: String) -> Unit
 
 @Composable
-private fun rememberTracks(repository: LibraryRepository): Pair<List<Track>, Boolean> {
+internal fun rememberTracks(repository: LibraryRepository): Pair<List<Track>, Boolean> {
     val state by repository.songs.collectAsStateWithLifecycle()
     return (state as? LibraryState.Ready)?.tracks.orEmpty() to (state is LibraryState.Loading)
 }
 
 /** A value from the library, once it has loaded (null while loading). */
-private class Loaded<T>(val value: T)
+internal class Loaded<T>(val value: T)
 
 @Composable
-private fun <T> rememberLoaded(vararg keys: Any?, initial: Loaded<T>? = null, flow: () -> Flow<T>): Loaded<T>? {
+internal fun <T> rememberLoaded(vararg keys: Any?, initial: Loaded<T>? = null, flow: () -> Flow<T>): Loaded<T>? {
     val loaded = remember(*keys) { flow().map { Loaded(it) } }
     return loaded.collectAsStateWithLifecycle(initialValue = initial).value
 }
@@ -113,7 +113,7 @@ private object CoverFlowMemo {
 }
 
 @Composable
-private fun EmptyState(symbol: PodiumSymbol, title: String, message: String) {
+internal fun EmptyState(symbol: PodiumSymbol, title: String, message: String) {
     val insets = LocalScreenInsets.current
     Box(Modifier.fillMaxSize().padding(top = insets.top, bottom = insets.bottom), contentAlignment = Alignment.Center) {
         MessageState(symbol, title, message)
@@ -129,17 +129,31 @@ internal fun noMusicMessage(accessMissing: Boolean): String =
     else "No music found on this phone. Add some songs, or pick other folders in Settings."
 
 @Composable
-private fun noMusic(repository: LibraryRepository): String {
+internal fun noMusic(repository: LibraryRepository): String {
     val actions by repository.pendingActions.collectAsStateWithLifecycle()
     return noMusicMessage(actions.isNotEmpty())
 }
 
-/** Long-press menu for a song, shared by every song list. */
+/**
+ * Long-press menu for a song, shared by every song list: Play next, Add to Up Next, Add to playlist
+ * (D-106), then any [more] of the list's own.
+ */
 @Composable
-private fun songMenu(tracks: List<Track>, onPlayNext: (Track) -> Unit, onAddToQueue: (Track) -> Unit): (Track) -> Unit {
+internal fun songMenu(onPlayNext: (Track) -> Unit, onAddToQueue: (Track) -> Unit, more: List<MenuAction> = emptyList()): (Track) -> Unit {
     val overlay = LocalOverlayHost.current
+    val picker = LocalPlaylistPicker.current
     return { track ->
-        overlay.show(MenuSpec(track.title, listOf(MenuAction("Play next") { onPlayNext(track) }, MenuAction("Add to Up Next") { onAddToQueue(track) })))
+        overlay.show(
+            MenuSpec(
+                track.title,
+                buildList {
+                    add(MenuAction("Play next") { onPlayNext(track) })
+                    add(MenuAction("Add to Up Next") { onAddToQueue(track) })
+                    if (picker != null) add(MenuAction("Add to playlist") { picker.show(overlay, listOf(track.id)) })
+                    addAll(more)
+                },
+            ),
+        )
     }
 }
 
@@ -187,7 +201,13 @@ fun AlbumScreen(
     val songs = detail?.tracks.orEmpty()
     val focus = rememberFocusListState("album:${albumId.value}")
     val rows = remember(songs) { listOf(AlbumRow.Header) + songs.mapIndexed { i, t -> AlbumRow.Song(t, i) } }
-    val menu = songMenu(songs, onPlayNext, onAddToQueue)
+    val overlay = LocalOverlayHost.current
+    val picker = LocalPlaylistPicker.current
+    val menu = songMenu(
+        onPlayNext,
+        onAddToQueue,
+        more = if (picker != null && songs.size > 1) listOf(MenuAction("Add album to playlist") { picker.show(overlay, songs.map { it.id }) }) else emptyList(),
+    )
     val activate: (Int) -> Unit = { i -> (rows.getOrNull(i) as? AlbumRow.Song)?.let { album?.let { a -> onPlay(songs, it.index, a.title) } } }
     ListInputEffect(focus, onActivate = activate, onLongPress = { i -> (rows.getOrNull(i) as? AlbumRow.Song)?.let { menu(it.track) } })
     when {
@@ -218,8 +238,6 @@ fun AlbumScreen(
         }
     }
 }
-
-private fun songCount(n: Int) = if (n == 1) "1 song" else "$n songs"
 
 private fun albumCount(n: Int) = if (n == 1) "1 album" else "$n albums"
 
@@ -328,7 +346,7 @@ fun FavoritesScreen(
     val favoriteIds by favorites.favorites.collectAsStateWithLifecycle()
     val songs = remember(tracks, favoriteIds) { tracks.filter { it.id in favoriteIds } }
     val focus = rememberFocusListState("favorites")
-    val menu = songMenu(tracks, onPlayNext, onAddToQueue)
+    val menu = songMenu(onPlayNext, onAddToQueue)
     ListInputEffect(focus, onActivate = { onPlay(songs, it, "Favorites") }, onLongPress = { menu(songs[it]) })
     when {
         loading -> LoadingScreen()

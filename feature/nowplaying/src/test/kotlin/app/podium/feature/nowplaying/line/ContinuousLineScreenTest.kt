@@ -25,7 +25,7 @@ import app.podium.core.designsystem.shell.DeviceLayout
 import app.podium.core.designsystem.shell.FinishPreset
 import app.podium.core.designsystem.shell.PowerButton
 import app.podium.core.designsystem.shell.palette
-import app.podium.core.designsystem.theme.BoneColors
+import app.podium.core.designsystem.theme.PaperColors
 import app.podium.core.designsystem.theme.DisplayTheme
 import app.podium.core.designsystem.theme.LyricsTheme
 import app.podium.core.designsystem.theme.PodiumTheme
@@ -160,7 +160,7 @@ class ContinuousLineScreenTest {
         val bitmap = capture("line-classic")
         // The classic first line is on Bone's paper, exactly as before.
         val paper = bitmap.getPixel(bitmap.width / 2, (bitmap.height * 0.13).toInt())
-        assertEquals(BoneColors.canvas.toArgb(), paper)
+        assertEquals(PaperColors.canvas.toArgb(), paper)
     }
 
     @Test
@@ -174,7 +174,7 @@ class ContinuousLineScreenTest {
         settle()
         val classic = capture("line-switch-classic")
         // Classic's first line is on Bone's paper.
-        assertEquals(BoneColors.canvas.toArgb(), classic.getPixel(classic.width / 2, (classic.height * 0.13).toInt()))
+        assertEquals(PaperColors.canvas.toArgb(), classic.getPixel(classic.width / 2, (classic.height * 0.13).toInt()))
         theme = LyricsTheme.CONTINUOUS_LINE
         settle()
         val back = capture("line-switch-back")

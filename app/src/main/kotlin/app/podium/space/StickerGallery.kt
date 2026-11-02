@@ -20,7 +20,6 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -47,6 +46,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.podium.core.designsystem.theme.CarbonColors
 import app.podium.core.designsystem.theme.PodiumTheme
 import app.podium.core.designsystem.theme.Spacing
+import app.podium.core.designsystem.tonal.ContinuousShape
 import app.podium.core.designsystem.type.PodiumText
 import app.podium.stickers.Sticker
 import app.podium.stickers.StickerStore
@@ -235,6 +235,6 @@ internal fun StickerImage(store: StickerStore, id: String, modifier: Modifier, m
     }
 }
 
-private val TileShape = RoundedCornerShape(14.dp)
+private val TileShape = ContinuousShape(14.dp)
 private val TileMin = 76.dp
 private val TileLabel = 18.dp

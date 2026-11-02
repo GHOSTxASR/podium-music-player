@@ -45,8 +45,10 @@ import androidx.compose.ui.unit.offset
 import app.podium.core.designsystem.artwork.ArtworkImage
 import app.podium.core.designsystem.symbol.PodiumSymbol
 import app.podium.core.designsystem.symbol.Symbol
+import app.podium.core.designsystem.theme.DisplayStyle
 import app.podium.core.designsystem.theme.PodiumTheme
 import app.podium.core.designsystem.theme.Spacing
+import app.podium.core.designsystem.tonal.LocalAlbumTone
 import app.podium.core.designsystem.type.PodiumText
 import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
@@ -58,18 +60,26 @@ private fun rowColor(focused: Boolean, normal: Color): Color =
 
 /**
  * Industrial rows (D-29) are lit rather than highlighted: the focused row's text is bright, the
- * rest steps back a level. Glass rows keep their colours and rely on the lens.
+ * rest steps back a level. Carbon (D-101) keeps that step, with its band beneath the focused row.
+ * Glass rows keep their colours and rely on the lens.
  */
 @Composable
 private fun primaryText(focused: Boolean, normal: Color): Color {
     val colors = PodiumTheme.colors
-    return if (colors.isIndustrial) (if (focused) colors.labelPrimary else colors.labelSecondary) else rowColor(focused, normal)
+    return if (colors.style != DisplayStyle.GLASS) (if (focused) colors.labelPrimary else colors.labelSecondary) else rowColor(focused, normal)
 }
 
 @Composable
 private fun secondaryText(focused: Boolean, normal: Color): Color {
     val colors = PodiumTheme.colors
-    return if (colors.isIndustrial) (if (focused) colors.labelSecondary else colors.labelTertiary) else rowColor(focused, normal)
+    return if (colors.style != DisplayStyle.GLASS) (if (focused) colors.labelSecondary else colors.labelTertiary) else rowColor(focused, normal)
+}
+
+/** The playing song's title: the accent — on Carbon, the playing album's own (D-101). */
+@Composable
+private fun activeText(): Color {
+    val colors = PodiumTheme.colors
+    return if (colors.isTonal) LocalAlbumTone.current.accent else colors.highlightText
 }
 
 /** On Carbon the focused text glows faintly, like an illuminated legend. */
@@ -121,7 +131,7 @@ fun MenuRow(
         )
         if (selected) {
             Spacer(Modifier.width(Spacing.s))
-            Symbol(PodiumSymbol.Check, if (focused) primary else colors.highlightText, size = 20.dp, weight = 600)
+            Symbol(PodiumSymbol.Check, if (focused) primary else if (colors.isTonal) activeText() else colors.highlightText, size = 20.dp, weight = 600)
         } else if (showChevron) {
             Spacer(Modifier.width(Spacing.s))
             Symbol(
@@ -218,7 +228,7 @@ fun TrackRow(
             PodiumText(
                 title,
                 illuminated(if (focused || active) type.rowFocused else type.row, focused),
-                if (active && !focused) colors.highlightText else primaryText(focused, colors.labelPrimary),
+                if (active && !focused) activeText() else primaryText(focused, colors.labelPrimary),
                 Modifier.scrollsWhenFocused(focused),
             )
             PodiumText(subtitle, type.rowSecondary, secondaryText(focused, colors.labelSecondary))
@@ -226,7 +236,7 @@ fun TrackRow(
         }
         if (active) {
             Spacer(Modifier.width(Spacing.s))
-            Symbol(PodiumSymbol.Equalizer, rowColor(focused, colors.highlightText), size = 20.dp, weight = 600)
+            Symbol(PodiumSymbol.Equalizer, if (colors.isTonal) activeText() else rowColor(focused, colors.highlightText), size = 20.dp, weight = 600)
         } else if (trailing != null) {
             PodiumText(trailing, type.caption, secondaryText(focused, colors.labelSecondary), Modifier.padding(start = Spacing.s))
         }
@@ -306,20 +316,22 @@ private fun Modifier.scrollsWhenFocused(focused: Boolean): Modifier {
                 return@drawWithContent
             }
             val bleed = TextBleed.toPx()
-            val visible = box + bleed * 2
-            clipRect(right = visible) {
+            // The leading end may glow past the box; the trailing end stops at it, fading in from
+            // inside, so whatever follows the title (a duration, a chevron) keeps its full gap (D-103).
+            val end = box + bleed
+            clipRect(right = end) {
                 translate(left = -offset.value) { this@drawWithContent.drawContent() }
                 translate(left = lap - offset.value) { this@drawWithContent.drawContent() }
             }
-            val fade = bleed + TextEdgeFade.toPx()
+            val fade = TextEdgeFade.toPx()
             drawRect(
                 Brush.horizontalGradient(0f to Color.Transparent, 1f to Color.Black, startX = 0f, endX = bleed),
                 size = Size(bleed, size.height),
                 blendMode = BlendMode.DstIn,
             )
             drawRect(
-                Brush.horizontalGradient(0f to Color.Black, 1f to Color.Transparent, startX = visible - fade, endX = visible),
-                topLeft = Offset(visible - fade, 0f),
+                Brush.horizontalGradient(0f to Color.Black, 1f to Color.Transparent, startX = end - fade, endX = end),
+                topLeft = Offset(end - fade, 0f),
                 size = Size(fade, size.height),
                 blendMode = BlendMode.DstIn,
             )
@@ -330,8 +342,8 @@ private fun Modifier.scrollsWhenFocused(focused: Boolean): Modifier {
 /** Room the scrolling title may draw beyond its box (covers Carbon's glow, ~7 dp). */
 private val TextBleed = 8.dp
 
-/** How far into the box the scrolling title's right end fades. */
-private val TextEdgeFade = 4.dp
+/** Over how much of the box the scrolling title's trailing end fades, ending at the box's edge. */
+private val TextEdgeFade = 12.dp
 
 /** The scroll's average speed, per second (the peak is about half again). */
 private val MarqueeSpeed = 28.dp

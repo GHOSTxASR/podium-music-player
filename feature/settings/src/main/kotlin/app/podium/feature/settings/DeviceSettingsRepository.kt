@@ -1,6 +1,7 @@
 package app.podium.feature.settings
 
 import app.podium.core.designsystem.shell.DeviceAppearance
+import app.podium.core.interaction.HapticProfile
 import app.podium.player.api.AudioEffects
 import app.podium.player.api.EqualizerSettings
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -14,8 +15,8 @@ interface DeviceSettingsRepository {
     val preview: StateFlow<DeviceAppearance?>
     val startupSound: StateFlow<Boolean>
 
-    /** Haptics on the Wheel and buttons (on top of the system's own touch-feedback setting). */
-    val haptics: StateFlow<Boolean>
+    /** How the Wheel and the display answer touch (D-105), within the phone's own touch-feedback setting. */
+    val hapticProfile: StateFlow<HapticProfile>
 
     /** The Wheel's audible click. */
     val clicks: StateFlow<Boolean>
@@ -74,10 +75,19 @@ interface DeviceSettingsRepository {
 
     fun setTitleBarBattery(shown: Boolean) {}
 
+    /**
+     * Now Playing's action tray slides away when nothing has been touched for a while (D-108), leaving
+     * the cover and the orb. The Wheel's next move only brings it back; nothing else happens until it
+     * is up. Off by default: the tray is where Now Playing's actions live.
+     */
+    val hideNowPlayingTray: StateFlow<Boolean> get() = Off
+
+    fun setHideNowPlayingTray(enabled: Boolean) {}
+
     fun setAppearance(appearance: DeviceAppearance)
     fun setPreview(appearance: DeviceAppearance?)
     fun setStartupSound(enabled: Boolean)
-    fun setHaptics(enabled: Boolean)
+    fun setHapticProfile(profile: HapticProfile)
     fun setClicks(enabled: Boolean)
     fun setAutoplay(enabled: Boolean)
     fun setOnlineRecommendations(enabled: Boolean)

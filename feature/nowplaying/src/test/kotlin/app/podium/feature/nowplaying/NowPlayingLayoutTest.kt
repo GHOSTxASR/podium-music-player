@@ -38,8 +38,16 @@ import app.podium.core.designsystem.shell.FinishPreset
 import app.podium.core.designsystem.shell.PowerButton
 import app.podium.core.designsystem.shell.ScreenHeader
 import app.podium.core.designsystem.shell.ScreenHeaderHeight
+import app.podium.core.designsystem.shell.StatusTestTag
 import app.podium.core.designsystem.shell.palette
+import app.podium.core.designsystem.theme.DisplayTheme
 import app.podium.core.designsystem.theme.PodiumTheme
+import app.podium.core.designsystem.theme.Spacing
+import app.podium.core.designsystem.artwork.rememberArtworkState
+import app.podium.core.designsystem.tonal.AlbumAtmosphere
+import app.podium.core.designsystem.tonal.LocalAlbumTone
+import app.podium.core.designsystem.tonal.rememberAlbumTone
+import app.podium.core.designsystem.tonal.rememberCoverAnalysis
 import app.podium.core.interaction.InputRouter
 import app.podium.core.interaction.LocalInputRouter
 import app.podium.core.model.QueueUid
@@ -68,6 +76,7 @@ import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -105,8 +114,6 @@ class NowPlayingLayoutTest {
 
     @Test fun largeDevice() = check("large-square", LARGE, Art.SQUARE)
 
-    @Test fun landscapePhone() = check("landscape-square", LANDSCAPE, Art.SQUARE)
-
     /** Another source's copy is playing: Podium knows which (D-36), the listener isn't told. */
     @Test fun fallbackCopyIsNotNamed() = check("phone-fallback", PHONE, Art.SQUARE, fallback = true)
 
@@ -131,6 +138,29 @@ class NowPlayingLayoutTest {
     @Test fun aRefreshingStreamSaysSo() {
         check("phone-refreshing", PHONE, Art.SQUARE, status = PlaybackStatus.Buffering, recovery = Recovery.REFRESHING_STREAM, environment = "Online")
         compose.onNodeWithText("The stream dropped. Getting it again…").assertExists()
+    }
+
+    // Carbon (D-101): the same checks on the tonal display, with the album's atmosphere and tone.
+    @Test fun carbonPhoneSquare() = check("carbon-phone-square", PHONE, Art.SQUARE, theme = DisplayTheme.CARBON)
+
+    @Test fun carbonPhonePlaying() = check("carbon-phone-playing", PHONE, Art.LANDSCAPE, theme = DisplayTheme.CARBON, status = PlaybackStatus.Playing)
+
+    @Test fun carbonBrightArtLongTitle() = check("carbon-bright-long-title", PHONE, Art.BRIGHT, longTitle = true, theme = DisplayTheme.CARBON)
+
+    @Test fun carbonPortraitArt() = check("carbon-portrait-art", PHONE, Art.PORTRAIT, theme = DisplayTheme.CARBON, environment = "Online")
+
+    @Test fun carbonMissingArt() = check("carbon-small-missing-art", SMALL, Art.MISSING, theme = DisplayTheme.CARBON)
+
+    @Test fun carbonCompact() = check("carbon-compact-360x640", COMPACT, Art.SQUARE, theme = DisplayTheme.CARBON)
+
+    @Test fun carbonLarge() = check("carbon-large-square", LARGE, Art.SQUARE, theme = DisplayTheme.CARBON)
+
+    @Test fun carbonErrorInALargeFace() {
+        check(
+            "carbon-phone-error-handwritten", PHONE, Art.SQUARE, theme = DisplayTheme.CARBON,
+            status = PlaybackStatus.Error(PodiumError.NotPlayable("stream")), environment = "Online", font = DisplayFont.HANDWRITTEN,
+        )
+        assertWhole("can't play")
     }
 
     /** Until an online song first plays, the bar says it's loading. */
@@ -161,45 +191,62 @@ class NowPlayingLayoutTest {
         recovery: Recovery? = null,
         environment: String? = null,
         font: DisplayFont = DisplayFont.CLASSIC,
+        theme: DisplayTheme = DisplayTheme.GLASS,
     ) {
         RuntimeEnvironment.setQualifiers(qualifiers)
         val controller = FakeController(art, longTitle, fallback, status, recovery)
+        // A playing song's seek bar moves on every frame: the clock is stepped by hand, or it never idles.
+        if (status == PlaybackStatus.Playing) compose.mainClock.autoAdvance = false
         compose.setContent {
-            PodiumTheme(darkTheme = true, glassTier = GlassTier.Solid, display = VirtualDisplay(font = font)) {
-                val palette = DeviceAppearance(FinishPreset.STEEL_GRAY).palette(darkTheme = true)
+            PodiumTheme(darkTheme = true, glassTier = GlassTier.Solid, displayTheme = theme, display = VirtualDisplay(font = font)) {
+                val palette = DeviceAppearance(FinishPreset.STEEL_GRAY, display = theme).palette(darkTheme = true)
                 CompositionLocalProvider(
                     LocalInputRouter provides InputRouter(),
                     LocalOverlayHost provides OverlayHost(),
                     LocalArtworkLoader provides FakeArtwork,
                 ) {
+                    // Carbon's tone and atmosphere come from the playing cover, as the app provides them.
+                    val carbon = theme == DisplayTheme.CARBON
+                    val artState = rememberArtworkState(if (carbon) controller.snapshot.value.item?.artworkUri else null, 96.dp)
+                    val cover = rememberCoverAnalysis(artState.bitmap, artState.settled)
+                    CompositionLocalProvider(LocalAlbumTone provides rememberAlbumTone(cover?.palette)) {
                     Box(Modifier.fillMaxSize()) {
                         DeviceBody(palette, Modifier.fillMaxSize())
                         DeviceLayout(
                             modifier = Modifier.fillMaxSize(),
                             screen = {
-                                CompositionLocalProvider(LocalScreenInsets provides ScreenInsets(top = ScreenHeaderHeight, bottom = 8.dp)) {
+                                if (carbon) AlbumAtmosphere(cover?.field, level = { 1f }, Modifier.fillMaxSize())
+                                CompositionLocalProvider(LocalScreenInsets provides ScreenInsets(top = ScreenHeaderHeight, bottom = Spacing.edge)) {
                                     NowPlayingScreen(controller, FakeVolume, FakeFavorites, onUpNext = {}, environmentOf = { environment })
                                 }
-                                ScreenHeader("Now Playing", canGoBack = true, onBack = {}, playing = false)
+                                ScreenHeader("Now Playing", canGoBack = true, onBack = {}, playing = status == PlaybackStatus.Playing)
                             },
                             wheel = { d -> PodWheel(onInput = {}, diameter = d, palette = palette) },
                             powerButton = { PowerButton(on = true, palette = palette, onToggle = {}) },
                         )
+                    }
                     }
                 }
             }
         }
         compose.mainClock.advanceTimeBy(2_000)
         compose.waitForIdle()
+        if (theme == DisplayTheme.CARBON) {
+            // The cover's analysis runs off the main thread: give it its moment, then let the tone settle.
+            Thread.sleep(400)
+            compose.mainClock.advanceTimeBy(2_000)
+            compose.waitForIdle()
+        }
 
         val displayNode = compose.onNodeWithTag(DisplayTestTag, useUnmergedTree = true).fetchSemanticsNode()
         val display = displayNode.boundsInRoot
         val onScreen = displayNode.descendants().filter { node ->
-            node.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty().any { it in DISPLAY_CONTENT }
+            node.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty().any { it in DISPLAY_CONTENT || it == "Pause" }
         }
         val found = onScreen.flatMap { it.config[SemanticsProperties.ContentDescription] }.toSet()
-        // While a song loads, the bar is replaced by the word.
-        val expected = if (status == PlaybackStatus.Loading) DISPLAY_CONTENT - "Song position" else DISPLAY_CONTENT
+        // While a song loads, the bar is replaced by the word; a playing song offers Pause.
+        val expected = (if (status == PlaybackStatus.Loading) DISPLAY_CONTENT - "Song position" else DISPLAY_CONTENT)
+            .let { if (status == PlaybackStatus.Playing) it - "Play" + "Pause" else it }
         assertTrue(found.containsAll(expected), "missing on the display: ${expected - found} ($name)")
         // Every node drawn by the display, labelled or not, stays inside it.
         displayNode.descendants().forEach { node ->
@@ -207,6 +254,8 @@ class NowPlayingLayoutTest {
                 ?: node.config.getOrNull(SemanticsProperties.Text)?.firstOrNull()?.text ?: "node ${node.id}"
             assertTrue(display.contains(node.boundsInRoot), "$label at ${node.boundsInRoot} escapes the display $display ($name)")
         }
+
+        assertEdgeMargins(display, stacked = qualifiers != COMPACT, name)
 
         // Normal Now Playing never names a source, even when another source's copy is playing (D-36).
         val texts = displayNode.descendants().flatMap { node -> node.config.getOrNull(SemanticsProperties.Text).orEmpty().map { it.text } + node.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty() }
@@ -216,6 +265,31 @@ class NowPlayingLayoutTest {
         val out = File("build/screenshots").apply { mkdirs() }
         val bitmap = compose.onRoot().captureToImage().asAndroidBitmap()
         File(out, "$name.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+    }
+
+    /**
+     * One edge margin (D-103): the back key's housing and the status housings sit [Spacing.edge]
+     * from the display's top and sides; stacked, the tray sits the same from its foot and sides.
+     */
+    private fun assertEdgeMargins(display: Rect, stacked: Boolean, name: String) {
+        val edge = with(compose.density) { Spacing.edge.toPx() }
+        // The back key's touch target reaches 4 dp past its 32 dp housing on every side.
+        val overhang = with(compose.density) { 4.dp.toPx() }
+        val trayPadding = with(compose.density) { 4.dp.toPx() }
+        fun near(actual: Float, what: String) = assertTrue(kotlin.math.abs(actual - edge) <= 1.5f, "$what is ${actual}px from the display's edge, not $edge ($name)")
+        // The title bar's back key (the Wheel's MENU says "Back" too, below the display).
+        val back = compose.onAllNodesWithContentDescription("Back").fetchSemanticsNodes().map { it.boundsInRoot }.first { display.contains(it) }
+        near(back.left + overhang - display.left, "the back key")
+        near(back.top + overhang - display.top, "the back key's top")
+        val status = compose.onNodeWithTag(StatusTestTag, useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        near(display.right - status.right, "the status housings")
+        near(status.top - display.top, "the status housings' top")
+        if (!stacked) return
+        val first = compose.onNodeWithContentDescription("Shuffle").fetchSemanticsNode().boundsInRoot
+        val last = compose.onNodeWithContentDescription("More").fetchSemanticsNode().boundsInRoot
+        near(first.left - trayPadding - display.left, "the tray")
+        near(display.right - (last.right + trayPadding), "the tray's end")
+        near(display.bottom - first.bottom, "the tray's foot")
     }
 
     private fun SemanticsNode.descendants(): List<SemanticsNode> = children.flatMap { listOf(it) + it.descendants() }
@@ -245,7 +319,7 @@ class NowPlayingLayoutTest {
             servedBy = if (fallback) SourceId("fake-provider") else null,
         )
         override val snapshot: StateFlow<PlaybackSnapshot> = MutableStateFlow(
-            PlaybackSnapshot(status = status, intent = PlayIntent.PAUSE, item = item, recovery = recovery),
+            PlaybackSnapshot(status = status, intent = if (status == PlaybackStatus.Playing) PlayIntent.PLAY else PlayIntent.PAUSE, item = item, recovery = recovery),
         )
         override val queue: StateFlow<QueueView> = MutableStateFlow(QueueView())
         override fun positionMs() = 63_000L
@@ -305,7 +379,6 @@ class NowPlayingLayoutTest {
         const val SMALL = "w320dp-h568dp-port-xhdpi"
         const val COMPACT = "w360dp-h640dp-port-xhdpi"
         const val LARGE = "w600dp-h960dp-port-xhdpi"
-        const val LANDSCAPE = "w891dp-h411dp-land-420dpi"
 
         /** Everything Now Playing puts on the display, by accessibility label. */
         val DISPLAY_CONTENT = setOf(

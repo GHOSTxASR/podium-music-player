@@ -9,10 +9,10 @@ import app.podium.core.database.DatabaseEquivalenceStore
 import app.podium.core.database.DatabaseFavorites
 import app.podium.core.database.DatabaseQueueStore
 import app.podium.core.database.LibraryStore
+import app.podium.core.database.LocalPlaylistStore
 import app.podium.core.database.OnlineLibraryStore
 import app.podium.core.database.PodiumDatabase
 import app.podium.core.designsystem.shell.BatteryLevel
-import app.podium.core.designsystem.shell.BootCheck
 import app.podium.core.model.SourceId
 import app.podium.player.api.AutoplaySettings
 import app.podium.player.api.PlayIntent
@@ -168,6 +168,9 @@ class AppGraph(val context: Context) {
     /** Local favorites only (Music ▸ Favorites). */
     val localFavorites = DatabaseFavorites(database, appScope).also { LegacyFavorites.moveInto(context, it, appScope) }
 
+    /** The listener's playlists of the music on this phone (Music ▸ Playlists, D-106). */
+    val playlists = DatabasePlaylists(LocalPlaylistStore(database), appScope)
+
     /** ONLINE's own library: liked songs, playlists, history (D-34), per account (D-38). */
     val onlineStore = OnlineLibraryStore(database)
     val online = OnlineMusicRepository(registry, health, onlineStore, catalog, appScope)
@@ -209,11 +212,6 @@ class AppGraph(val context: Context) {
 
     /** Music folders, for whichever library source reads from storage (D-32). */
     val musicFolders = RegistryMusicFolders(registry, appScope)
-
-    /** The boot self-test's lines, with real values; the library count arrives when known. */
-    val bootChecks: StateFlow<List<BootCheck>> = libraryStore.songCount()
-        .map { count -> BootReport.checks(context, count) }
-        .stateIn(appScope, SharingStarted.Eagerly, BootReport.checks(context, null))
 
     /** The virtual device's power (D-26). A fresh process starts by booting; the activity coming
      *  and going doesn't reboot it. */
@@ -315,7 +313,7 @@ class AppGraph(val context: Context) {
     /** Debug builds: start the hands-on guide (true) as on a first launch. */
     val debugGuide = MutableStateFlow(false)
 
-    /** Debug builds: open a screen ("lyrics", "now-playing", "home") from adb. */
+    /** Debug builds: open a screen ("lyrics", "now-playing", "home", "songs") from adb. */
     val debugOpen = MutableStateFlow<String?>(null)
 
     /** Debug builds: open the space and arrange stickers. */

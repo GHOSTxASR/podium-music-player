@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -42,7 +43,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.podium.core.designsystem.component.Pinwheel
-import app.podium.core.designsystem.theme.BoneColors
+import app.podium.core.designsystem.theme.PaperColors
 import app.podium.core.designsystem.theme.CarbonColors
 import app.podium.core.designsystem.theme.LocalLyricsBackground
 import app.podium.core.designsystem.theme.LocalLyricsTheme
@@ -50,6 +51,7 @@ import app.podium.core.designsystem.theme.LyricsBackground
 import app.podium.core.designsystem.theme.LyricsTheme
 import app.podium.core.designsystem.theme.PodiumTheme
 import app.podium.core.designsystem.type.LocalLyricsTypeface
+import app.podium.core.designsystem.type.LocalTextDepth
 import app.podium.core.designsystem.type.PodiumText
 import app.podium.core.interaction.InputTargetEffect
 import app.podium.core.interaction.PodiumInput
@@ -264,9 +266,9 @@ fun LyricsScreen(controller: PlaybackController, gateway: LyricsGateway, pulse: 
     val inverted = lyricInverted(LocalLyricsBackground.current, continuous, lines.isNotEmpty(), index)
     val reduced = PodiumTheme.motion.reduced
     val spec = if (reduced || continuous) snap<Color>() else tween<Color>(INVERT_MS)
-    val paper by animateColorAsState(if (continuous) LineInk.Paper else if (inverted) CarbonColors.canvas else BoneColors.canvas, spec, label = "lyricPaper")
-    val ink by animateColorAsState(if (continuous) LineInk.Ivory else if (inverted) CarbonColors.labelPrimary else BoneColors.labelPrimary, spec, label = "lyricInk")
-    val quiet = if (continuous) LineInk.Quiet else if (inverted) CarbonColors.labelSecondary else BoneColors.labelSecondary
+    val paper by animateColorAsState(if (continuous) LineInk.Paper else if (inverted) CarbonColors.canvas else PaperColors.canvas, spec, label = "lyricPaper")
+    val ink by animateColorAsState(if (continuous) LineInk.Ivory else if (inverted) CarbonColors.labelPrimary else PaperColors.labelPrimary, spec, label = "lyricInk")
+    val quiet = if (continuous) LineInk.Quiet else if (inverted) CarbonColors.labelSecondary else PaperColors.labelSecondary
     // What the line draws: the same lyrics, timed by the same rules (LYRICS_ARCHITECTURE.md §12.3).
     val script = remember(lyrics, item?.durationMs, continuous) {
         if (!continuous) {
@@ -281,71 +283,74 @@ fun LyricsScreen(controller: PlaybackController, gateway: LyricsGateway, pulse: 
         }
     }
 
-    Box(
-        Modifier
-            .fillMaxSize()
-            .background(paper)
-            .pointerInput(Unit) { detectTapGestures(onTap = { details = !details }) },
-    ) {
-        when {
-            item == null -> Message("Nothing playing", "Choose a song, then open its lyrics.", ink, quiet)
-            item.kind == MediaKind.LIVE -> Message("Live radio", "A station plays many songs, so it has no lyrics here. Choose a song to see its words.", ink, quiet)
-            result == null -> Finding(ink, quiet)
-            result == LyricsResult.NeedsConsent -> Message(
-                "Find lyrics online?",
-                "Podium sends the song title, artist, album and length to ${gateway.attribution.name}. Press Center to allow. Menu goes back.",
-                ink,
-                quiet,
-            )
-            // Classic: no words to show, so the orb shows the music (D-83).
-            result == LyricsResult.NotFound && orb.always -> OrbStage(controller, pulse, orb, advancing, following = true, paper, "No lyrics found", page = {})
-            result == LyricsResult.NotFound -> Message("No lyrics found", "Lyrics for this song aren't available.", ink, quiet)
-            result == LyricsResult.Offline -> Message("Lyrics unavailable offline", "Connect, then press Center to try again.", ink, quiet)
-            result is LyricsResult.RateLimited -> Message(
-                "The lyrics service is busy",
-                "It asked Podium to wait. Podium asks again by itself ${waitText((result as LyricsResult.RateLimited).retryInMs)}.",
-                ink,
-                quiet,
-            )
-            result == LyricsResult.Failed -> Message("Couldn't load lyrics", "Press Center to try again.", ink, quiet)
-            script != null && item != null -> {
-                // A song without words is drawn too: one instrumental composition across it.
-                val words = lyrics != Lyrics.Instrumental
-                ContinuousLine(
-                    controller = controller,
-                    script = script,
-                    trackKey = item.trackId.value,
-                    // Synced words follow the music unless the Wheel is reading; a song without words always does.
-                    following = !words || (lyrics is Lyrics.Synced && following),
-                    readingLine = if (lyrics is Lyrics.Synced && following) -1 else index,
-                    advancing = advancing,
-                    pulse = pulse,
-                    description = if (words) lines.getOrElse(index) { "" } else "Instrumental. This song has no words.",
+    // The lyrics lay their own paper: the display's text depth (D-103) stays off them.
+    CompositionLocalProvider(LocalTextDepth provides false) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(paper)
+                .pointerInput(Unit) { detectTapGestures(onTap = { details = !details }) },
+        ) {
+            when {
+                item == null -> Message("Nothing playing", "Choose a song, then open its lyrics.", ink, quiet)
+                item.kind == MediaKind.LIVE -> Message("Live radio", "A station plays many songs, so it has no lyrics here. Choose a song to see its words.", ink, quiet)
+                result == null -> Finding(ink, quiet)
+                result == LyricsResult.NeedsConsent -> Message(
+                    "Find lyrics online?",
+                    "Podium sends the song title, artist, album and length to ${gateway.attribution.name}. Press Center to allow. Menu goes back.",
+                    ink,
+                    quiet,
                 )
-                if (!words) {
-                    PodiumText("Instrumental", PodiumTheme.type.footnote, quiet, textAlign = TextAlign.Center, modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth().padding(top = 14.dp))
+                // Classic: no words to show, so the orb shows the music (D-83).
+                result == LyricsResult.NotFound && orb.always -> OrbStage(controller, pulse, orb, advancing, following = true, paper, "No lyrics found", page = {})
+                result == LyricsResult.NotFound -> Message("No lyrics found", "Lyrics for this song aren't available.", ink, quiet)
+                result == LyricsResult.Offline -> Message("Lyrics unavailable offline", "Connect, then press Center to try again.", ink, quiet)
+                result is LyricsResult.RateLimited -> Message(
+                    "The lyrics service is busy",
+                    "It asked Podium to wait. Podium asks again by itself ${waitText((result as LyricsResult.RateLimited).retryInMs)}.",
+                    ink,
+                    quiet,
+                )
+                result == LyricsResult.Failed -> Message("Couldn't load lyrics", "Press Center to try again.", ink, quiet)
+                script != null && item != null -> {
+                    // A song without words is drawn too: one instrumental composition across it.
+                    val words = lyrics != Lyrics.Instrumental
+                    ContinuousLine(
+                        controller = controller,
+                        script = script,
+                        trackKey = item.trackId.value,
+                        // Synced words follow the music unless the Wheel is reading; a song without words always does.
+                        following = !words || (lyrics is Lyrics.Synced && following),
+                        readingLine = if (lyrics is Lyrics.Synced && following) -1 else index,
+                        advancing = advancing,
+                        pulse = pulse,
+                        description = if (words) lines.getOrElse(index) { "" } else "Instrumental. This song has no words.",
+                    )
+                    if (!words) {
+                        PodiumText("Instrumental", PodiumTheme.type.footnote, quiet, textAlign = TextAlign.Center, modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth().padding(top = 14.dp))
+                    }
+                }
+                lyrics == Lyrics.Instrumental && orb.always -> OrbStage(controller, pulse, orb, advancing, following = true, paper, "Instrumental", page = {})
+                lyrics == Lyrics.Instrumental -> Message("Instrumental", "This song has no words.", ink, quiet)
+                else -> OrbStage(controller, pulse, orb, advancing, following = lyrics is Lyrics.Synced && following, paper, caption = null) { swell ->
+                    Lyric(lines.getOrElse(index) { "" }, ink, quiet, if (lyrics is Lyrics.Synced) shown else Int.MAX_VALUE, swell)
                 }
             }
-            lyrics == Lyrics.Instrumental && orb.always -> OrbStage(controller, pulse, orb, advancing, following = true, paper, "Instrumental", page = {})
-            lyrics == Lyrics.Instrumental -> Message("Instrumental", "This song has no words.", ink, quiet)
-            else -> OrbStage(controller, pulse, orb, advancing, following = lyrics is Lyrics.Synced && following, paper, caption = null) { swell ->
-                Lyric(lines.getOrElse(index) { "" }, ink, quiet, if (lyrics is Lyrics.Synced) shown else Int.MAX_VALUE, swell)
-            }
-        }
-        if (details && item != null) {
-            Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
-                PodiumText(item.title, PodiumTheme.type.footnote, quiet, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
-                val note = buildString {
-                    append(item.artistDisplay)
-                    if (lyrics is Lyrics.Plain) append(". Not synced: turn the Wheel to read")
-                    if (lyrics is Lyrics.Synced && lyrics.estimated) append(". Timing estimated by Podium")
-                    // Most lyrics time whole lines: the words' pace inside a line is then Podium's estimate.
-                    if (lyrics is Lyrics.Synced && lyrics.lines.getOrNull(index)?.let(WordTiming::isEstimated) == true) append(". Words paced to the line")
-                    if (lyrics is Lyrics.Synced && !following) append(". Center returns to the music")
-                }
-                PodiumText(note, PodiumTheme.type.footnote, quiet, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
-                if (result is LyricsResult.Found) {
-                    PodiumText("Lyrics from ${gateway.attribution.name}", PodiumTheme.type.footnote, quiet, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+            if (details && item != null) {
+                Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
+                    PodiumText(item.title, PodiumTheme.type.footnote, quiet, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+                    val note = buildString {
+                        append(item.artistDisplay)
+                        if (lyrics is Lyrics.Plain) append(". Not synced: turn the Wheel to read")
+                        if (lyrics is Lyrics.Synced && lyrics.estimated) append(". Timing estimated by Podium")
+                        // Most lyrics time whole lines: the words' pace inside a line is then Podium's estimate.
+                        if (lyrics is Lyrics.Synced && lyrics.lines.getOrNull(index)?.let(WordTiming::isEstimated) == true) append(". Words paced to the line")
+                        if (lyrics is Lyrics.Synced && !following) append(". Center returns to the music")
+                    }
+                    PodiumText(note, PodiumTheme.type.footnote, quiet, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+                    if (result is LyricsResult.Found) {
+                        PodiumText("Lyrics from ${gateway.attribution.name}", PodiumTheme.type.footnote, quiet, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+                    }
                 }
             }
         }

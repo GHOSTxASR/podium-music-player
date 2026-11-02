@@ -4,6 +4,7 @@ import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
@@ -76,6 +77,8 @@ fun Symbol(
     size: Dp = 24.dp,
     weight: Int = 500,
     filled: Boolean = false,
+    /** Engraves it into a surface (Carbon's metal Wheel, D-101); null draws it flat. */
+    shadow: Shadow? = null,
 ) {
     val density = LocalDensity.current
     val opsz = size.value.toInt().coerceIn(20, 48)
@@ -88,6 +91,7 @@ fun Symbol(
             lineHeight = with(density) { size.toSp() },
             color = color,
             textAlign = TextAlign.Center,
+            shadow = shadow,
         ),
     )
 }

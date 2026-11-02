@@ -19,7 +19,6 @@ import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onRoot
-import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import app.podium.core.designsystem.shell.DeviceAppearance
 import app.podium.core.designsystem.shell.DeviceBody
@@ -31,6 +30,7 @@ import app.podium.core.designsystem.shell.ScreenHeaderHeight
 import app.podium.core.designsystem.shell.palette
 import app.podium.core.designsystem.theme.DisplayTheme
 import app.podium.core.designsystem.theme.PodiumTheme
+import app.podium.core.designsystem.theme.Spacing
 import app.podium.core.interaction.FocusListState
 import app.podium.core.interaction.InputRouter
 import app.podium.core.interaction.LocalInputRouter
@@ -72,7 +72,7 @@ class FocusListGeometryTest {
 
     @Test fun carbonPhone() = sweep("carbon", PHONE, DisplayTheme.CARBON)
 
-    @Test fun boneSmall() = sweep("bone-small", SMALL, DisplayTheme.BONE)
+    @Test fun instrumentSmall() = sweep("instrument-small", SMALL, DisplayTheme.CUSTOM)
 
     @Test fun glassPhone() = sweep("glass", PHONE, DisplayTheme.GLASS, counts = listOf(3, 50))
 
@@ -145,8 +145,10 @@ class FocusListGeometryTest {
         compose.waitForIdle()
         val display = compose.onNodeWithTag(DisplayTestTag, useUnmergedTree = true).fetchSemanticsNode()
         val density = compose.density.density
-        val readableTop = display.boundsInRoot.top + (INSETS.top.value + 8f) * density
-        val readableBottom = display.boundsInRoot.bottom - (INSETS.bottom.value + 8f) * density
+        // The readable region is where the list's own padding puts its rows (D-103: the insets alone).
+        val padding = INSETS.listPadding()
+        val readableTop = display.boundsInRoot.top + padding.calculateTopPadding().value * density
+        val readableBottom = display.boundsInRoot.bottom - padding.calculateBottomPadding().value * density
         val nodes = display.descendants()
 
         val focused = nodes.firstOrNull { it.config.getOrNull(SemanticsProperties.Selected) == true }
@@ -201,6 +203,6 @@ class FocusListGeometryTest {
     private companion object {
         const val PHONE = "w411dp-h891dp-port-420dpi"
         const val SMALL = "w360dp-h640dp-port-xhdpi"
-        val INSETS = ScreenInsets(top = ScreenHeaderHeight, bottom = 8.dp)
+        val INSETS = ScreenInsets(top = ScreenHeaderHeight, bottom = Spacing.edge)
     }
 }

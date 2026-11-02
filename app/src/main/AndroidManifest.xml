@@ -26,10 +26,13 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.Podium">
 
+        <!-- Portrait only (D-108): Podium is a device you hold upright in one hand, and it has no
+             landscape arrangement to turn into. -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTask"
+            android:screenOrientation="portrait"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

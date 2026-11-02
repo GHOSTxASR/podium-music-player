@@ -19,7 +19,6 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performTextInput
-import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import app.podium.core.designsystem.component.LocalOverlayHost
 import app.podium.core.designsystem.component.LocalScreenInsets
@@ -36,6 +35,7 @@ import app.podium.core.designsystem.shell.ScreenHeaderHeight
 import app.podium.core.designsystem.shell.palette
 import app.podium.core.designsystem.theme.DisplayTheme
 import app.podium.core.designsystem.theme.PodiumTheme
+import app.podium.core.designsystem.theme.Spacing
 import app.podium.core.interaction.InputRouter
 import app.podium.core.interaction.LocalInputRouter
 import app.podium.core.interaction.PodiumInput
@@ -201,7 +201,7 @@ class CustomSourcesLayoutTest {
                         DeviceLayout(
                             modifier = Modifier.fillMaxSize(),
                             screen = {
-                                CompositionLocalProvider(LocalScreenInsets provides ScreenInsets(top = ScreenHeaderHeight, bottom = 8.dp)) { screen() }
+                                CompositionLocalProvider(LocalScreenInsets provides ScreenInsets(top = ScreenHeaderHeight, bottom = Spacing.edge)) { screen() }
                                 ScreenHeader(title, canGoBack = true, onBack = {}, playing = false)
                             },
                             wheel = { d -> PodWheel(onInput = {}, diameter = d, palette = palette) },

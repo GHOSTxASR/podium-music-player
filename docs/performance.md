@@ -70,4 +70,16 @@ What moved the numbers, and by how much where it could be isolated:
 - **The charging light at ~20 steps a second.** Idle frames 94 → 39 a second (the rest are the previews' slow cycles).
 - **The curves.** The paper move's first 50 ms: 4 % → 42 % of the way; presses start on the touch-down frame and are down in ~50 ms.
 
+### 6.1 Carbon's tonal display and the new boot (D-101, D-102), 2026-10-28
+Same phone, a non-debuggable test copy compiled ahead of time, the test tones loaded (paused), five moves Home ▸ Music and back per run, `dumpsys gfxinfo`:
+
+| | The instrument (same build) | Carbon |
+|---|---|---|
+| Moves: janky frames, frame p90, GPU p90 | 8.4 %, 34 ms, 20 ms | 7.2–7.7 %, 31–32 ms, 19 ms |
+| One boot (power off, on): janky frames, missed vsyncs, GPU p50 / p90 | 0.6 %, 0, 18 / 19 ms | 0.8 %, 0, 18 / 19 ms |
+
+- **Two cached layers carry Carbon.** The album's atmosphere and the Wheel's spun ring each sit in their own offscreen layer, like the body: before that, Carbon's moves measured 9.2–10.1 % janky (GPU p90 22–23 ms), because the atmosphere's full-screen passes and the metal ring ran again on every frame the display moved. A layer alpha on the atmosphere had also forced an offscreen pass per frame; it now fades each draw instead.
+- **Per cover, not per frame.** The palette and the atmosphere's field are worked out once per cover, off the main thread (a 32 × 32 reduction, then a 96 × 96 field), and kept while the bitmap lives.
+- **Still to measure:** Now Playing with a song playing (the seek bar's wave redraws its own small canvas every frame while the music plays), which needed the test tones played aloud.
+
 Remaining: navigation still costs two long frames (≈ 20 and 26–47 ms, composing the next column); spins still exceed 16 ms at p90 on this phone at 120 Hz. `adb shell input` taps don't get the touch boost real fingers do, so real use runs somewhat faster than these scripts. A project baseline profile and composing the next column ahead (it's already known: the focused row's) are the next steps.

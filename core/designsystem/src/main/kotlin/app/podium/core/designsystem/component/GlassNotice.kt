@@ -30,6 +30,7 @@ import app.podium.core.designsystem.glass.glass
 import app.podium.core.designsystem.theme.PodiumMotion
 import app.podium.core.designsystem.theme.PodiumTheme
 import app.podium.core.designsystem.theme.Spacing
+import app.podium.core.designsystem.tonal.LocalAlbumTone
 import app.podium.core.interaction.FocusListState
 import app.podium.core.interaction.InputTargetEffect
 import app.podium.core.interaction.PodiumInput
@@ -98,7 +99,7 @@ fun GlassNotice(
         modifier
             .fillMaxSize()
             .graphicsLayer { alpha = appear.value.coerceIn(0f, 1f) }
-            .background(Color.Black.copy(alpha = if (colors.isDark) 0.35f else 0.18f))
+            .background(Color.Black.copy(alpha = scrimAlpha(colors)))
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { if (spec.dismissible) onDismiss() }
             .padding(panelPadding),
         contentAlignment = Alignment.Center,
@@ -113,7 +114,7 @@ fun GlassNotice(
                     scaleX = s
                     scaleY = s
                 }
-                .glass(GlassMaterial.Regular, RoundedCornerShape(if (colors.isIndustrial) 3.dp else 22.dp))
+                .glass(GlassMaterial.Regular, sheetShape(colors))
                 // Taps inside the panel never dismiss it.
                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {}
                 .padding(top = Spacing.m, bottom = Spacing.xs),
@@ -139,7 +140,7 @@ fun GlassNotice(
                         .clip(RoundedCornerShape(2.dp))
                         .background(colors.labelTertiary.copy(alpha = 0.35f)),
                 ) {
-                    Box(Modifier.fillMaxWidth(p.coerceIn(0f, 1f)).height(4.dp).background(colors.labelPrimary))
+                    Box(Modifier.fillMaxWidth(p.coerceIn(0f, 1f)).height(4.dp).background(if (colors.isTonal) LocalAlbumTone.current.accent else colors.labelPrimary))
                 }
             }
             if (spec.actions.isNotEmpty()) {

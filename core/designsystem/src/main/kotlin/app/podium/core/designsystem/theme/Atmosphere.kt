@@ -106,16 +106,57 @@ internal fun srgbToOklab(argb: Int): Triple<Double, Double, Double> {
 }
 
 internal fun oklchToColor(l: Double, c: Double, hDeg: Double): Color {
+    val (r, g, b) = oklchToLinear(l, c, hDeg)
+    fun ch(v: Double) = linearToSrgb(v).let { max(0.0, min(1.0, it)) }.toFloat()
+    return Color(red = ch(r), green = ch(g), blue = ch(b))
+}
+
+/**
+ * Like [oklchToColor], but a colour outside sRGB loses chroma until it fits rather than having its
+ * channels clipped (which shifts its hue): a light blue accent stays blue, only a little paler.
+ */
+internal fun oklchInGamut(l: Double, c: Double, hDeg: Double): Color {
+    fun fits(chroma: Double) = oklchToLinear(l, chroma, hDeg).toList().all { it in -1e-4..1.0001 }
+    if (fits(c)) return oklchToColor(l, c, hDeg)
+    var lo = 0.0
+    var hi = c
+    repeat(12) {
+        val mid = (lo + hi) / 2
+        if (fits(mid)) lo = mid else hi = mid
+    }
+    return oklchToColor(l, lo, hDeg)
+}
+
+/** OKLCH to linear sRGB, unclipped. */
+private fun oklchToLinear(l: Double, c: Double, hDeg: Double): Triple<Double, Double, Double> {
     val h = Math.toRadians(hDeg)
-    val a = c * cos(h)
-    val b = c * sin(h)
+    return oklabToLinear(l, c * cos(h), c * sin(h))
+}
+
+/** Linear-light sRGB of an OKLab colour, unclipped. */
+internal fun oklabToLinear(l: Double, a: Double, b: Double): Triple<Double, Double, Double> {
     val l_ = (l + 0.3963377774 * a + 0.2158037573 * b).pow(3)
     val m_ = (l - 0.1055613458 * a - 0.0638541728 * b).pow(3)
     val s_ = (l - 0.0894841775 * a - 1.2914855480 * b).pow(3)
-    fun ch(v: Double) = linearToSrgb(v).let { max(0.0, min(1.0, it)) }.toFloat()
-    return Color(
-        red = ch(4.0767416621 * l_ - 3.3077115913 * m_ + 0.2309699292 * s_),
-        green = ch(-1.2684380046 * l_ + 2.6097574011 * m_ - 0.3413193965 * s_),
-        blue = ch(-0.0041960863 * l_ - 0.7034186147 * m_ + 1.7076147010 * s_),
+    return Triple(
+        4.0767416621 * l_ - 3.3077115913 * m_ + 0.2309699292 * s_,
+        -1.2684380046 * l_ + 2.6097574011 * m_ - 0.3413193965 * s_,
+        -0.0041960863 * l_ - 0.7034186147 * m_ + 1.7076147010 * s_,
     )
 }
+
+/** OKLab of a linear-light sRGB triple (the atmosphere field works in linear light). */
+internal fun linearToOklab(r: Double, g: Double, b: Double): Triple<Double, Double, Double> {
+    val l = cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b)
+    val m = cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b)
+    val s = cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b)
+    return Triple(
+        0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s,
+        1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s,
+        0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s,
+    )
+}
+
+internal fun srgbChannelToLinear(c: Double): Double = srgbToLinear(c)
+
+internal fun linearChannelToSrgb(c: Double): Double = linearToSrgb(c)

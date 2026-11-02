@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
@@ -23,15 +24,21 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -46,6 +53,13 @@ import androidx.compose.ui.unit.dp
 import app.podium.core.designsystem.glass.GlassMaterial
 import app.podium.core.designsystem.glass.glass
 import app.podium.core.designsystem.shell.ShellPalette
+import app.podium.core.designsystem.shell.MatteCoatGrain
+import app.podium.core.designsystem.shell.drawMatteCoat
+import app.podium.core.designsystem.shell.drawSeam
+import app.podium.core.designsystem.shell.drawSpunDisc
+import app.podium.core.designsystem.shell.reflectionTurn
+import app.podium.core.designsystem.shell.rememberDeviceTilt
+import app.podium.core.designsystem.shell.rememberSpunMetal
 import app.podium.core.designsystem.shell.grain
 import app.podium.core.designsystem.symbol.PodiumSymbol
 import app.podium.core.designsystem.symbol.Symbol
@@ -84,6 +98,8 @@ fun PodWheel(
     val type = PodiumTheme.type
     val haptics = rememberPodiumHaptics()
     val longPressTimeout = remember { ViewConfiguration.getLongPressTimeout().toLong() }
+    // A held centre starts its rising pressure this far into the hold (D-105).
+    val holdBuildAt = remember(longPressTimeout) { (longPressTimeout * 0.4f).toLong() }
     val tracker = remember { WheelGestureTracker() }
     val severalFingers = LocalSeveralFingers.current
     val currentOnInput by rememberUpdatedState(onInput)
@@ -108,12 +124,25 @@ fun PodWheel(
     // MECHANICAL (D-65): the knurled band turns with the finger, 1:1, while it turns the Wheel, and
     // clicks into the nearest detent when the finger lifts. Nothing here recomposes the Wheel.
     val band = remember { Animatable(0f) }
-    // Read by the touch handler, which outlives a change of finish.
-    val knurled by rememberUpdatedState(solid?.matte == true)
+    // Read by the touch handler, which outlives a change of finish. Carbon's spun metal turns too (D-101).
+    val knurled by rememberUpdatedState(solid?.matte == true || solid?.metal == true)
+    val metal = solid?.metal == true
+    val machining = if (metal) rememberSpunMetal(with(LocalDensity.current) { diameter.roundToPx() }) else null
+    // The reflection on the metal follows the phone's tilt, as it would on the real thing (D-101).
+    val tilt = if (metal) rememberDeviceTilt(enabled = !PodiumTheme.motion.reduced) else null
 
     fun emit(input: PodiumInput) {
         when (input) {
-            is PodiumInput.Rotate -> haptics.detent()
+            // The detent goes to whoever turns with it first; if they answered it themselves (the
+            // end of a list, a volume step), theirs is the feel — otherwise the Wheel's own click,
+            // by how fast it turns (D-105).
+            is PodiumInput.Rotate -> {
+                haptics.releaseHold()
+                val mark = haptics.mark()
+                currentOnInput(input)
+                if (!haptics.askedSince(mark)) haptics.detent(input.velocity)
+                return
+            }
             is PodiumInput.LongPress -> haptics.longPress()
             else -> Unit
         }
@@ -143,20 +172,33 @@ fun PodWheel(
                     pressVisually(zone)
                     pressed = zone
                     finger = down.position
-                    haptics.press()
+                    // The centre is a firm key; the quarters lighter (D-105).
+                    if (zone == WheelButton.CENTER) haptics.centerPress() else haptics.press()
                     val bandAtDown = band.value
                     var turned = false
                     var waitLongPress = true
+                    // Held, the centre builds a rising pressure toward its long press.
+                    var building = false
                     while (true) {
+                        val wait = when {
+                            zone != WheelButton.CENTER -> longPressTimeout
+                            !building -> holdBuildAt
+                            else -> longPressTimeout - holdBuildAt
+                        }
                         val event = if (waitLongPress) {
-                            withTimeoutOrNull(longPressTimeout) { awaitPointerEvent() }
+                            withTimeoutOrNull(wait) { awaitPointerEvent() }
                         } else {
                             awaitPointerEvent()
                         }
                         if (event == null) {
+                            if (zone == WheelButton.CENTER && !building) {
+                                building = true
+                                if (!severalFingers()) haptics.holdBuild()
+                                continue
+                            }
                             waitLongPress = false
                             // A second finger down means a pinch may be starting: no hold (D-65).
-                            if (!severalFingers()) tracker.onLongPressTimeout()?.let(::emit)
+                            if (!severalFingers()) tracker.onLongPressTimeout()?.let(::emit) else haptics.releaseHold()
                             continue
                         }
                         val change = event.changes.firstOrNull { it.id == down.id } ?: break
@@ -164,6 +206,7 @@ fun PodWheel(
                         // space, D-54): the Wheel lets go rather than turn under it.
                         if (change.isConsumed) break
                         if (!change.pressed) {
+                            haptics.releaseHold()
                             tracker.onUp()?.let(::emit)
                             break
                         }
@@ -183,6 +226,8 @@ fun PodWheel(
                         change.consume()
                     }
                     tracker.onCancel()
+                    // Whatever the gesture became, it's over: no hold left building (D-105).
+                    haptics.releaseHold()
                     pressVisually(null)
                     pressed = null
                     finger = null
@@ -198,6 +243,19 @@ fun PodWheel(
         if (solid == null) {
             // The ring: one piece of glass.
             Box(Modifier.fillMaxSize().glass(GlassMaterial.Regular, CircleShape))
+        } else if (solid.metal) {
+            // Carbon (D-101): blackened, spun steel set into the body. Its machining turns with the
+            // finger under a light that stays put; a seam around it, a shadow beneath it.
+            Canvas(
+                Modifier
+                    .fillMaxSize()
+                    .shadow(7.dp, CircleShape, clip = false, ambientColor = Color.Black, spotColor = Color.Black)
+                    // Cached as one picture between turns and tilts: the display moving above it
+                    // doesn't redraw the metal (D-65).
+                    .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen },
+            ) {
+                drawSpunDisc(solid.ring, machining, angle = band.value, sheen = 1f, textureAlpha = 0.45f, light = reflectionTurn(tilt?.value))
+            }
         } else {
             // A matte, slightly concave ring in the finish's wheel colour, with the body's grain.
             Box(
@@ -240,19 +298,44 @@ fun PodWheel(
                 // The band's inner edge: a machined step.
                 drawCircle(solid.ringRim, radius = radius * 0.86f, style = Stroke(width = 1.dp.toPx()))
             }
-            pressed?.takeIf { it != WheelButton.CENTER }?.let { zone ->
-                val start = when (zone) {
-                    WheelButton.MENU -> -135f
-                    WheelButton.NEXT -> -45f
-                    WheelButton.PLAY_PAUSE -> 45f
-                    else -> 135f
-                }
-                drawArc(
-                    color = solid?.pressShade ?: Color.Black.copy(alpha = if (colors.isDark) 0.16f else 0.08f),
-                    startAngle = start,
-                    sweepAngle = 90f,
-                    useCenter = true,
+            if (metal) {
+                // The seam the Wheel sits in, just outside it (drawn here, outside the cached ring's bounds).
+                drawSeam(center, radius)
+                // The well the centre sits in: its wall in shadow at the top left, its lip lit below.
+                drawCircle(
+                    Brush.linearGradient(
+                        listOf(Color.Black.copy(alpha = 0.7f), Color.Black.copy(alpha = 0.25f), Color.White.copy(alpha = 0.12f)),
+                        start = Offset(center.x - inner, center.y - inner),
+                        end = Offset(center.x + inner, center.y + inner),
+                    ),
+                    radius = inner + 2.dp.toPx(),
+                    style = Stroke(width = 4.dp.toPx()),
                 )
+            }
+            pressed?.takeIf { it != WheelButton.CENTER }?.let { zone ->
+                val middle = when (zone) {
+                    WheelButton.MENU -> -90f
+                    WheelButton.NEXT -> 0f
+                    WheelButton.PLAY_PAUSE -> 90f
+                    else -> 180f
+                }
+                // The pressed quarter darkens and its edges blend into the ring (D-103): full over the
+                // zone's middle, fading out across its borders instead of stopping on a hard line.
+                val shade = solid?.pressShade ?: Color.Black.copy(alpha = if (colors.isDark) 0.16f else 0.08f)
+                rotate(middle - 180f) {
+                    drawCircle(
+                        Brush.sweepGradient(
+                            0f to Color.Transparent,
+                            (180f - PressFeatherOuter) / 360f to Color.Transparent,
+                            (180f - PressFeatherInner) / 360f to shade,
+                            (180f + PressFeatherInner) / 360f to shade,
+                            (180f + PressFeatherOuter) / 360f to Color.Transparent,
+                            1f to Color.Transparent,
+                            center = center,
+                        ),
+                        radius = radius,
+                    )
+                }
             }
             finger?.let { f ->
                 drawCircle(
@@ -265,7 +348,7 @@ fun PodWheel(
                 )
             }
             // The gap that makes the center a separate piece; solid finishes get a softer seam.
-            drawCircle(
+            if (!metal) drawCircle(
                 color = solid?.ringRim?.copy(alpha = 0.22f) ?: colors.shadow.copy(alpha = if (colors.isDark) 0.35f else 0.10f),
                 radius = inner + 1.5.dp.toPx(),
                 style = Stroke(width = (if (solid == null) 3 else 2).dp.toPx()),
@@ -275,6 +358,15 @@ fun PodWheel(
         // Legends on the ring's midline. MENU is the one all-caps string in Podium (hardware heritage).
         val legendRadius = (diameter.value / 2f + centerSize.value / 2f) / 2f
         val legendColor = solid?.legend ?: colors.labelSecondary
+        // The legends have depth on every finish (D-103): light ones stand off the ring on a soft
+        // shadow; dark ones are pressed into it, the lower edge of each cut catching the light.
+        val engraved = with(LocalDensity.current) {
+            if (legendColor.luminance() > 0.4f) {
+                Shadow(Color.Black.copy(alpha = if (metal) 0.85f else 0.6f), Offset(0f, 1.25.dp.toPx()), 1.5.dp.toPx())
+            } else {
+                Shadow(Color.White.copy(alpha = 0.7f), Offset(0f, 1.dp.toPx()), 0.5.dp.toPx())
+            }
+        }
         @Composable
         fun Legend(angleDeg: Float, button: WheelButton, label: String, content: @Composable () -> Unit) {
             val rad = Math.toRadians(angleDeg.toDouble())
@@ -299,13 +391,17 @@ fun PodWheel(
             ) { content() }
         }
         Legend(0f, WheelButton.MENU, "Back") {
-            BasicText("MENU", style = type.wheelLegend.copy(color = legendColor))
+            // One line, as wide as the face sets it, centred on its key.
+            BasicText("MENU", Modifier.wrapContentSize(unbounded = true), style = type.wheelLegend.copy(color = legendColor, shadow = engraved), softWrap = false, maxLines = 1)
         }
-        Legend(90f, WheelButton.NEXT, "Next track") { Symbol(PodiumSymbol.Next, legendColor, size = 22.dp, weight = 600, filled = true) }
+        Legend(90f, WheelButton.NEXT, "Next track") { Symbol(PodiumSymbol.Next, legendColor, size = 22.dp, weight = 700, filled = true, shadow = engraved) }
         Legend(180f, WheelButton.PLAY_PAUSE, if (isPlaying) "Pause" else "Play") {
-            Row2 { Symbol(PodiumSymbol.Play, legendColor, size = 18.dp, weight = 600, filled = true); Symbol(PodiumSymbol.Pause, legendColor, size = 18.dp, weight = 600, filled = true) }
+            Row2 {
+                Symbol(PodiumSymbol.Play, legendColor, size = 18.dp, weight = 700, filled = true, shadow = engraved)
+                Symbol(PodiumSymbol.Pause, legendColor, size = 18.dp, weight = 700, filled = true, shadow = engraved)
+            }
         }
-        Legend(270f, WheelButton.PREVIOUS, "Previous track") { Symbol(PodiumSymbol.Previous, legendColor, size = 22.dp, weight = 600, filled = true) }
+        Legend(270f, WheelButton.PREVIOUS, "Previous track") { Symbol(PodiumSymbol.Previous, legendColor, size = 22.dp, weight = 700, filled = true, shadow = engraved) }
 
         // The center: a separate, smaller piece of glass.
         Box(
@@ -319,6 +415,16 @@ fun PodWheel(
                 .then(
                     if (solid == null) {
                         Modifier.glass(GlassMaterial.Control, CircleShape, pressed = pressed == WheelButton.CENTER)
+                    } else if (solid.metal) {
+                        // Carbon (D-101): a separate part with its own finish — a matte, bead-blasted
+                        // coat (no machining, no reflection), as on a phone's satin frame — set lower
+                        // than the shining ring: shaded at its upper left by the ring's edge, its lower
+                        // lip catching the light. Darker when pressed.
+                        val down = pressed == WheelButton.CENTER
+                        Modifier
+                            .clip(CircleShape)
+                            .drawBehind { drawMatteCoat(if (down) lerp(solid.center, Color.Black, 0.22f) else solid.center) }
+                            .grain { MatteCoatGrain }
                     } else {
                         // A convex button in the body colour: lit from above, darker when pressed.
                         val face = if (pressed == WheelButton.CENTER) lerp(solid.center, Color.Black, 0.10f) else solid.center
@@ -355,6 +461,12 @@ fun PodWheel(
 private fun Row2(content: @Composable () -> Unit) {
     androidx.compose.foundation.layout.Row(verticalAlignment = Alignment.CenterVertically) { content() }
 }
+
+/** The pressed quarter's shade: full within this many degrees of its middle… */
+private const val PressFeatherInner = 26f
+
+/** …fading to nothing by this many, a little past the quarter's border. */
+private const val PressFeatherOuter = 58f
 
 /** One wheel detent, in degrees (WheelTuning.detentDegrees): the knurling's pitch. */
 private const val DetentDegrees = 18f

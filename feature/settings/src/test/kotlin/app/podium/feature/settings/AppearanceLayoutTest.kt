@@ -15,7 +15,6 @@ import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onRoot
-import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import app.podium.core.designsystem.component.LocalOverlayHost
 import app.podium.core.designsystem.component.LocalScreenInsets
@@ -35,6 +34,8 @@ import app.podium.core.designsystem.shell.palette
 import app.podium.core.designsystem.theme.DisplayTheme
 import app.podium.core.designsystem.theme.LyricsTheme
 import app.podium.core.designsystem.theme.PodiumTheme
+import app.podium.core.designsystem.theme.Spacing
+import app.podium.core.interaction.HapticProfile
 import app.podium.core.interaction.InputRouter
 import app.podium.core.interaction.LocalInputRouter
 import app.podium.core.interaction.PodiumInput
@@ -67,7 +68,7 @@ class AppearanceLayoutTest {
         override val effects = MutableStateFlow(app.podium.player.api.AudioEffects())
         override fun setEqualizer(settings: app.podium.player.api.EqualizerSettings) = Unit
         override fun setCrossfade(seconds: Int) = Unit
-        override val haptics = MutableStateFlow(true)
+        override val hapticProfile = MutableStateFlow(HapticProfile.BALANCED)
         override val clicks = MutableStateFlow(false)
         override val autoplay = MutableStateFlow(true)
         override val onlineRecommendations = MutableStateFlow(true)
@@ -81,7 +82,7 @@ class AppearanceLayoutTest {
         override fun setAppearance(appearance: DeviceAppearance) { this.appearance.value = appearance }
         override fun setPreview(appearance: DeviceAppearance?) { preview.value = appearance }
         override fun setStartupSound(enabled: Boolean) = Unit
-        override fun setHaptics(enabled: Boolean) = Unit
+        override fun setHapticProfile(profile: HapticProfile) = Unit
         override fun setClicks(enabled: Boolean) = Unit
         override fun setAutoplay(enabled: Boolean) = Unit
         override fun setOnlineRecommendations(enabled: Boolean) = Unit
@@ -140,7 +141,7 @@ class AppearanceLayoutTest {
                         DeviceLayout(
                             modifier = Modifier.fillMaxSize(),
                             screen = {
-                                CompositionLocalProvider(LocalScreenInsets provides ScreenInsets(top = ScreenHeaderHeight, bottom = 8.dp)) { screen(settings) }
+                                CompositionLocalProvider(LocalScreenInsets provides ScreenInsets(top = ScreenHeaderHeight, bottom = Spacing.edge)) { screen(settings) }
                                 ScreenHeader(title, canGoBack = true, onBack = {}, playing = false)
                             },
                             wheel = { d -> PodWheel(onInput = {}, diameter = d, palette = palette) },

@@ -126,7 +126,18 @@ object Spacing {
     val gutter = 16.dp
     val menuRow = 52.dp
     val trackRow = 60.dp
-    val titleBar = 52.dp
+
+    /**
+     * From the display's edges to anything set against them, the same on every side it touches
+     * (D-103): the title bar's housings, the mini player, Now Playing's column and tray.
+     */
+    val edge = 10.dp
+
+    /** A housing in the title bar (the back key, the status): concentric with the display's corner (D-103). */
+    val housing = 32.dp
+
+    /** The title bar: its housings with the edge margin above and below them (D-103). */
+    val titleBar = edge + housing + edge
     val miniPlayer = 56.dp
 }
 
@@ -153,10 +164,13 @@ fun deviceGlassTier(): GlassTier = when {
  * the same matte instrument on the listener's own background (a colour or a picture), its ink
  * chosen for contrast.
  */
+/**
+ * The display the listener chose. Bone was withdrawn by D-108; its warm off-white palette lives on as
+ * [PaperColors], which Custom builds its light-ink display from and Classic lyrics use for their paper.
+ */
 enum class DisplayTheme(val label: String) {
     GLASS("Glass"),
     CARBON("Carbon"),
-    BONE("Bone"),
     CUSTOM("Custom"),
     ;
 

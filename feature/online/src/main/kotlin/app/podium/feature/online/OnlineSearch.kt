@@ -1,11 +1,6 @@
 package app.podium.feature.online
 
-import androidx.compose.foundation.border
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -17,11 +12,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.podium.core.common.Outcome
 import app.podium.core.common.PodiumError
@@ -29,16 +20,13 @@ import app.podium.core.designsystem.component.FocusList
 import app.podium.core.designsystem.component.KeyboardAction
 import app.podium.core.designsystem.component.ListInputEffect
 import app.podium.core.designsystem.component.LoadingRow
-import app.podium.core.designsystem.component.LocalRowPadding
 import app.podium.core.designsystem.component.LocalScreenInsets
 import app.podium.core.designsystem.component.MenuPreview
 import app.podium.core.designsystem.component.MenuRow
-import app.podium.core.designsystem.component.PodiumTextField
+import app.podium.core.designsystem.component.PaperTextField
+import app.podium.core.designsystem.component.KeyboardAwayOnLeave
 import app.podium.core.designsystem.component.TrackRow
 import app.podium.core.designsystem.symbol.PodiumSymbol
-import app.podium.core.designsystem.theme.PodiumTheme
-import app.podium.core.designsystem.theme.Spacing
-import app.podium.core.designsystem.type.PodiumText
 import app.podium.core.interaction.rememberFocusListState
 import app.podium.core.model.Availability
 import app.podium.core.model.PlaylistId
@@ -266,30 +254,7 @@ internal fun SearchField(
     placeholder: String = "Songs, artists, albums",
     description: String = "Search online",
     search: Boolean = true,
-) {
-    val colors = PodiumTheme.colors
-    val type = PodiumTheme.type
-    val shape = RoundedCornerShape(if (colors.isIndustrial) 2.dp else 10.dp)
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .padding(horizontal = LocalRowPadding.current, vertical = Spacing.s)
-            .border(1.dp, colors.labelTertiary, shape)
-            .padding(horizontal = Spacing.m, vertical = Spacing.s),
-    ) {
-        if (value.isEmpty()) PodiumText(placeholder, type.row, colors.labelTertiary)
-        PodiumTextField(
-            value = value,
-            onValueChange = onChange,
-            textStyle = type.row.copy(color = colors.labelPrimary),
-            description = description,
-            focusRequester = focus,
-            action = if (search) KeyboardAction.SEARCH else KeyboardAction.DONE,
-            onAction = onDone,
-            modifier = Modifier.fillMaxWidth(),
-        )
-    }
-}
+) = PaperTextField(value, onChange, focus, onDone, placeholder, description, if (search) KeyboardAction.SEARCH else KeyboardAction.DONE)
 
 private const val MIN_QUERY = 2
 private const val DEBOUNCE_MS = 350L
