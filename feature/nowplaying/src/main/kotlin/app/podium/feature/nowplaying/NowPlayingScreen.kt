@@ -149,6 +149,12 @@ fun NowPlayingScreen(
     environmentOf: (TrackId) -> String? = { null },
     /** Add to playlist for a song of the library (D-106); null leaves it out. */
     onAddToPlaylist: ((TrackId) -> Unit)? = null,
+    /**
+     * Add to playlist for an online song (D-109), into ONLINE's own playlists: the two environments
+     * keep their playlists apart (D-34), so this is a different door to the same words. Needs the
+     * song looked up in full, which is also what Go to album needs.
+     */
+    onAddOnlineToPlaylist: ((Track) -> Unit)? = null,
     /** Now Playing ▸ Lyrics (LYRICS_ARCHITECTURE.md §7). */
     onLyrics: () -> Unit = {},
     /** The playing song in full, for its album and artists (D-74); null when it can't be found. */
@@ -163,6 +169,8 @@ fun NowPlayingScreen(
     pulse: AudioPulse = AudioPulse.None,
     /** Settings ▸ Now Playing's tray (D-108): the tray slides away when nothing has been touched. */
     autoHideTray: Boolean = false,
+    /** Settings ▸ Now Playing (D-109): the original's own screen, with no playback keys on the display. */
+    nostalgic: Boolean = false,
 ) {
     val snapshot by controller.snapshot.collectAsStateWithLifecycle()
     val queue by controller.queue.collectAsStateWithLifecycle()
@@ -247,7 +255,8 @@ fun NowPlayingScreen(
     val showMore: () -> Unit = {
         if (item != null) {
             val goTo = goToActions(playingTrack, onOpenAlbum, onOpenArtist)
-            if (goTo.isEmpty()) lookAgain++
+            // The lookup also carries Add to playlist for an online song: ask again if it is not in yet.
+            if (goTo.isEmpty() || playingTrack == null) lookAgain++
             overlay.show(
                 MenuSpec(
                     item.title,
@@ -255,8 +264,16 @@ fun NowPlayingScreen(
                         add(MenuAction("Lyrics", onSelect = onLyrics))
                         add(MenuAction("Up Next", onSelect = onUpNext))
                         add(MenuAction(if (isFavorite) "Remove from favorites" else "Add to favorites") { favorites.toggle(item.trackId) })
-                        if (onAddToPlaylist != null && remoteOwner == null && environmentOf(item.trackId) == null) {
-                            add(MenuAction("Add to playlist") { onAddToPlaylist(item.trackId) })
+                        // Add to playlist (D-106, D-109): the library's playlists for a song of the
+                        // library, ONLINE's own for an online song. Never while another device plays.
+                        if (remoteOwner == null) {
+                            val online = environmentOf(item.trackId) != null
+                            val song = playingTrack
+                            if (!online && onAddToPlaylist != null) {
+                                add(MenuAction("Add to playlist") { onAddToPlaylist(item.trackId) })
+                            } else if (online && onAddOnlineToPlaylist != null && song != null) {
+                                add(MenuAction("Add to playlist") { onAddOnlineToPlaylist(song) })
+                            }
                         }
                         goTo.forEach(::add)
                         if (sleepTimer != null) add(MenuAction("Sleep timer") { overlay.show(sleepTimerMenu(sleepTimer)) })
@@ -484,6 +501,8 @@ fun NowPlayingScreen(
                 // Portrait only (D-108), so the display is always taller than it is wide; a short one
                 // still moves the cover beside the title, where a stacked cover would stop meaning much.
                 when {
+                    // The nostalgic screen (D-109) has no transport, so it fits a short display too.
+                    nostalgic -> NostalgicPortrait(parts)
                     maxHeight - StackedControlsHeight < maxWidth * 0.45f -> CompactLayout(parts)
                     else -> PortraitLayout(parts)
                 }
@@ -531,25 +550,31 @@ private fun PortraitLayout(p: NowPlayingParts) = StackedPortrait(p)
 /** Short screens: the cover sits beside the title, like the original's Now Playing. */
 @Composable
 private fun CompactLayout(p: NowPlayingParts) {
+    val away = rememberTrayAway(p)
     Column(
         Modifier.fillMaxSize().padding(horizontal = Spacing.edge),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Row(Modifier.fillMaxWidth().weight(1f, fill = false), verticalAlignment = Alignment.CenterVertically) {
-            val rowWidth = LocalWindowWidth.current
-            BoxWithConstraints(Modifier.weight(0.42f).aspectRatio(1f).zIndex(1f), contentAlignment = Alignment.Center) {
-                ArtworkStage(p, maxWidth, maxHeight, artTravel(rowWidth, Spacing.edge))
+        Column(
+            Modifier.relaxWithTray(away, Spacing.s + TrayHeightCompact),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                val rowWidth = LocalWindowWidth.current
+                BoxWithConstraints(Modifier.weight(0.42f).aspectRatio(1f).zIndex(1f), contentAlignment = Alignment.Center) {
+                    ArtworkStage(p, maxWidth, maxHeight, artTravel(rowWidth, Spacing.edge))
+                }
+                Spacer(Modifier.width(Spacing.m))
+                Box(Modifier.weight(0.58f)) { TrackText(p.item, Alignment.Start, TextAlign.Start) }
             }
-            Spacer(Modifier.width(Spacing.m))
-            Box(Modifier.weight(0.58f)) { TrackText(p.item, Alignment.Start, TextAlign.Start) }
+            Spacer(Modifier.height(Spacing.s))
+            NowPlayingProgress(p)
+            StatusSlot(p)
+            NowPlayingTransport(p, compact = true)
         }
         Spacer(Modifier.height(Spacing.s))
-        NowPlayingProgress(p)
-        StatusSlot(p)
-        NowPlayingTransport(p, compact = true)
-        Spacer(Modifier.height(Spacing.s))
-        NowPlayingActions(p, compact = true)
+        NowPlayingActions(p, compact = true, away = away)
     }
 }
 

@@ -92,7 +92,14 @@ interface OnlineRepository {
     suspend fun createPlaylist(name: String, tracks: List<Track>): String
     fun renamePlaylist(id: String, name: String)
     fun deletePlaylist(id: String)
-    fun addToPlaylist(id: String, tracks: List<Track>)
+    /**
+     * Adds [tracks] to one of ONLINE's playlists, leaving out any it already holds (D-110). [onAdded]
+     * is told how many actually went in, on the main thread.
+     */
+    fun addToPlaylist(id: String, tracks: List<Track>, onAdded: (Int) -> Unit = {})
+
+    /** Of ONLINE's playlists, those that already hold every one of [tracks] (D-110). */
+    suspend fun playlistsHoldingAll(tracks: List<Track>): Set<String> = emptySet()
     fun removeFromPlaylist(id: String, entryId: Long)
     fun movePlaylistEntry(id: String, entryId: Long, toIndex: Int)
 

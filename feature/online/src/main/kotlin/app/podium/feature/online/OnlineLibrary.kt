@@ -158,6 +158,7 @@ fun OnlineAccountHistoryScreen(repository: OnlineRepository, actions: OnlineActi
     val history = rememberRemote(Unit) { repository.accountHistory(0, HISTORY_LIMIT) }
     val likedIds by repository.likedIds.collectAsStateWithLifecycle()
     val overlayHost = overlay()
+    val scope = rememberCoroutineScope()
     val entries = (history as? Remote.Ready)?.value.orEmpty()
     val songs = remember(entries) { entries.map { it.track } }
     val rows = remember(entries) {
@@ -182,7 +183,7 @@ fun OnlineAccountHistoryScreen(repository: OnlineRepository, actions: OnlineActi
         }
     }
     val longPress: (Int) -> Unit = { i ->
-        (rows.getOrNull(i) as? HistoryRow.Song)?.let { showTrackMenu(overlayHost, it.track, repository, actions, navigate) }
+        (rows.getOrNull(i) as? HistoryRow.Song)?.let { showTrackMenu(overlayHost, it.track, repository, actions, scope, navigate) }
     }
     ListInputEffect(focus, onActivate = activate, onLongPress = longPress)
     when (history) {

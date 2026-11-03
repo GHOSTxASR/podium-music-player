@@ -62,16 +62,59 @@ class LocalPlaylistStoreTest {
     }
 
     @Test
-    fun `the latest changed playlist comes first, and a song can be in one twice`() = runTest {
+    fun `the latest changed playlist comes first`() = runTest {
         library.sync(Local, "This phone", listOf(alpha, bravo), emptyMap())
         val first = playlists.create("First")
-        val second = playlists.create("Second")
+        playlists.create("Second")
         assertEquals(listOf("Second", "First"), playlists.playlists().first().map { it.name })
         playlists.add(first, listOf(alpha.id))
         assertEquals(listOf("First", "Second"), playlists.playlists().first().map { it.name })
-        playlists.add(first, listOf(alpha.id))
-        assertEquals(listOf("Alpha", "Alpha"), titles(first))
-        assertEquals(2, playlists.playlists().first().first().trackCount)
+    }
+
+    /** D-110 reverses D-106: a playlist holds a song once, however many ways it is offered one. */
+    @Test
+    fun `a song already in a playlist is never added again`() = runTest {
+        library.sync(Local, "This phone", listOf(alpha, bravo, charlie), emptyMap())
+        val id = playlists.create("Evening")
+        assertEquals(1, playlists.add(id, listOf(alpha.id)), "the first time it goes in")
+        assertEquals(0, playlists.add(id, listOf(alpha.id)), "the second time nothing does")
+        assertEquals(listOf("Alpha"), titles(id))
+        assertEquals(1, playlists.playlists().first().single().trackCount)
+
+        // A batch takes only what is new, keeping its order, and never repeats within itself.
+        assertEquals(2, playlists.add(id, listOf(alpha.id, bravo.id, charlie.id, bravo.id)))
+        assertEquals(listOf("Alpha", "Bravo", "Charlie"), titles(id))
+
+        // Removed, it can go back in.
+        val entry = playlists.playlist(id).first()!!.entries.first { it.track.title == "Alpha" }
+        playlists.remove(id, entry.entryId)
+        assertEquals(1, playlists.add(id, listOf(alpha.id)), "and in again once it is gone")
+        assertEquals(listOf("Bravo", "Charlie", "Alpha"), titles(id))
+    }
+
+    /** What the picker reads to mark a playlist "Added" before it is chosen (D-110). */
+    @Test
+    fun `the playlists holding every one of the songs are the ones a menu marks`() = runTest {
+        library.sync(Local, "This phone", listOf(alpha, bravo, charlie), emptyMap())
+        val both = playlists.create("Both", listOf(alpha.id, bravo.id))
+        val onlyAlpha = playlists.create("Only Alpha", listOf(alpha.id))
+        val empty = playlists.create("Empty")
+
+        assertEquals(setOf(both, onlyAlpha), playlists.playlistsHoldingAll(listOf(alpha.id)))
+        // Two songs: only a playlist with both of them counts, since only there would nothing go in.
+        assertEquals(setOf(both), playlists.playlistsHoldingAll(listOf(alpha.id, bravo.id)))
+        assertEquals(emptySet(), playlists.playlistsHoldingAll(listOf(charlie.id)))
+        assertEquals(emptySet(), playlists.playlistsHoldingAll(emptyList()))
+        assertTrue(empty !in playlists.playlistsHoldingAll(listOf(alpha.id)))
+        // The same song named twice is still one song to find.
+        assertEquals(setOf(both, onlyAlpha), playlists.playlistsHoldingAll(listOf(alpha.id, alpha.id)))
+    }
+
+    @Test
+    fun `a new playlist made with the same song twice holds it once`() = runTest {
+        library.sync(Local, "This phone", listOf(alpha, bravo), emptyMap())
+        val id = playlists.create("Doubled", listOf(alpha.id, bravo.id, alpha.id))
+        assertEquals(listOf("Alpha", "Bravo"), titles(id))
     }
 
     @Test

@@ -310,9 +310,11 @@ class OnlineMusicRepository(
         scope.launch { store.delete(id) }
     }
 
-    override fun addToPlaylist(id: String, tracks: List<Track>) {
-        scope.launch { store.add(id, tracks) }
+    override fun addToPlaylist(id: String, tracks: List<Track>, onAdded: (Int) -> Unit) {
+        scope.launch { onAdded(store.add(id, tracks)) }
     }
+
+    override suspend fun playlistsHoldingAll(tracks: List<Track>): Set<String> = store.playlistsHoldingAll(tracks)
 
     override fun removeFromPlaylist(id: String, entryId: Long) {
         scope.launch { store.remove(id, entryId) }

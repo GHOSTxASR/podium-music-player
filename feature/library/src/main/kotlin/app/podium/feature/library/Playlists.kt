@@ -9,6 +9,8 @@ import app.podium.core.model.Track
 import app.podium.core.model.TrackId
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
 
 /** A playlist of the music on this phone (D-106), as lists show it; [covers] are a few of its songs' covers. */
 data class LibraryPlaylist(val id: String, val name: String, val trackCount: Int, val covers: List<String> = emptyList())
@@ -37,7 +39,17 @@ interface PlaylistRepository {
     fun delete(id: String)
 
     /** Adds [songs] at the end, in order. */
-    fun add(id: String, songs: List<TrackId>)
+    /**
+     * Adds [songs] to the playlist, leaving out any it already holds (D-110). [onAdded] is told how
+     * many actually went in, on the main thread, so the caller can tell "added" from "already there".
+     */
+    fun add(id: String, songs: List<TrackId>, onAdded: (Int) -> Unit = {})
+
+    /**
+     * Of the listener's playlists, those that already hold every one of [songs] (D-110): the picker
+     * marks them, so it is plain before choosing which ones have nothing to take.
+     */
+    suspend fun playlistsHoldingAll(songs: List<TrackId>): Set<String> = emptySet()
 
     fun remove(id: String, entryId: Long)
 
@@ -52,35 +64,48 @@ interface PlaylistRepository {
 class PlaylistPicker(
     private val repository: PlaylistRepository,
     private val haptics: PodiumHaptics?,
+    /** Where the one quick read of what the playlists already hold runs (D-110). */
+    private val scope: CoroutineScope,
     /** Opens naming a new playlist; the songs wait in [PendingPlaylistSongs]. */
     private val onNewPlaylist: () -> Unit,
 ) {
     fun show(overlay: OverlayHost, songs: List<TrackId>) {
         if (songs.isEmpty()) return
-        val playlists = repository.playlists.value.orEmpty()
-        overlay.show(
-            MenuSpec(
-                if (songs.size == 1) "Add to playlist" else "Add ${songs.size} songs to a playlist",
-                buildList {
-                    add(
-                        MenuAction("New playlist") {
-                            PendingPlaylistSongs.songs = songs
-                            onNewPlaylist()
-                        },
-                    )
-                    playlists.forEach { p ->
+        scope.launch {
+            // One indexed read before the menu opens, so each playlist can say whether it has them.
+            val holding = repository.playlistsHoldingAll(songs)
+            val playlists = repository.playlists.value.orEmpty()
+            overlay.show(
+                MenuSpec(
+                    if (songs.size == 1) "Add to playlist" else "Add ${songs.size} songs to a playlist",
+                    buildList {
                         add(
-                            MenuAction(p.name) {
-                                repository.add(p.id, songs)
-                                haptics?.confirm()
+                            MenuAction("New playlist") {
+                                PendingPlaylistSongs.songs = songs
+                                onNewPlaylist()
                             },
                         )
-                    }
-                },
-            ),
-        )
+                        playlists.forEach { p ->
+                            val already = p.id in holding
+                            add(
+                                MenuAction(p.name, note = if (already) ADDED else null) {
+                                    // Nothing goes in when it is already there (D-110): the reject is
+                                    // the established "that did nothing", not a failure.
+                                    repository.add(p.id, songs) { added ->
+                                        if (added > 0) haptics?.confirm() else haptics?.reject()
+                                    }
+                                },
+                            )
+                        }
+                    },
+                ),
+            )
+        }
     }
 }
+
+/** What a playlist that already holds the songs says, as Add songs says it of a row (D-106, D-110). */
+const val ADDED = "Added"
 
 val LocalPlaylistPicker = staticCompositionLocalOf<PlaylistPicker?> { null }
 

@@ -72,21 +72,23 @@ class OnlineLibraryStoreTest {
         val b = onlineSong("Bravo")
         val c = onlineSong("Charlie")
         val id = online.createPlaylist("Road trip", Audius, listOf(a, b))
-        online.add(id, listOf(c, a)) // a duplicate is allowed
+        // Charlie is new, Alpha is already there: only Charlie goes in (D-110).
+        assertEquals(1, online.add(id, listOf(c, a)))
         var detail = assertNotNull(online.playlist(id).first())
-        assertEquals(listOf("Alpha", "Bravo", "Charlie", "Alpha"), detail.entries.map { it.track.title })
-        assertEquals(4, online.playlists().first().single().trackCount)
+        assertEquals(listOf("Alpha", "Bravo", "Charlie"), detail.entries.map { it.track.title })
+        assertEquals(3, online.playlists().first().single().trackCount)
 
-        // Move Charlie to the top, then the last Alpha between Bravo and Charlie… positions stay fractional.
+        // Move Charlie to the top… positions stay fractional.
         online.move(id, detail.entries[2].entryId, 0)
         detail = online.playlist(id).first()!!
-        assertEquals(listOf("Charlie", "Alpha", "Bravo", "Alpha"), detail.entries.map { it.track.title })
-        online.move(id, detail.entries[3].entryId, 1)
-        detail = online.playlist(id).first()!!
-        assertEquals(listOf("Charlie", "Alpha", "Alpha", "Bravo"), detail.entries.map { it.track.title })
+        assertEquals(listOf("Charlie", "Alpha", "Bravo"), detail.entries.map { it.track.title })
 
         online.remove(id, detail.entries[1].entryId)
-        assertEquals(listOf("Charlie", "Alpha", "Bravo"), online.playlist(id).first()!!.entries.map { it.track.title })
+        assertEquals(listOf("Charlie", "Bravo"), online.playlist(id).first()!!.entries.map { it.track.title })
+        // Gone, it can come back.
+        assertEquals(1, online.add(id, listOf(a)))
+        assertEquals(listOf("Charlie", "Bravo", "Alpha"), online.playlist(id).first()!!.entries.map { it.track.title })
+        online.remove(id, online.playlist(id).first()!!.entries.last().entryId)
 
         online.rename(id, "  Long drive ")
         assertEquals("Long drive", online.playlists().first().single().name)

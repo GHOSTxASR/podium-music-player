@@ -280,9 +280,7 @@ internal fun VinylStage(controller: PlaybackController, pulse: AudioPulse, vinyl
                 }
                 lastPosition = position
                 // Loudness on a root curve: quiet passages still move, loud ones fill the capsule.
-                val target = if (pulse.levelsAt(position, levels)) (sqrt((levels[AudioPulse.WHOLE] - 0.008f).coerceAtLeast(0f)) * 1.9f).coerceIn(0f, 1f) else IdleLevel
-                val l = level.floatValue
-                level.floatValue = l + (target - l) * (if (target > l) 0.45f else 0.08f)
+                level.floatValue = visualiserLevel(level.floatValue, pulse.levelsAt(position, levels), levels[AudioPulse.WHOLE])
             }
         }
     }
@@ -697,44 +695,9 @@ private fun DrawScope.drawTonearm(g: StageGeometry, down: Float, alpha: Float) {
     drawCircle(Brush.radialGradient(0f to Color(0xFFD9DADD).copy(alpha = alpha), 1f to Color(0xFF55575B).copy(alpha = alpha), center = p - Offset(2f * u, 3f * u), radius = 10f * u), radius = 7f * u, center = p)
 }
 
-/**
- * The visualiser: a dark capsule of dots, seven rows deep. Two waves cross along it, mirrored, their
- * height the music's loudness, tapering into the capsule's ends; the dots they pass light up, a soft
- * glow around the brightest. Silent, it's a single lit line. [presence] (0–1) opens it from a dot;
- * the waves rise once it's open.
- */
-private fun DrawScope.drawVisualiser(g: StageGeometry, presence: Float, amplitude: Float, t: Float) {
-    if (presence <= 0.01f) return
-    val u = 1.dp.toPx()
-    val open = easeOut(presence)
-    val w = g.pillWidth * (0.12f + 0.88f * open)
-    val h = g.pillHeight
-    val left = g.pillCenter.x - w / 2f
-    val top = g.pillCenter.y - h / 2f
-    drawRoundRect(Color.Black.copy(alpha = 0.55f * presence), Offset(left, top), Size(w, h), CornerRadius(h / 2f))
-    drawRoundRect(Color.White.copy(alpha = 0.1f * presence), Offset(left, top), Size(w, h), CornerRadius(h / 2f), style = Stroke(1f * u))
-    val rows = 7
-    val pitch = (h - 10f * u) / rows
-    val cols = ((w - h * 0.7f) / pitch).toInt().coerceAtLeast(2)
-    val x0 = g.pillCenter.x - (cols - 1) * pitch / 2f
-    val dot = pitch * 0.32f
-    val tau = 2f * PI.toFloat()
-    for (c in 0 until cols) {
-        val x = c / (cols - 1f)
-        val envelope = sin(PI.toFloat() * x).coerceAtLeast(0f).pow(0.8f)
-        val y1 = 3f * amplitude * envelope * sin(tau * (1.6f * x - 0.55f * t))
-        val y2 = -3f * amplitude * envelope * sin(tau * (2.1f * x + 0.42f * t) + 1.3f)
-        for (r in 0 until rows) {
-            val row = (r - rows / 2).toFloat()
-            val lit = max(max(glow(row - y1), glow(row - y2)), 0.6f * glow(row) * (1f - 0.5f * amplitude))
-            val at = Offset(x0 + c * pitch, g.pillCenter.y + row * pitch)
-            if (lit > 0.45f) drawCircle(Color.White.copy(alpha = 0.16f * lit * presence), dot * 2.3f, at)
-            drawCircle(Color.White.copy(alpha = (0.1f + 0.9f * lit) * presence), dot, at)
-        }
-    }
-}
-
-private fun glow(d: Float): Float = exp(-(d * d) / 0.3f)
+/** The visualiser below the record (D-104), drawn by the one that Now Playing's nostalgic layout uses too. */
+private fun DrawScope.drawVisualiser(g: StageGeometry, presence: Float, amplitude: Float, t: Float) =
+    drawDotVisualiser(g.pillCenter, g.pillWidth, g.pillHeight, presence, amplitude, t)
 
 /**
  * A record, drawn once: black vinyl with fine grooves in bands (the tracks), the gaps between them,
@@ -801,7 +764,6 @@ private const val RecordDegreesPerMs = RecordDegreesPerSecond / 1000f
 private const val SeekJumpMs = 400L
 
 /** The sound when nothing is measured (another app plays, or audio Podium can't read): a calm wave. */
-private const val IdleLevel = 0.35f
 
 private const val ScrimAlpha = 0.5f
 

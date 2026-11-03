@@ -103,6 +103,17 @@ interface LocalPlaylistDao {
     @Query("SELECT id, position FROM local_playlist_track WHERE playlist_id = :id ORDER BY position, id")
     suspend fun positions(id: String): List<EntryPosition>
 
+    /** Every song the playlist holds, to keep one out that is already in it (D-110). */
+    @Query("SELECT track_id FROM local_playlist_track WHERE playlist_id = :id")
+    suspend fun trackIds(id: String): List<String>
+
+    /** The playlists that already hold every one of [trackIds], so a menu can say so (D-110). */
+    @Query(
+        "SELECT playlist_id FROM local_playlist_track WHERE track_id IN (:trackIds) " +
+            "GROUP BY playlist_id HAVING COUNT(DISTINCT track_id) = :count",
+    )
+    suspend fun playlistsHoldingAll(trackIds: List<String>, count: Int): List<String>
+
     /** The entries the playlist shows: those whose song is in the library (moves count among them). */
     @Query(
         "SELECT t.id, t.position FROM local_playlist_track t JOIN track ON track.id = t.track_id " +
@@ -181,15 +192,31 @@ class LocalPlaylistStore(private val db: PodiumDatabase, private val now: () -> 
 
     suspend fun delete(id: String) = dao.delete(id)
 
-    /** Adds songs at the end, in order; a song already there is added again (the listener chose it). */
-    suspend fun add(id: String, tracks: List<TrackId>) {
-        if (tracks.isEmpty()) return
-        db.withWriteTransaction {
+    /**
+      * Adds songs at the end, in order, leaving out any the playlist already holds and any repeated
+      * within [tracks] itself (D-110): a playlist holds a song once. Returns how many went in, so the
+      * screen that asked can tell "added" from "it was already there".
+      */
+    suspend fun add(id: String, tracks: List<TrackId>): Int {
+        if (tracks.isEmpty()) return 0
+        return db.withWriteTransaction {
+            // One set does both jobs: it starts as what the playlist holds, and refuses a repeat.
+            val seen = dao.trackIds(id).toHashSet()
+            val fresh = tracks.filter { seen.add(it.value) }
+            if (fresh.isEmpty()) return@withWriteTransaction 0
             val last = dao.positions(id).lastOrNull()?.position ?: 0.0
             val at = now()
-            dao.insertEntries(tracks.mapIndexed { i, t -> LocalPlaylistTrackEntity(playlistId = id, trackId = t.value, position = last + i + 1, addedAt = at) })
+            dao.insertEntries(fresh.mapIndexed { i, t -> LocalPlaylistTrackEntity(playlistId = id, trackId = t.value, position = last + i + 1, addedAt = at) })
             dao.touch(id, at)
+            fresh.size
         }
+    }
+
+    /** Of the listener's playlists, those that already hold every one of [tracks] (D-110). */
+    suspend fun playlistsHoldingAll(tracks: List<TrackId>): Set<String> {
+        val ids = tracks.map { it.value }.distinct()
+        if (ids.isEmpty()) return emptySet()
+        return dao.playlistsHoldingAll(ids, ids.size).toSet()
     }
 
     suspend fun remove(id: String, entryId: Long) {

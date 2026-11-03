@@ -84,6 +84,15 @@ interface DeviceSettingsRepository {
 
     fun setHideNowPlayingTray(enabled: Boolean) {}
 
+    /**
+     * Now Playing's nostalgic layout (D-109): the cover beside its facts, the song centred under it,
+     * the seek bar, and the vinyl's dot visualiser where the transport keys would be — no playback
+     * keys at all, so the Wheel does the playing, as it did on the original. Off by default.
+     */
+    val nostalgicNowPlaying: StateFlow<Boolean> get() = Off
+
+    fun setNostalgicNowPlaying(enabled: Boolean) {}
+
     fun setAppearance(appearance: DeviceAppearance)
     fun setPreview(appearance: DeviceAppearance?)
     fun setStartupSound(enabled: Boolean)

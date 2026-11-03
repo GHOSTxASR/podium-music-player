@@ -71,7 +71,7 @@ import app.podium.core.interaction.WheelContext
 import app.podium.core.interaction.rememberFocusListState
 import app.podium.core.interaction.rememberPodiumHaptics
 
-private enum class SettingsRow { Appearance, PodiumSpace, FullScreen, TitleBarBattery, HideNowPlayingTray, Keyboard, MusicFolders, OnlineSources, CustomSources, Autoplay, Recommendations, AvoidRepeats, Crossfade, Equalizer, SleepTimer, OnlineLyrics, LyricsCredit, Haptics, Clicks, StartupSound, SoftwareUpdate }
+private enum class SettingsRow { Appearance, PodiumSpace, FullScreen, TitleBarBattery, NowPlayingLayout, HideNowPlayingTray, Keyboard, MusicFolders, OnlineSources, CustomSources, Autoplay, Recommendations, AvoidRepeats, Crossfade, Equalizer, SleepTimer, OnlineLyrics, LyricsCredit, Haptics, Clicks, StartupSound, SoftwareUpdate }
 
 /** Settings ▸ Software update (D-99): the version, a check now, and whether Podium checks by itself. */
 interface SoftwareUpdateSettings {
@@ -121,6 +121,7 @@ fun SettingsScreen(
     val onlineLyricsOn by repository.onlineLyrics.collectAsStateWithLifecycle()
     val podiumKeyboard by repository.podiumKeyboard.collectAsStateWithLifecycle()
     val hideNowPlayingTray by repository.hideNowPlayingTray.collectAsStateWithLifecycle()
+    val nostalgicNowPlaying by repository.nostalgicNowPlaying.collectAsStateWithLifecycle()
     val immersive by repository.immersive.collectAsStateWithLifecycle()
     val titleBarBattery by repository.titleBarBattery.collectAsStateWithLifecycle()
     val folderList by folders.folders.collectAsStateWithLifecycle()
@@ -166,6 +167,10 @@ fun SettingsScreen(
             SettingsRow.TitleBarBattery -> if (!immersive) haptics.reject() else {
                 haptics.toggle(on = !titleBarBattery)
                 repository.setTitleBarBattery(!titleBarBattery)
+            }
+            SettingsRow.NowPlayingLayout -> {
+                haptics.toggle(on = !nostalgicNowPlaying)
+                repository.setNostalgicNowPlaying(!nostalgicNowPlaying)
             }
             SettingsRow.HideNowPlayingTray -> {
                 haptics.toggle(on = !hideNowPlayingTray)
@@ -270,6 +275,13 @@ fun SettingsScreen(
                 focused,
                 value = if (!immersive) "Full screen only" else if (titleBarBattery) "Shown" else "Hidden",
                 enabled = immersive,
+                showChevron = false,
+            )
+            // Nostalgic (D-109): the original's own Now Playing, with no playback keys on the display.
+            SettingsRow.NowPlayingLayout -> MenuRow(
+                "Now Playing",
+                focused,
+                value = if (nostalgicNowPlaying) "Nostalgic" else "New",
                 showChevron = false,
             )
             // The tray slides away on Now Playing when nothing has been touched (D-108); the Wheel's

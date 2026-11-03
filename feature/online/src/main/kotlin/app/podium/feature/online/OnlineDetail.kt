@@ -26,6 +26,7 @@ import app.podium.core.model.Track
 import app.podium.sources.api.AlbumSummary
 import app.podium.sources.api.ArtistSummary
 import app.podium.sources.api.PlaylistSummary
+import androidx.compose.runtime.rememberCoroutineScope
 
 private sealed interface ArtistRow {
     data object Header : ArtistRow
@@ -49,6 +50,7 @@ fun OnlineArtistScreen(place: OnlinePlace.Artist, repository: OnlineRepository, 
     val related = rememberRemote(place.id) { if (canRelate) repository.relatedArtists(place.id) else app.podium.core.common.Outcome.Success(emptyList()) }
     val likedIds by repository.likedIds.collectAsStateWithLifecycle()
     val overlayHost = overlay()
+    val scope = rememberCoroutineScope()
     val d = (detail as? Remote.Ready)?.value
     val songs = d?.tracks.orEmpty().filter { it.availability !is Availability.Unavailable }
     val rows = remember(d, related) {
@@ -89,7 +91,7 @@ fun OnlineArtistScreen(place: OnlinePlace.Artist, repository: OnlineRepository, 
         }
     }
     val longPress: (Int) -> Unit = { i ->
-        (rows.getOrNull(i) as? ArtistRow.Song)?.let { showTrackMenu(overlayHost, it.track, repository, actions, navigate) }
+        (rows.getOrNull(i) as? ArtistRow.Song)?.let { showTrackMenu(overlayHost, it.track, repository, actions, scope, navigate) }
     }
     ListInputEffect(focus, onActivate = activate, onLongPress = longPress)
     when (detail) {
@@ -168,6 +170,7 @@ fun OnlineCollectionScreen(place: OnlinePlace.Collection, repository: OnlineRepo
     val detail = rememberRemote(place.id) { repository.collection(place.id) }
     val likedIds by repository.likedIds.collectAsStateWithLifecycle()
     val overlayHost = overlay()
+    val scope = rememberCoroutineScope()
     val d = (detail as? Remote.Ready)?.value
     val playable = d?.tracks.orEmpty().filter { it.availability !is Availability.Unavailable }
     // An album leads to its artist (the one most of its songs credit, when the source links them).
@@ -190,13 +193,13 @@ fun OnlineCollectionScreen(place: OnlinePlace.Collection, repository: OnlineRepo
             // The whole album or playlist goes to whoever plays it, from the chosen song (§8.5).
             CollectionRow.Play -> actions.playCollection(playable, 0, label, place.id)
             CollectionRow.Shuffle -> actions.playCollection(playable, 0, label, place.id, shuffle = true)
-            CollectionRow.Save -> showAddToPlaylist(overlayHost, playable, repository, navigate)
+            CollectionRow.Save -> showAddToPlaylist(overlayHost, playable, repository, scope, navigate = navigate)
             is CollectionRow.Song -> playable.indexOfFirst { it.id == row.track.id }.takeIf { it >= 0 }?.let { actions.playCollection(playable, it, label, place.id) }
             else -> Unit
         }
     }
     val longPress: (Int) -> Unit = { i ->
-        (rows.getOrNull(i) as? CollectionRow.Song)?.let { showTrackMenu(overlayHost, it.track, repository, actions, navigate) }
+        (rows.getOrNull(i) as? CollectionRow.Song)?.let { showTrackMenu(overlayHost, it.track, repository, actions, scope, navigate) }
     }
     ListInputEffect(focus, onActivate = activate, onLongPress = longPress)
     when (detail) {

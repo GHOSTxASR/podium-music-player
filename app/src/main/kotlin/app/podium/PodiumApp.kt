@@ -169,6 +169,7 @@ import app.podium.feature.nowplaying.UpNextScreen
 import app.podium.feature.online.OnlineActions
 import app.podium.feature.online.OnlinePlace
 import app.podium.feature.online.OnlineScreen
+import app.podium.feature.online.showAddToPlaylist
 import app.podium.feature.settings.AppearanceLevel
 import app.podium.feature.settings.AppearanceScreen
 import app.podium.feature.settings.BackgroundScreen
@@ -197,6 +198,7 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import app.podium.core.interaction.LocalHapticEngine
 import app.podium.core.interaction.HapticEngine
+import app.podium.core.interaction.rememberPodiumHaptics
 import app.podium.space.SpacePanel
 import app.podium.space.SpacePhase
 import app.podium.space.SpacePage
@@ -467,7 +469,7 @@ fun PodiumApp(graph: AppGraph, onSourceAction: (CapabilityAction) -> Unit, onTur
         val hapticEngine = remember(view) { HapticEngine(view.context, view) }
         val haptics = remember(hapticEngine, feedback) { PodiumHaptics(hapticEngine, feedback) }
         // Add to playlist (D-106), from the library's song menus and Now Playing.
-        val playlistPicker = remember(navigator, haptics) { PlaylistPicker(graph.playlists, haptics) { navigator.push(Dest.NamePlaylist()) } }
+        val playlistPicker = remember(navigator, haptics) { PlaylistPicker(graph.playlists, haptics, graph.appScope) { navigator.push(Dest.NamePlaylist()) } }
         val scope = rememberCoroutineScope()
 
         SystemBarIcons(darkIcons = palette.isLight)
@@ -1049,6 +1051,7 @@ private fun ScreenContent(
 ) {
     val podiumSpace = app.podium.space.LocalPodiumSpace.current
     val overlay = LocalOverlayHost.current
+    val haptics = rememberPodiumHaptics()
     val controller = graph.playbackController
     val settings = graph.deviceSettings
     val onlineStatus by graph.online.status.collectAsStateWithLifecycle()
@@ -1143,14 +1146,20 @@ private fun ScreenContent(
             graph.favorites,
             onUpNext = { navigator.push(Dest.UpNext) },
             environmentOf = { id -> if (graph.environments.isOnline(id)) "Online" else null },
-            // A song of the library can go into one of its playlists (D-106); online songs never do (D-34).
+            // A song of the library goes into one of its playlists (D-106); an online song into one of
+            // ONLINE's own (D-109). The two environments never share a playlist (D-34).
             onAddToPlaylist = LocalPlaylistPicker.current?.let { picker -> { id -> if (!graph.environments.isOnline(id)) picker.show(overlay, listOf(id)) } },
+            onAddOnlineToPlaylist = { track ->
+                // Already there: the add takes nothing and the reject says so (D-110).
+                showAddToPlaylist(overlay, listOf(track), graph.online, graph.appScope, haptics) { place -> navigator.push(Dest.Online(place)) }
+            },
             onLyrics = { navigator.push(Dest.Lyrics) },
             trackOf = { id -> graph.songPages.of(id) },
             sleepTimer = graph.sleepTimer,
             pulse = graph.audioPulse,
-            // Settings ▸ Now Playing's tray (D-108).
+            // Settings ▸ Now Playing's tray (D-108) and Settings ▸ Now Playing (D-109).
             autoHideTray = graph.deviceSettings.hideNowPlayingTray.collectAsStateWithLifecycle().value,
+            nostalgic = graph.deviceSettings.nostalgicNowPlaying.collectAsStateWithLifecycle().value,
             // Each page in the song's own environment (D-34): the library's, or online's.
             onOpenAlbum = { track ->
                 val album = track.album

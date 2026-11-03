@@ -114,6 +114,11 @@ class NowPlayingLayoutTest {
 
     @Test fun largeDevice() = check("large-square", LARGE, Art.SQUARE)
 
+    /** The nostalgic screen (D-109): no playback keys, the visualiser in their place. */
+    @Test fun nostalgicPhone() = check("nostalgic-square", PHONE, Art.SQUARE, nostalgic = true)
+
+    @Test fun nostalgicCarbon() = check("nostalgic-carbon", PHONE, Art.SQUARE, theme = DisplayTheme.CARBON, nostalgic = true)
+
     /** Another source's copy is playing: Podium knows which (D-36), the listener isn't told. */
     @Test fun fallbackCopyIsNotNamed() = check("phone-fallback", PHONE, Art.SQUARE, fallback = true)
 
@@ -192,6 +197,7 @@ class NowPlayingLayoutTest {
         environment: String? = null,
         font: DisplayFont = DisplayFont.CLASSIC,
         theme: DisplayTheme = DisplayTheme.GLASS,
+        nostalgic: Boolean = false,
     ) {
         RuntimeEnvironment.setQualifiers(qualifiers)
         val controller = FakeController(art, longTitle, fallback, status, recovery)
@@ -217,7 +223,7 @@ class NowPlayingLayoutTest {
                             screen = {
                                 if (carbon) AlbumAtmosphere(cover?.field, level = { 1f }, Modifier.fillMaxSize())
                                 CompositionLocalProvider(LocalScreenInsets provides ScreenInsets(top = ScreenHeaderHeight, bottom = Spacing.edge)) {
-                                    NowPlayingScreen(controller, FakeVolume, FakeFavorites, onUpNext = {}, environmentOf = { environment })
+                                    NowPlayingScreen(controller, FakeVolume, FakeFavorites, onUpNext = {}, environmentOf = { environment }, nostalgic = nostalgic)
                                 }
                                 ScreenHeader("Now Playing", canGoBack = true, onBack = {}, playing = status == PlaybackStatus.Playing)
                             },
@@ -244,9 +250,12 @@ class NowPlayingLayoutTest {
             node.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty().any { it in DISPLAY_CONTENT || it == "Pause" }
         }
         val found = onScreen.flatMap { it.config[SemanticsProperties.ContentDescription] }.toSet()
-        // While a song loads, the bar is replaced by the word; a playing song offers Pause.
+        // While a song loads, the bar is replaced by the word; a playing song offers Pause; and the
+        // nostalgic screen has no playback keys at all (D-109), which is the whole point of it.
         val expected = (if (status == PlaybackStatus.Loading) DISPLAY_CONTENT - "Song position" else DISPLAY_CONTENT)
             .let { if (status == PlaybackStatus.Playing) it - "Play" + "Pause" else it }
+            .let { if (nostalgic) it - TRANSPORT else it }
+        if (nostalgic) assertTrue(found.none { it in TRANSPORT }, "the nostalgic screen still has keys: ${found.filter { it in TRANSPORT }} ($name)")
         assertTrue(found.containsAll(expected), "missing on the display: ${expected - found} ($name)")
         // Every node drawn by the display, labelled or not, stays inside it.
         displayNode.descendants().forEach { node ->
@@ -379,6 +388,9 @@ class NowPlayingLayoutTest {
         const val SMALL = "w320dp-h568dp-port-xhdpi"
         const val COMPACT = "w360dp-h640dp-port-xhdpi"
         const val LARGE = "w600dp-h960dp-port-xhdpi"
+
+        /** The playback keys, which only the new screen has (D-109). */
+        val TRANSPORT = setOf("Previous track", "Play", "Pause", "Next track")
 
         /** Everything Now Playing puts on the display, by accessibility label. */
         val DISPLAY_CONTENT = setOf(

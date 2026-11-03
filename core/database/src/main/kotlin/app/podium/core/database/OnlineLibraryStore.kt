@@ -12,7 +12,7 @@ import java.util.UUID
 /** An online playlist as lists show it. */
 data class OnlinePlaylistInfo(val id: String, val sourceId: SourceId, val name: String, val trackCount: Int, val updatedAt: Long)
 
-/** One entry of an online playlist (the same song may appear twice; [entryId] tells them apart). */
+/** One entry of an online playlist; [entryId] is the row, which a move and a remove work on. */
 data class OnlinePlaylistEntry(val entryId: Long, val track: Track)
 
 data class OnlinePlaylistDetail(val info: OnlinePlaylistInfo, val entries: List<OnlinePlaylistEntry>)
@@ -122,16 +122,30 @@ class OnlineLibraryStore(
 
     suspend fun delete(id: String) = dao.deletePlaylist(id)
 
-    /** Add songs at the end, in order. Duplicates are allowed (the UI asks first). */
-    suspend fun add(id: String, tracks: List<Track>) {
-        if (tracks.isEmpty()) return
+    /**
+      * Adds songs at the end, in order, leaving out any the playlist already holds and any repeated
+      * within [tracks] itself (D-110): a playlist holds a song once. Returns how many went in.
+      */
+    suspend fun add(id: String, tracks: List<Track>): Int {
+        if (tracks.isEmpty()) return 0
         remember(tracks)
-        db.withWriteTransaction {
+        return db.withWriteTransaction {
+            val seen = dao.trackIds(id).toHashSet()
+            val fresh = tracks.filter { seen.add(it.id.value) }
+            if (fresh.isEmpty()) return@withWriteTransaction 0
             val last = dao.positions(id).lastOrNull()?.position ?: 0.0
             val at = now()
-            dao.insertEntries(tracks.mapIndexed { i, t -> OnlinePlaylistTrackEntity(playlistId = id, trackId = t.id.value, position = last + i + 1, addedAt = at) })
+            dao.insertEntries(fresh.mapIndexed { i, t -> OnlinePlaylistTrackEntity(playlistId = id, trackId = t.id.value, position = last + i + 1, addedAt = at) })
             dao.touch(id, at)
+            fresh.size
         }
+    }
+
+    /** Of ONLINE's playlists, those that already hold every one of [tracks] (D-110). */
+    suspend fun playlistsHoldingAll(tracks: List<Track>): Set<String> {
+        val ids = tracks.map { it.id.value }.distinct()
+        if (ids.isEmpty()) return emptySet()
+        return dao.playlistsHoldingAll(ids, ids.size).toSet()
     }
 
     suspend fun remove(id: String, entryId: Long) {

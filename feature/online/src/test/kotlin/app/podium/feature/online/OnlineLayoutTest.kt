@@ -182,7 +182,7 @@ class OnlineLayoutTest {
         override suspend fun createPlaylist(name: String, tracks: List<Track>) = "p"
         override fun renamePlaylist(id: String, name: String) = Unit
         override fun deletePlaylist(id: String) = Unit
-        override fun addToPlaylist(id: String, tracks: List<Track>) = Unit
+        override fun addToPlaylist(id: String, tracks: List<Track>, onAdded: (Int) -> Unit) = Unit
         override fun removeFromPlaylist(id: String, entryId: Long) = Unit
         override fun movePlaylistEntry(id: String, entryId: Long, toIndex: Int) = Unit
         override val recentlyPlayed: Flow<List<Track>> = flowOf(SONGS.drop(2))

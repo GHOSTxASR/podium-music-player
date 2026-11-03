@@ -61,6 +61,7 @@ private sealed interface MineRow {
 fun OnlineMyPlaylistScreen(place: OnlinePlace.MyPlaylist, repository: OnlineRepository, actions: OnlineActions, navigate: (OnlinePlace) -> Unit) {
     val contents by remember(place.id) { repository.playlist(place.id) }.collectAsStateWithLifecycle(initialValue = null)
     val overlayHost = overlay()
+    val scope = rememberCoroutineScope()
     val c = contents
     val entries = c?.entries.orEmpty()
     val playable = entries.map { it.track }.filter { it.availability !is Availability.Unavailable }
@@ -101,7 +102,7 @@ fun OnlineMyPlaylistScreen(place: OnlinePlace.MyPlaylist, repository: OnlineRepo
                         if (row.index > 0) add(MenuAction("Move up") { repository.movePlaylistEntry(place.id, row.entry.entryId, row.index - 1) })
                         if (row.index < entries.lastIndex) add(MenuAction("Move down") { repository.movePlaylistEntry(place.id, row.entry.entryId, row.index + 1) })
                         add(MenuAction("Remove from playlist") { repository.removeFromPlaylist(place.id, row.entry.entryId) })
-                        add(MenuAction("More…") { showTrackMenu(overlayHost, track, repository, actions, navigate) })
+                        add(MenuAction("More…") { showTrackMenu(overlayHost, track, repository, actions, scope, navigate) })
                     },
                 ),
             )

@@ -68,6 +68,17 @@ interface OnlineDao {
     )
     fun entries(id: String): Flow<List<OnlinePlaylistEntryRow>>
 
+    /** Every song the playlist holds, to keep one out that is already in it (D-110). */
+    @Query("SELECT track_id FROM online_playlist_track WHERE playlist_id = :id")
+    suspend fun trackIds(id: String): List<String>
+
+    /** The playlists that already hold every one of [trackIds], so a menu can say so (D-110). */
+    @Query(
+        "SELECT playlist_id FROM online_playlist_track WHERE track_id IN (:trackIds) " +
+            "GROUP BY playlist_id HAVING COUNT(DISTINCT track_id) = :count",
+    )
+    suspend fun playlistsHoldingAll(trackIds: List<String>, count: Int): List<String>
+
     @Query("SELECT id, position FROM online_playlist_track WHERE playlist_id = :id ORDER BY position, id")
     suspend fun positions(id: String): List<EntryPosition>
 

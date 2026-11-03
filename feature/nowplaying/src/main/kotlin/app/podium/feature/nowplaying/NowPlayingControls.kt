@@ -49,11 +49,13 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.runtime.State
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
@@ -98,11 +100,40 @@ private val Gutter = Spacing.edge
  */
 private val GroupGap = Spacing.l
 
+/**
+ * How far the tray has slid away (D-108): 0 while it is up, 1 once it is gone. One spring drives both
+ * the tray and the content above it, so they move as one piece.
+ */
+@Composable
+internal fun rememberTrayAway(p: NowPlayingParts): State<Float> {
+    val motion = PodiumTheme.motion
+    return animateFloatAsState(
+        if (p.trayHidden) 1f else 0f,
+        if (motion.reduced) tween(0) else spring(dampingRatio = 0.92f, stiffness = 420f),
+        label = "trayAway",
+    )
+}
+
+/**
+ * Everything above the tray relaxes down into the space the tray leaves (D-109), by half of it, so it
+ * settles in the middle of the taller area instead of dropping to the floor — and draws back up when
+ * the tray returns. Read in the draw phase: the whole move costs no recomposition and no relayout, so
+ * the cover is never resized frame by frame.
+ */
+internal fun Modifier.relaxWithTray(away: State<Float>, freed: Dp): Modifier =
+    graphicsLayer { translationY = away.value * freed.toPx() / 2f }
+
+/** The tray's own height, and the gap above it: the space it leaves when it goes. */
+internal val TrayHeight = 48.dp
+internal val TrayHeightCompact = 44.dp
+
 /** Stacked Now Playing: cover and status, then the song, the seek bar, the keys, the tray. */
 @Composable
 internal fun StackedPortrait(p: NowPlayingParts) {
+    val away = rememberTrayAway(p)
     // The screen's insets already hold the edge margin above (under the title bar) and below.
     Column(Modifier.fillMaxSize().padding(horizontal = Gutter)) {
+        Column(Modifier.weight(1f).relaxWithTray(away, GroupGap + TrayHeight)) {
         // The cover as large as the column allows, sitting on the song's title; its facts beside its
         // lower edge, like a caption.
         BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
@@ -123,10 +154,69 @@ internal fun StackedPortrait(p: NowPlayingParts) {
         NowPlayingProgress(p)
         Spacer(Modifier.height(GroupGap - TextInkInset))
         NowPlayingTransport(p, Modifier.align(Alignment.CenterHorizontally))
+        }
         Spacer(Modifier.height(GroupGap))
-        NowPlayingActions(p)
+        NowPlayingActions(p, away = away)
     }
 }
+
+/**
+ * Nostalgic Now Playing (D-109): the original's own screen. The cover beside its facts, the song
+ * centred beneath it, the seek bar, and — where the transport keys would be — the vinyl's capsule of
+ * dots moving with the music. No playback keys at all: the Wheel plays, pauses and skips, as it did on
+ * the thing this is modelled on. The tray still slides away with the setting on (D-108), and
+ * everything relaxes down into its place.
+ */
+@Composable
+internal fun NostalgicPortrait(p: NowPlayingParts) {
+    val away = rememberTrayAway(p)
+    // The content keeps the wider margin the screen had before D-103; the tray keeps the display's own
+    // edge margin, as every tray does, so it stays concentric with the display's corners.
+    Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
+        Column(
+            Modifier.weight(1f).padding(horizontal = NostalgicGutter).relaxWithTray(away, Spacing.s + TrayHeight),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            // The cover at the left with its facts beside it, both centred in what the rest leaves.
+            BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
+                val travel = artTravel(rowWidth = maxWidth, startInset = NostalgicGutter)
+                Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
+                    // Wider than the screen gave it before D-103 (0.62): with no transport beneath, the
+                    // cover is what the extra room should go to, as it did on the thing this follows.
+                    BoxWithConstraints(Modifier.weight(0.70f).fillMaxHeight().zIndex(1f), contentAlignment = Alignment.CenterStart) {
+                        ArtworkStage(p, maxWidth, maxHeight, travel)
+                    }
+                    Spacer(Modifier.width(Spacing.m))
+                    StatusColumn(p, Modifier.weight(0.30f))
+                }
+            }
+            Spacer(Modifier.height(Spacing.m))
+            TrackText(p.item, Alignment.CenterHorizontally, TextAlign.Center)
+            Spacer(Modifier.height(Spacing.s + Spacing.xxs))
+            NowPlayingProgress(p)
+            Spacer(Modifier.height(Spacing.s))
+            DotVisualiser(
+                p.controller,
+                p.pulse,
+                playing = p.playing,
+                modifier = Modifier.fillMaxWidth(NostalgicVisualiserWidth).height(NostalgicVisualiserHeight).testTag(VisualiserTestTag),
+                height = NostalgicVisualiserHeight,
+            )
+        }
+        Spacer(Modifier.height(Spacing.s))
+        Box(Modifier.padding(horizontal = Spacing.edge)) { NowPlayingActions(p, away = away) }
+    }
+}
+
+/** The visualiser standing in for the transport, for the tests that check the nostalgic screen has one. */
+internal const val VisualiserTestTag = "nowPlayingVisualiser"
+
+/** The nostalgic layout keeps the wider margin the screen had before D-103 brought everything to the edge. */
+private val NostalgicGutter = Spacing.xl
+
+/** The visualiser in the transport's place: the vinyl's own capsule, a little inset from the margins. */
+private const val NostalgicVisualiserWidth = 0.88f
+private val NostalgicVisualiserHeight = 40.dp
 
 /**
  * The seek bar and the times under it; the volume bar in its place while the Wheel turns the volume;
@@ -340,20 +430,15 @@ private val OrbCompact = 60.dp
  * accent; in the Wheel's action mode a key slides beneath the focused action.
  */
 @Composable
-internal fun NowPlayingActions(p: NowPlayingParts, compact: Boolean = false) {
+internal fun NowPlayingActions(p: NowPlayingParts, compact: Boolean = false, away: State<Float>) {
     val colors = PodiumTheme.colors
     val tone = LocalAlbumTone.current
     val motion = PodiumTheme.motion
-    val height = if (compact) 44.dp else 48.dp
+    val height = if (compact) TrayHeightCompact else TrayHeight
     val lensVisible = p.mode == WheelMode.Actions && !p.trayHidden
-    // Hidden (D-108), it slides down off the display and fades. Its place is kept, so the cover, the
-    // song and the orb stay exactly where they were and only the tray goes. Read while drawing: the
-    // slide costs no recomposition, and once it is out its own layer takes it out of reach of a touch.
-    val away = animateFloatAsState(
-        if (p.trayHidden) 1f else 0f,
-        if (motion.reduced) tween(0) else spring(dampingRatio = 0.92f, stiffness = 420f),
-        label = "trayAway",
-    )
+    // Hidden (D-108), it slides down off the display and fades while the rest of the screen relaxes
+    // down behind it (D-109). Read while drawing: the slide costs no recomposition, and once it is out
+    // its own layer takes it out of reach of a touch.
     val style = colors.style
     // At the display's foot, the edge margin in: concentric with its corners (D-103).
     val tray = if (style == DisplayStyle.INDUSTRIAL) RoundedCornerShape(2.dp) else ContinuousShape(EdgeCorner)

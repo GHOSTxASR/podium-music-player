@@ -132,6 +132,14 @@ class SharedPrefsDeviceSettings(context: Context) : DeviceSettingsRepository {
         prefs.edit { putBoolean(KEY_HIDE_TRAY, enabled) }
     }
 
+    private val _nostalgicNowPlaying = MutableStateFlow(prefs.getBoolean(KEY_NOSTALGIC, false))
+    override val nostalgicNowPlaying: StateFlow<Boolean> = _nostalgicNowPlaying.asStateFlow()
+
+    override fun setNostalgicNowPlaying(enabled: Boolean) {
+        _nostalgicNowPlaying.value = enabled
+        prefs.edit { putBoolean(KEY_NOSTALGIC, enabled) }
+    }
+
     override fun setAutoplay(enabled: Boolean) {
         _autoplay.value = enabled
         prefs.edit { putBoolean(KEY_AUTOPLAY, enabled) }
@@ -245,6 +253,7 @@ class SharedPrefsDeviceSettings(context: Context) : DeviceSettingsRepository {
         const val KEY_GRAIN = "grain"
         const val KEY_SOUND = "startup_sound"
         const val KEY_HIDE_TRAY = "hide_now_playing_tray"
+        const val KEY_NOSTALGIC = "nostalgic_now_playing"
         const val KEY_DISPLAY = "display_theme"
         const val KEY_HAPTICS = "haptics"
         const val KEY_HAPTIC_PROFILE = "haptic_profile"

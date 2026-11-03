@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.5.1] - 2026-11-03
+
+### Added
+- **A nostalgic Now Playing (D-109):** Settings ▸ Now Playing switches between New and Nostalgic. The nostalgic screen is the one Podium had before the redesign, with the playback buttons taken out — the cover beside its facts, the song centred under it, the seek bar — and the vinyl's dot visualiser dancing where the buttons used to be. The Wheel plays, pauses and skips, the way the original did; the light in the title bar tells you which it is. The tray hides on it just the same.
+- **Add an online song to a playlist (D-109):** Now Playing ▸ More now offers Add to playlist for an online song as well as one of your own, putting it in one of your online playlists. Your two libraries' playlists stay separate, as they always have.
+
+### Changed
+- **No duplicates in a playlist (D-110):** adding a song to a playlist that already has it no longer puts it in twice — anywhere you can add one, from a song's menu, an album, Add songs, or Now Playing ▸ More, for your own music and for online songs. Playlists that already have it are marked **Added** in the list, so you can see it before you choose; choosing one anyway adds nothing and the Wheel says so.
+- **The screen relaxes when the tray hides (D-109):** with Now Playing's tray set to hide, the cover, the song, the seek bar and the orb now ease down into the space it leaves instead of staying put, and draw back up when it returns.
+
+
 ## [0.1.5] - 2026-11-02
 
 ### Added

@@ -31,9 +31,12 @@ import app.podium.core.interaction.FocusListState
 import app.podium.core.interaction.rememberFocusListState
 import app.podium.core.model.Availability
 import app.podium.core.model.Track
+import app.podium.core.interaction.PodiumHaptics
 import app.podium.sources.api.ArtistSummary
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
 
 /** A call to the online source, as a screen shows it. */
 sealed interface Remote<out T> {
@@ -162,6 +165,7 @@ fun showTrackMenu(
     track: Track,
     repository: OnlineRepository,
     actions: OnlineActions,
+    scope: CoroutineScope,
     navigate: (OnlinePlace) -> Unit,
 ) {
     val canRecommend = repository.canStartRadio(track)
@@ -177,7 +181,7 @@ fun showTrackMenu(
                     add(MenuAction("Add to Up Next") { actions.addToQueue(track) })
                 }
                 add(MenuAction(if (liked) "Remove from liked songs" else "Like") { repository.setLiked(track, !liked) })
-                add(MenuAction("Add to playlist") { showAddToPlaylist(overlay, listOf(track), repository, navigate) })
+                add(MenuAction("Add to playlist") { showAddToPlaylist(overlay, listOf(track), repository, scope, navigate = navigate) })
                 if (canRecommend && playable) add(MenuAction("Start radio") { actions.startRadio(track) })
                 val album = track.album
                 if (album?.id != null) add(MenuAction("Go to album") { navigate(OnlinePlace.Collection(app.podium.core.model.PlaylistId(album.id!!.value), album.title, isAlbum = true)) })
@@ -188,17 +192,40 @@ fun showTrackMenu(
     )
 }
 
-/** Choose one of the online playlists, or start a new one with these songs. */
-fun showAddToPlaylist(overlay: OverlayHost, tracks: List<Track>, repository: OnlineRepository, navigate: (OnlinePlace) -> Unit) {
-    val playlists = repository.cachedPlaylists
-    overlay.show(
-        MenuSpec(
-            "Add to playlist",
-            listOf(MenuAction("New playlist") { PendingPlaylist.tracks = tracks; navigate(OnlinePlace.NamePlaylist()) }) +
-                playlists.map { p -> MenuAction(p.name) { repository.addToPlaylist(p.id, tracks) } },
-        ),
-    )
+/**
+ * Choose one of the online playlists, or start a new one with these songs. A playlist that already
+ * has them takes nothing and says so with a reject (D-110).
+ */
+fun showAddToPlaylist(
+    overlay: OverlayHost,
+    tracks: List<Track>,
+    repository: OnlineRepository,
+    scope: CoroutineScope,
+    haptics: PodiumHaptics? = null,
+    navigate: (OnlinePlace) -> Unit,
+) {
+    scope.launch {
+        // One indexed read before the menu opens, so each playlist can say whether it has them.
+        val holding = repository.playlistsHoldingAll(tracks)
+        val playlists = repository.cachedPlaylists
+        overlay.show(
+            MenuSpec(
+                "Add to playlist",
+                listOf(MenuAction("New playlist") { PendingPlaylist.tracks = tracks; navigate(OnlinePlace.NamePlaylist()) }) +
+                    playlists.map { p ->
+                        MenuAction(p.name, note = if (p.id in holding) ADDED else null) {
+                            repository.addToPlaylist(p.id, tracks) { added ->
+                                if (added > 0) haptics?.confirm() else haptics?.reject()
+                            }
+                        }
+                    },
+            ),
+        )
+    }
 }
+
+/** What a playlist that already holds the songs says (D-110). */
+const val ADDED = "Added"
 
 /** Songs waiting to go into a playlist that's being named (transient: a step of one flow). */
 object PendingPlaylist {

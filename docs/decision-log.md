@@ -1924,8 +1924,8 @@ Every significant decision, newest at the bottom. Major ones have an ADR in `adr
     made for songs from a menu goes back to where you were. Rename uses the same screen.
   - **Add to playlist** in every song menu of the library (Songs, an album, Favorites, a playlist)
     and Now Playing's More for the library's songs: New playlist, or one of the playlists, with a
-    confirming tap. An album's song menu also offers Add album to playlist. A song can be added
-    twice (the listener chose it).
+    confirming tap. An album's song menu also offers Add album to playlist. A song could be
+    added twice (the listener chose it) — reversed by D-110: a playlist holds a song once.
   - **Shared and fixed on the way:** the paper text field (`PaperTextField`) and the keyboard's
     leaving with its screen (`KeyboardAwayOnLeave`) moved into the design system for ONLINE's and
     LOCAL's naming. Menus and paper lists key their rows by place or id, never by label: two
@@ -2049,3 +2049,84 @@ Every significant decision, newest at the bottom. Major ones have an ADR in `adr
   instrument tests across the design system, library, online and orb look tests, and the whole suite
   besides `:player:service`, whose crossfade and pipeline tests are flaky run to run and cannot see any
   of this. Installed and opened on the phone, portrait; the owner tried the rest.
+### D-109 · A nostalgic Now Playing, a screen that relaxes, and playlists for an online song
+- **Context:** the owner's brief (2026-11-02/03), three things: Add to playlist from Now Playing's More
+  for a song it doesn't offer it for; the screen relaxing down into the space the tray leaves instead
+  of standing still (D-108 kept its place deliberately — this withdraws that); and a **nostalgic**
+  Now Playing, the screen as it was before D-101/D-103 with the playback controls taken out, as close
+  to the original's as the interaction can be. The tray hides on it too, and the vinyl's visualiser
+  fills the place the transport had.
+- **Decision:**
+  - **Add to playlist for an online song.** Now Playing's More has offered it since D-106, but only
+    for a song of the library; an online song had no door, although ONLINE has had its own playlists
+    since D-34 and every other online song menu offers them. Now the one entry routes by environment:
+    the library's playlists for a song of the library, ONLINE's own for an online song (which needs
+    the song looked up in full, the same lookup Go to album waits for, so the menu asks again when it
+    is not in yet). Never while another device is playing. The two environments still never share a
+    playlist.
+  - **The screen relaxes with the tray.** When the tray slides away (D-108), everything above it —
+    cover, facts, song, seek bar, and the orb or the visualiser — eases down by **half** the space the
+    tray leaves, so it settles in the middle of the taller display rather than dropping to the floor,
+    and draws back up when the tray returns. One spring (420 / 0.92) drives the tray and the content
+    together. It is a translation read in the draw phase: no recomposition, no relayout, so the cover
+    is never resized frame by frame. D-108's "its place is kept, so nothing else moves" is withdrawn.
+  - **Settings ▸ Now Playing**: "New" or "Nostalgic", New by default, beside Now Playing's tray.
+  - **The nostalgic screen** (`NostalgicPortrait`): the arrangement Now Playing had before D-103 —
+    the cover at the left with its facts beside it, both centred in what the rest leaves; the song's
+    title, artist and album **centred** beneath; the seek bar with its times; and the action tray. The
+    cover takes 70 % of its row rather than the 62 % it had then: with no transport beneath it, the
+    room the keys used to take is the cover's, which is where the original put it. Its
+    content keeps the **20 dp** margin the screen had then, while the tray keeps the display's own
+    10 dp edge margin, as every tray does, so it stays concentric with the display's corners (D-103).
+    - **No playback keys at all.** No orb, no ⏮ or ⏭: the Wheel plays, pauses, skips and scrubs, as it
+      did on the thing this is modelled on. The title bar's play light still says which it is, and
+      blinks while paused (D-107).
+    - **The vinyl's visualiser stands in their place** (D-104's capsule of dots, seven rows deep,
+      88 % of the content's width and 40 dp tall). The drawing is now shared: the vinyl's stage and
+      this both call one `drawDotVisualiser`, and read the same loudness curve. Stopped, this one
+      falls away to the single lit line and **stops asking for frames** — unlike the vinyl's, which
+      idles on, because there the turning record already says the music is only paused.
+    - Short displays use it too: with no transport it fits where the stacked screen would not.
+- **Verified:** 7 Robolectric tests of the nostalgic screen and its neighbours (no play, pause,
+  previous or next key on it and the visualiser in their place; the new screen keeps its keys and has
+  no visualiser; both screens relax down when the tray goes and draw back up when the Wheel brings it
+  back; an online song reaches ONLINE's playlists and never the library's; a song of the library the
+  other way; nothing offered when there is nowhere to put it), two rendered layout checks of the
+  nostalgic screen on Glass and Carbon — which also hold it to the display's edge margins and to
+  having no playback keys — and the suite besides `:player:service`, whose crossfade and pipeline
+  tests are flaky run to run and cannot see any of this.
+### D-110 · A playlist holds a song once
+- **Context:** the owner (2026-11-03), after adding the same song to a playlist twice from Now Playing:
+  "for every playlist addition feature, like wherever we can add a song to a playlist, make sure that
+  song isn't already there in the playlist so duplicates don't get created." This **reverses D-106**,
+  which allowed a song twice on the reasoning that the listener had chosen it.
+- **Decision:**
+  - **The two stores refuse a repeat**, not the screens: `LocalPlaylistStore.add` and
+    `OnlineLibraryStore.add` leave out any song the playlist already holds, and any repeated within
+    the batch itself. One hash set does both jobs — it starts as what the playlist holds and
+    refuses a second helping of the same id. Enforcing it there covers every way a song is offered a
+    playlist, now and later: the library's song menus, Add album to playlist, a playlist's own song
+    menu, Add songs, Now Playing ▸ More for a song of the library and for an online song (D-109),
+    ONLINE's song menus, Save in an online collection, and both New playlist flows (which create then
+    add). Nothing is deduplicated in the UI, so no screen can forget to.
+  - **Both `add`s return how many went in**, and both repositories pass that to an optional
+    `onAdded`, called on the main thread. Where a picker has haptics it uses it: something added is a
+    confirm, nothing added is a **reject** (D-105's "that did nothing"), so choosing a playlist that
+    already has the song says so instead of looking like it worked. `feature:online`'s own menus give
+    no haptics for any action, so they stay silent there; Now Playing's online path, wired in the app,
+    does give the reject.
+  - **The menu says so before it is chosen.** `MenuAction` gained a `note`, which a menu row shows as
+    its quiet right-hand word, and both pickers read one indexed query first: the playlists that
+    already hold **every** one of the songs are marked **"Added"**, the same word Add songs puts on a
+    row (D-106). Marked only when choosing it would do nothing — for several songs at once (Add
+    album to playlist), a playlist holding some of them stays unmarked, because the rest would go in.
+    The row is still live, so choosing it answers with the reject rather than being unreachable.
+  - **Order and position are unchanged.** What is new goes on the end in the order given, keeping the
+    fractional positions a move relies on; a song removed from a playlist can be added again, landing
+    at the end as a new entry.
+- **Verified:** store tests on both sides, the membership query a menu marks from (one song, two
+  songs where only a playlist with both counts, a song in none, an empty list, the same song named
+  twice), — a song in once and never again, a batch taking only what
+  is new and never repeating within itself, a song removed going back in at the end, a new playlist
+  made with the same song twice holding it once, and ONLINE's playlist keeping its moves and removes
+  with the duplicate gone. D-106's "a song twice" test is reversed. The whole suite passes.

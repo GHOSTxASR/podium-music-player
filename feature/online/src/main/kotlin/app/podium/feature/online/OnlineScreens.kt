@@ -345,6 +345,7 @@ fun OnlineTrackList(
 ) {
     val likedIds by repository.likedIds.collectAsStateWithLifecycle()
     val overlayHost = overlay()
+    val scope = rememberCoroutineScope()
     val rows = remember(tracks.toList(), lead) { lead.map { Row.Action(it) } + tracks.mapIndexed { i, t -> Row.Song(t, i) } }
     val focus = rememberFocusListState(stateKey)
     val playable = remember(tracks.toList()) { tracks.filter { it.availability !is app.podium.core.model.Availability.Unavailable } }
@@ -356,7 +357,7 @@ fun OnlineTrackList(
         }
     }
     val longPress: (Int) -> Unit = { i ->
-        (rows.getOrNull(i) as? Row.Song)?.let { showTrackMenu(overlayHost, it.track, repository, actions, navigate) }
+        (rows.getOrNull(i) as? Row.Song)?.let { showTrackMenu(overlayHost, it.track, repository, actions, scope, navigate) }
     }
     ListInputEffect(focus, onActivate = activate, onLongPress = longPress)
     PageNearEnd(focus, rows.size, exhausted, onNearEnd)

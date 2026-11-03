@@ -240,7 +240,7 @@ class PaperLayoutTest {
         override suspend fun create(name: String, songs: List<TrackId>) = "p9"
         override fun rename(id: String, name: String) = Unit
         override fun delete(id: String) = Unit
-        override fun add(id: String, songs: List<TrackId>) = Unit
+        override fun add(id: String, songs: List<TrackId>, onAdded: (Int) -> Unit) = Unit
         override fun remove(id: String, entryId: Long) = Unit
         override fun move(id: String, entryId: Long, toIndex: Int) = Unit
     }

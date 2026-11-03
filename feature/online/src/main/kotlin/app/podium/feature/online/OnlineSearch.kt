@@ -178,8 +178,8 @@ fun OnlineSearchScreen(repository: OnlineRepository, actions: OnlineActions, nav
     }
     val longPress: (Int) -> Unit = { i ->
         when (val row = rows.getOrNull(i)) {
-            is SearchRow.Song -> showTrackMenu(overlayHost, row.track, repository, actions, navigate)
-            is SearchRow.Video -> showTrackMenu(overlayHost, row.track, repository, actions, navigate)
+            is SearchRow.Song -> showTrackMenu(overlayHost, row.track, repository, actions, scope, navigate)
+            is SearchRow.Video -> showTrackMenu(overlayHost, row.track, repository, actions, scope, navigate)
             else -> Unit
         }
     }

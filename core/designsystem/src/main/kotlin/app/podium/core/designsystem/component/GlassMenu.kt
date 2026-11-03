@@ -40,7 +40,13 @@ import app.podium.core.interaction.WheelContext
 import app.podium.core.interaction.rememberPodiumHaptics
 
 @Immutable
-data class MenuAction(val label: String, val enabled: Boolean = true, val onSelect: () -> Unit)
+data class MenuAction(
+    val label: String,
+    val enabled: Boolean = true,
+    /** A quiet word beside the label: what choosing it would find, like "Added" (D-110). */
+    val note: String? = null,
+    val onSelect: () -> Unit,
+)
 
 @Immutable
 data class MenuSpec(val title: String?, val actions: List<MenuAction>)
@@ -128,7 +134,7 @@ fun GlassMenu(
                 paper = false,
             ) { index, _, focused ->
                 val action = spec.actions[index]
-                MenuRow(action.label, focused, showChevron = false, enabled = action.enabled)
+                MenuRow(action.label, focused, value = action.note, showChevron = false, enabled = action.enabled)
             }
         }
     }

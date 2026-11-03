@@ -39,9 +39,11 @@ class DatabasePlaylists(private val store: LocalPlaylistStore, private val scope
         scope.launch { store.delete(id) }
     }
 
-    override fun add(id: String, songs: List<TrackId>) {
-        scope.launch { store.add(id, songs) }
+    override fun add(id: String, songs: List<TrackId>, onAdded: (Int) -> Unit) {
+        scope.launch { onAdded(store.add(id, songs)) }
     }
+
+    override suspend fun playlistsHoldingAll(songs: List<TrackId>): Set<String> = store.playlistsHoldingAll(songs)
 
     override fun remove(id: String, entryId: Long) {
         scope.launch { store.remove(id, entryId) }
